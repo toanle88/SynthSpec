@@ -25,7 +25,7 @@ func NewGeminiGateway(apiKey, model string) *GeminiGateway {
 	return &GeminiGateway{
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{Timeout: 60 * time.Second},
+		client: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -356,7 +356,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON array stri
 	}
 
 	rawJSON := geminiResp.Candidates[0].Content.Parts[0].Text
-	
+
 	// Enforce trimming block wrappers if returned in text
 	if idx := strings.Index(rawJSON, "["); idx != -1 {
 		if endIdx := strings.LastIndex(rawJSON, "]"); endIdx != -1 && endIdx > idx {
@@ -444,4 +444,3 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
 }
-

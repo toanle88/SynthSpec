@@ -25,7 +25,7 @@ func NewOpenAIGateway(apiKey, model string) *OpenAIGateway {
 	return &OpenAIGateway{
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{Timeout: 60 * time.Second},
+		client: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -36,9 +36,9 @@ type openAIChatMessage struct {
 }
 
 type openAIChatRequest struct {
-	Model          string             `json:"model"`
+	Model          string              `json:"model"`
 	Messages       []openAIChatMessage `json:"messages"`
-	ResponseFormat *responseFormat    `json:"response_format,omitempty"`
+	ResponseFormat *responseFormat     `json:"response_format,omitempty"`
 }
 
 type responseFormat struct {
@@ -400,5 +400,3 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	return chatResp.Choices[0].Message.Content, nil
 }
-
-

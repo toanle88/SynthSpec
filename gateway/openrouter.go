@@ -25,7 +25,7 @@ func NewOpenRouterGateway(apiKey, model string) *OpenRouterGateway {
 	return &OpenRouterGateway{
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{Timeout: 60 * time.Second},
+		client: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -36,8 +36,8 @@ type openRouterChatMessage struct {
 }
 
 type openRouterChatRequest struct {
-	Model          string                  `json:"model"`
-	Messages       []openRouterChatMessage `json:"messages"`
+	Model          string                    `json:"model"`
+	Messages       []openRouterChatMessage   `json:"messages"`
 	ResponseFormat *openRouterResponseFormat `json:"response_format,omitempty"`
 }
 

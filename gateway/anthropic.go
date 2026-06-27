@@ -25,7 +25,7 @@ func NewAnthropicGateway(apiKey, model string) *AnthropicGateway {
 	return &AnthropicGateway{
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{Timeout: 60 * time.Second},
+		client: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -430,4 +430,3 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	return anthropicResp.Content[0].Text, nil
 }
-
