@@ -1,0 +1,11 @@
+# Compiled binaries
+synthspec
+synthspec.exe
+bin/
+
+# Local session state and output artifacts
+.synthspec/
+synthspec/
+synthspec-output/
+usage.log
+*.log
