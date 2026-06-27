@@ -76,6 +76,11 @@ type DashboardModel struct {
 
 	// External validator logs
 	validatorLogs     []string
+
+	// Update requirement state
+	showUpdatePrompt  bool
+	updateInput       textinput.Model
+	isCLIUpdateMode   bool
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -129,11 +134,17 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		genFileStatuses[f] = "pending"
 	}
 
+	ui := textinput.New()
+	ui.Placeholder = "Type new requirements or modifications here..."
+	ui.CharLimit = 2000
+	ui.Width = 60
+
 	return DashboardModel{
 		Session:           sess,
 		Gateway:           gw,
 		OutputDir:         outputDir,
 		textInput:         ti,
+		updateInput:       ui,
 		spinner:           s,
 		isCompleted:       completed,
 		standards:         standards,
@@ -145,6 +156,12 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		genFileStatuses:   genFileStatuses,
 		genFileDetails:    genFileDetails,
 	}
+}
+
+func (m *DashboardModel) StartWithUpdatePrompt() {
+	m.showUpdatePrompt = true
+	m.isCLIUpdateMode = true
+	m.updateInput.Focus()
 }
 
 func checkCompletion(scores gateway.ConfidenceScores) bool {
@@ -182,6 +199,19 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case tea.KeyEnter:
+			if m.showUpdatePrompt {
+				val := strings.TrimSpace(m.updateInput.Value())
+				if val == "" {
+					return m, nil
+				}
+				m.updateInput.SetValue("")
+				m.showUpdatePrompt = false
+				m.isCompleted = false
+				m.loading = true
+				m.err = nil
+				return m, m.queryOracleCmd("I have a new requirement/change: " + val)
+			}
+
 			if m.isCompleted {
 				// On completion screen, Enter does nothing. Use explicit keys.
 				return m, nil
@@ -239,7 +269,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyUp, tea.KeyPgUp:
-			if !m.showTextInput {
+			if !m.showTextInput && !m.showUpdatePrompt {
 				choices := m.getChoicesList()
 				m.selectedChoiceIdx--
 				if m.selectedChoiceIdx < 0 {
@@ -248,7 +278,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyDown, tea.KeyPgDown:
-			if !m.showTextInput {
+			if !m.showTextInput && !m.showUpdatePrompt {
 				choices := m.getChoicesList()
 				m.selectedChoiceIdx++
 				if m.selectedChoiceIdx >= len(choices) {
@@ -257,12 +287,24 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyEsc:
+			if m.showUpdatePrompt {
+				m.showUpdatePrompt = false
+				m.updateInput.Blur()
+				if m.isCLIUpdateMode {
+					return m, tea.Quit
+				}
+				return m, nil
+			}
 			if m.showTextInput && len(m.Session.LastChoices) > 0 {
 				m.showTextInput = false
 				m.textInput.Blur()
 			}
 
 		case tea.KeyRunes:
+			if m.showUpdatePrompt {
+				// Don't process other keybindings if update input is focused
+				break
+			}
 			if m.isCompleted {
 				key := string(msg.Runes)
 				switch strings.ToLower(key) {
@@ -292,6 +334,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
 						return editorFinishedMsg{err: err}
 					})
+				case "u":
+					m.showUpdatePrompt = true
+					m.updateInput.Focus()
+					m.updateInput.SetValue("")
+					return m, nil
 				case "q":
 					return m, tea.Quit
 				}
@@ -471,6 +518,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Update text input
 	if !m.isCompleted && !m.loading && m.showTextInput {
 		m.textInput, cmd = m.textInput.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	if m.showUpdatePrompt && !m.loading {
+		m.updateInput, cmd = m.updateInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 

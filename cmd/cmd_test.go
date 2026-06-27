@@ -76,4 +76,18 @@ func TestInitAndResumeCmd(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when resuming non-existent project, got nil")
 	}
+
+	// 5. Test "update" command
+	rootCmd.SetArgs([]string{"update", "my-test-proj"})
+	err = rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("failed to execute update cmd: %v", err)
+	}
+
+	// 6. Test "update" with invalid project name fails
+	rootCmd.SetArgs([]string{"update", "non-existent-proj"})
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when updating non-existent project, got nil")
+	}
 }

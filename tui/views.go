@@ -139,6 +139,7 @@ func (m DashboardModel) renderCompletedState() string {
 	content = append(content, "\nAll requirement vectors have achieved 100% confidence and files have been generated.")
 	content = append(content, "You can still edit raw facts to regenerate, or quit:\n")
 	content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate files"))
+	content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [U] to Add new requirements / Modify specifications"))
 	content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to launch Editor & make modifications"))
 	content = append(content, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("  Press [Q] to Save & Exit CLI"))
 	content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Status:"))
@@ -181,6 +182,14 @@ func (m DashboardModel) renderInterrogationState() string {
 }
 
 func (m DashboardModel) renderMainChat() string {
+	if m.showUpdatePrompt {
+		var content []string
+		content = append(content, TitleStyle.Render("📝 Add New Requirement / Modify Specification"))
+		content = append(content, "\nEnter your new requirements or modifications below:")
+		content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.updateInput.View())
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Enter to submit, Esc to cancel)"))
+		return strings.Join(content, "\n")
+	}
 	if m.isGenerating {
 		return m.renderGeneratingState()
 	}
