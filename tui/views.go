@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/gateway"
 )
 
 func (m DashboardModel) View() string {
@@ -158,7 +159,27 @@ func (m DashboardModel) renderFooter() string {
 
 	// Error Display
 	if m.err != nil {
-		elements = append(elements, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render(fmt.Sprintf("⚠️  Error: %v", m.err)))
+		var errTitle string
+		var errBody string
+
+		if apiErr, ok := m.err.(*gateway.APIError); ok {
+			errTitle = fmt.Sprintf("API REQUEST FAILED (%d)", apiErr.StatusCode)
+			errBody = apiErr.Message
+			if apiErr.RetryAfter != "" {
+				errBody += fmt.Sprintf("\nSuggested retry delay: %s", apiErr.RetryAfter)
+			}
+		} else {
+			errTitle = "SYSTEM ERROR"
+			errBody = m.err.Error()
+		}
+
+		// Wrap the error body to the dashboard width to prevent stretching the layout
+		wrappedBody := wrapText(errBody, m.width-8)
+		styledTitle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")).Bold(true).Render("⚠️  " + errTitle)
+		boxContent := fmt.Sprintf("%s\n%s", styledTitle, wrappedBody)
+
+		styledBox := ErrorBoxStyle.Width(m.width - 6).Render(boxContent)
+		elements = append(elements, styledBox)
 	}
 
 	// Keybindings helper
@@ -176,25 +197,44 @@ func wrapText(text string, width int) string {
 	if width <= 0 {
 		return text
 	}
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return ""
-	}
-
-	var lines []string
-	currentLine := words[0]
-
-	for _, word := range words[1:] {
-		if len(currentLine)+1+len(word) > width {
-			lines = append(lines, currentLine)
-			currentLine = word
-		} else {
-			currentLine += " " + word
+	lines := strings.Split(text, "\n")
+	var result []string
+	for _, line := range lines {
+		if len(line) <= width {
+			result = append(result, line)
+			continue
 		}
-	}
-	lines = append(lines, currentLine)
 
-	return strings.Join(lines, "\n")
+		// Find leading spaces to preserve indentation
+		indent := ""
+		for _, c := range line {
+			if c == ' ' || c == '\t' {
+				indent += string(c)
+			} else {
+				break
+			}
+		}
+
+		trimmed := strings.TrimSpace(line)
+		words := strings.Fields(trimmed)
+		if len(words) == 0 {
+			result = append(result, indent)
+			continue
+		}
+
+		currentLine := indent + words[0]
+		for _, word := range words[1:] {
+			if len(currentLine)+1+len(word) > width {
+				result = append(result, currentLine)
+				currentLine = indent + word
+			} else {
+				currentLine += " " + word
+			}
+		}
+		result = append(result, currentLine)
+	}
+
+	return strings.Join(result, "\n")
 }
 
 var (

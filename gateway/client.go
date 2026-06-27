@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -59,7 +60,7 @@ func SendWithRetry(ctx context.Context, client *http.Client, req *http.Request, 
 		shouldRetry := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
 
 		if !shouldRetry || attempt == maxRetries {
-			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+			return nil, NewAPIError(resp.StatusCode, bodyBytes)
 		}
 
 		waitBackoff(ctx, attempt)
@@ -80,4 +81,78 @@ func waitBackoff(ctx context.Context, attempt int) {
 	case <-ctx.Done():
 	case <-timer.C:
 	}
+}
+
+// APIError represents a structured error returned by upstream LLM APIs.
+type APIError struct {
+	StatusCode int
+	Message    string
+	Code       string
+	Status     string
+	ErrorType  string
+	RetryAfter string
+	RawBody    string
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("API request failed with status %d: %s", e.StatusCode, e.Message)
+	}
+	return fmt.Sprintf("API request failed with status %d", e.StatusCode)
+}
+
+// NewAPIError parses raw response bodies from Gemini, OpenAI, and Anthropic APIs into a structured APIError.
+func NewAPIError(statusCode int, bodyBytes []byte) error {
+	apiErr := &APIError{
+		StatusCode: statusCode,
+		RawBody:    string(bodyBytes),
+	}
+
+	var payload struct {
+		Error *struct {
+			Message string `json:"message"`
+			Status  string `json:"status"`
+			Code    any    `json:"code"`
+			Type    string `json:"type"`
+			Details []map[string]any `json:"details"`
+		} `json:"error"`
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &payload); err == nil {
+		if payload.Error != nil {
+			apiErr.Message = payload.Error.Message
+			if payload.Error.Code != nil {
+				apiErr.Code = fmt.Sprintf("%v", payload.Error.Code)
+			}
+			apiErr.Status = payload.Error.Status
+			apiErr.ErrorType = payload.Error.Type
+
+			// Extract Retry delay if available (Gemini retryDelay)
+			for _, detail := range payload.Error.Details {
+				if detail["@type"] == "type.googleapis.com/google.rpc.RetryInfo" {
+					if delay, ok := detail["retryDelay"].(string); ok {
+						apiErr.RetryAfter = delay
+					}
+				}
+			}
+		} else if payload.Message != "" {
+			// Anthropic or other flat error structures
+			apiErr.Message = payload.Message
+			apiErr.ErrorType = payload.Type
+		}
+	}
+
+	if apiErr.Message == "" {
+		// Pretty-print valid JSON if possible, otherwise fallback to raw string
+		var formatted bytes.Buffer
+		if err := json.Indent(&formatted, bodyBytes, "", "  "); err == nil {
+			apiErr.Message = formatted.String()
+		} else {
+			apiErr.Message = string(bodyBytes)
+		}
+	}
+
+	return apiErr
 }

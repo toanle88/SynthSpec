@@ -49,6 +49,11 @@ var (
 			Foreground(ColorMuted).
 			Padding(0, 1)
 
+	ErrorBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#ef4444")).
+			Padding(0, 1)
+
 	SpinnerStyle = lipgloss.NewStyle().
 			Foreground(ColorInfo).
 			Bold(true)

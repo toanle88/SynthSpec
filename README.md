@@ -63,6 +63,8 @@ go build -o synthspec main.go
 
 ### Setup API Keys
 Setup your chosen upstream LLM provider API key:
+
+**On Linux / macOS (Bash):**
 ```bash
 # Gemini
 export GEMINI_API_KEY="your-gemini-key"
@@ -72,6 +74,45 @@ export OPENAI_API_KEY="your-openai-key"
 
 # Anthropic
 export ANTHROPIC_API_KEY="your-anthropic-key"
+```
+
+**On Windows (PowerShell):**
+```powershell
+# Gemini
+$env:GEMINI_API_KEY="your-gemini-key"
+
+# OpenAI
+$env:OPENAI_API_KEY="your-openai-key"
+
+# Anthropic
+$env:ANTHROPIC_API_KEY="your-anthropic-key"
+```
+
+### Run with Live LLM Provider (Default)
+To run with a live upstream model, make sure you have set the appropriate API key environment variables (as detailed in the "Setup API Keys" section above), then initialize or resume the session without the `--mock` flag:
+
+**On Linux / macOS:**
+```bash
+./synthspec init test-project
+./synthspec resume test-project
+```
+
+**On Windows Command Prompt (CMD):**
+```cmd
+synthspec init test-project
+synthspec resume test-project
+```
+
+**On Windows PowerShell:**
+```powershell
+.\synthspec init test-project
+.\synthspec resume test-project
+```
+
+You can optionally override the default provider or model by passing the `--provider` or `--model` flags:
+```bash
+# E.g., using Gemini explicitly
+./synthspec init test-project --provider gemini --model gemini-2.5-pro
 ```
 
 ### Run with Mock Provider (Local Offline Testing)
