@@ -112,12 +112,13 @@ var defaultStandardsYAML []byte
 
 // Standard represents an engineering or quality standard
 type Standard struct {
-	ID          string   `yaml:"id" json:"id"`
-	Name        string   `yaml:"name" json:"name"`
-	Description string   `yaml:"description" json:"description"`
-	TargetFiles []string `yaml:"target_files" json:"target_files"`
-	Criteria    string   `yaml:"criteria" json:"criteria"`
-	MinScore    int      `yaml:"min_score" json:"min_score"`
+	ID           string   `yaml:"id" json:"id"`
+	Name         string   `yaml:"name" json:"name"`
+	Description  string   `yaml:"description" json:"description"`
+	TargetFiles  []string `yaml:"target_files" json:"target_files"`
+	Criteria     string   `yaml:"criteria" json:"criteria"`
+	MinScore     int      `yaml:"min_score" json:"min_score"`
+	ValidatorCmd string   `yaml:"validator_cmd,omitempty" json:"validator_cmd,omitempty"`
 }
 
 type StandardsConfig struct {

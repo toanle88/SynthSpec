@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -389,25 +391,83 @@ func (fg *fileGenerator) handleSyntaxError(fileName string, content string, atte
 	return content, checkErr
 }
 
-func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, bool, error) {
-	maxRetries := 10
-	sendProgress(fg.progress, ProgressEvent{
-		File:    fileName,
-		Status:  "auditing",
-		Details: fmt.Sprintf("attempt %d/%d", attempt, maxRetries),
-		Message: fmt.Sprintf("🔍 Auditing standards compliance for %s...", fileName),
-	})
-	evalResults, evalErr := fg.gw.EvaluateCompliance(fg.ctx, fileName, content, standards)
-	if evalErr != nil {
-		sendProgress(fg.progress, ProgressEvent{
-			File:    fileName,
-			Status:  "failed",
-			Details: fmt.Sprintf("compliance eval failed: %v", evalErr),
-			Message: fmt.Sprintf("⚠️ Compliance evaluation failed for %s: %v", fileName, evalErr),
-		})
-		return content, nil, evalErr, false, evalErr
+func runExternalValidator(ctx context.Context, cmdStr string, filePath string) (string, error) {
+	absPath, err := filepath.Abs(filePath)
+	if err == nil {
+		filePath = absPath
 	}
 
+	if strings.Contains(cmdStr, "{path}") {
+		cmdStr = strings.ReplaceAll(cmdStr, "{path}", filePath)
+	} else {
+		cmdStr = cmdStr + " " + filePath
+	}
+
+	execCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(execCtx, "cmd.exe", "/c", cmdStr)
+	} else {
+		cmd = exec.CommandContext(execCtx, "sh", "-c", cmdStr)
+	}
+
+	outputBytes, err := cmd.CombinedOutput()
+	output := string(outputBytes)
+	if err != nil {
+		if execCtx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("command timed out after 10 seconds")
+		}
+		return output, err
+	}
+	return output, nil
+}
+
+func (fg *fileGenerator) runExternalValidators(evalResults []gateway.ComplianceResult, standards []config.Standard, filePath string) ([]gateway.ComplianceResult, error) {
+	resultsMap := make(map[string]*gateway.ComplianceResult)
+	for i := range evalResults {
+		resultsMap[evalResults[i].StandardID] = &evalResults[i]
+	}
+
+	applicableStds := getApplicableStandards(standards, filepath.Base(filePath))
+	for _, std := range applicableStds {
+		if std.ValidatorCmd == "" {
+			continue
+		}
+
+		valOutput, valErr := runExternalValidator(fg.ctx, std.ValidatorCmd, filePath)
+
+		res, exists := resultsMap[std.ID]
+		if !exists {
+			newRes := gateway.ComplianceResult{
+				StandardID: std.ID,
+				Score:      100,
+				Compliant:  true,
+			}
+			evalResults = append(evalResults, newRes)
+			res = &evalResults[len(evalResults)-1]
+			resultsMap[std.ID] = res
+		}
+
+		if valErr != nil {
+			res.Compliant = false
+			res.Score = 0
+			errorMsg := valErr.Error()
+			if strings.TrimSpace(valOutput) != "" {
+				errorMsg = strings.TrimSpace(valOutput)
+			}
+			if res.Feedback != "" {
+				res.Feedback = fmt.Sprintf("%s\nExternal validator failed:\n%s", res.Feedback, errorMsg)
+			} else {
+				res.Feedback = fmt.Sprintf("External validator failed:\n%s", errorMsg)
+			}
+		}
+	}
+	return evalResults, nil
+}
+
+func collectFailedStandards(evalResults []gateway.ComplianceResult, standards []config.Standard) ([]config.Standard, []string) {
 	var failedStds []config.Standard
 	var feedbackLines []string
 	for _, res := range evalResults {
@@ -423,6 +483,41 @@ func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content str
 			feedbackLines = append(feedbackLines, fmt.Sprintf("- Standard '%s' failed (Score: %d%%, Required: %d%%): %s", stdDef.Name, res.Score, stdDef.MinScore, res.Feedback))
 		}
 	}
+	return failedStds, feedbackLines
+}
+
+func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, bool, error) {
+	maxRetries := 10
+	sendProgress(fg.progress, ProgressEvent{
+		File:    fileName,
+		Status:  "auditing",
+		Details: fmt.Sprintf("attempt %d/%d", attempt, maxRetries),
+		Message: fmt.Sprintf("🔍 Auditing standards compliance for %s...", fileName),
+	})
+
+	// Write the current draft content to the actual file path first so that external validators can check it
+	filePath := filepath.Join(fg.outputDir, fileName)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return content, nil, err, false, err
+	}
+
+	evalResults, evalErr := fg.gw.EvaluateCompliance(fg.ctx, fileName, content, standards)
+	if evalErr != nil {
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "failed",
+			Details: fmt.Sprintf("compliance eval failed: %v", evalErr),
+			Message: fmt.Sprintf("⚠️ Compliance evaluation failed for %s: %v", fileName, evalErr),
+		})
+		return content, nil, evalErr, false, evalErr
+	}
+
+	evalResults, err := fg.runExternalValidators(evalResults, standards, filePath)
+	if err != nil {
+		return content, nil, err, false, err
+	}
+
+	failedStds, feedbackLines := collectFailedStandards(evalResults, standards)
 
 	if len(failedStds) > 0 {
 		feedbackText := strings.Join(feedbackLines, "\n")

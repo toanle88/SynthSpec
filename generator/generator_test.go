@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -511,4 +512,45 @@ func TestResumableMidLoop(t *testing.T) {
 		t.Errorf("expected 0 calls to GenerateSpecFile/RefineSpecFile for resumed file, got %d", tg.callCounts["01_prd_functional.md"])
 	}
 }
+
+func TestRunExternalValidator(t *testing.T) {
+	tempFile, err := os.CreateTemp("", "test-val-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tempFile.Name())
+	tempFile.Close()
+
+	ctx := context.Background()
+
+	// Test success command
+	var successCmd string
+	if runtime.GOOS == "windows" {
+		successCmd = "echo success"
+	} else {
+		successCmd = "echo success"
+	}
+
+	out, err := runExternalValidator(ctx, successCmd, tempFile.Name())
+	if err != nil {
+		t.Errorf("expected no error, got: %v, output: %q", err, out)
+	}
+	if !strings.Contains(out, "success") {
+		t.Errorf("expected output to contain 'success', got %q", out)
+	}
+
+	// Test failing command
+	var failCmd string
+	if runtime.GOOS == "windows" {
+		failCmd = "type non_existent_file_12345.txt"
+	} else {
+		failCmd = "cat non_existent_file_12345.txt"
+	}
+
+	_, err = runExternalValidator(ctx, failCmd, tempFile.Name())
+	if err == nil {
+		t.Error("expected error for failing command, got nil")
+	}
+}
+
 
