@@ -90,4 +90,31 @@ func TestInitAndResumeCmd(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when updating non-existent project, got nil")
 	}
+
+	// 7. Test "list" command
+	rootCmd.SetArgs([]string{"list"})
+	err = rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("failed to execute list cmd: %v", err)
+	}
+
+	// 8. Test "delete" command with invalid project fails
+	rootCmd.SetArgs([]string{"delete", "non-existent-proj"})
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when deleting non-existent project, got nil")
+	}
+
+	// 9. Test "delete" command with --force flag
+	forceFlag = true
+	rootCmd.SetArgs([]string{"delete", "my-test-proj"})
+	err = rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("failed to execute delete cmd: %v", err)
+	}
+
+	// Verify project directory is gone
+	if _, err := os.Stat(sessionPath); !os.IsNotExist(err) {
+		t.Fatalf("expected project directory to be deleted, but it still exists at %s", sessionPath)
+	}
 }
