@@ -165,12 +165,12 @@ func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts
 	}
 	
 	count := tg.callCounts[fileName]
+	var resp string
 	if count > len(resps) {
-		// Return last response if exhausted
-		return resps[len(resps)-1], nil
+		resp = resps[len(resps)-1]
+	} else {
+		resp = resps[count-1]
 	}
-	
-	resp := resps[count-1]
 	if strings.HasPrefix(resp, "ERROR:") {
 		return "", errors.New(strings.TrimPrefix(resp, "ERROR:"))
 	}
@@ -208,11 +208,12 @@ func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, file
 	}
 
 	count := tg.callCounts[fileName]
+	var resp string
 	if count > len(resps) {
-		return resps[len(resps)-1], nil
+		resp = resps[len(resps)-1]
+	} else {
+		resp = resps[count-1]
 	}
-
-	resp := resps[count-1]
 	if strings.HasPrefix(resp, "ERROR:") {
 		return "", errors.New(strings.TrimPrefix(resp, "ERROR:"))
 	}
@@ -349,8 +350,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 
 		for range progress {}
 
-		if tg.callCounts["05_engineering_backlog.json"] != 3 {
-			t.Errorf("expected 3 calls, got %d", tg.callCounts["05_engineering_backlog.json"])
+		if tg.callCounts["05_engineering_backlog.json"] != 10 {
+			t.Errorf("expected 10 calls, got %d", tg.callCounts["05_engineering_backlog.json"])
 		}
 	})
 
@@ -388,7 +389,7 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		tg2 := &TestGateway{
 			responses: map[string][]string{
 				"03_security_threat_model.md": {"Threat model content"},
-				"04_openapi_contract.yaml":    {"OpenAPI content"},
+				"04_openapi_contract.yaml":    {"openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}"},
 				"05_engineering_backlog.json": {
 					`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
 				},

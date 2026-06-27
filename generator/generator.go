@@ -163,7 +163,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 
 		var content string
 		var err error
-		maxRetries := 3
+		maxRetries := 10
 
 		// Initial Generation
 		for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -345,4 +345,3 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 	progress <- fmt.Sprintf("All files generated in: %s", outputDir)
 	return nil
 }
-

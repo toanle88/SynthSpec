@@ -6,7 +6,7 @@ standards:
       - 02_system_architecture.md
     criteria: |
       Verify that the proposed backend layout decouples business logic (core application services/use-cases) from delivery/transport layers (e.g. HTTP, gRPC) and data access layers (e.g. database repositories). High level layers should not depend on low level layers.
-    min_score: 70
+    min_score: 85
 
   - id: api_envelope_responses
     name: API Envelope Responses

@@ -361,6 +361,8 @@ Please update the file content to address the feedback and satisfy the following
 Original File Content:
 %s
 
+CRITICAL: When rewriting this file to fix the audit failures, do not abbreviate, truncate, or omit any existing sections that are already passing. You must maintain or improve the detail level of the entire document.
+
 Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks like `+"```"+` or include any conversational filler.`,
 		fileName, feedback, criteriaText, fileContent)
 
