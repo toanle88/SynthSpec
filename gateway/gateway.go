@@ -7,6 +7,12 @@ import (
 	"github.com/toanle/synthspec/config"
 )
 
+const (
+	contentTypeHeader = "Content-Type"
+	applicationJSON   = "application/json"
+	authBearerPrefix  = "Bearer "
+)
+
 // Message represents a single turn in the conversation history
 type Message struct {
 	Role    string `json:"role"` // "user" or "assistant"
@@ -112,4 +118,18 @@ func SanitizeNextQuestion(q string) string {
 	}
 
 	return q
+}
+
+// FilterApplicableStandards filters the standards that apply to the given file name
+func FilterApplicableStandards(standards []config.Standard, fileName string) []config.Standard {
+	var applicable []config.Standard
+	for _, std := range standards {
+		for _, tf := range std.TargetFiles {
+			if tf == fileName {
+				applicable = append(applicable, std)
+				break
+			}
+		}
+	}
+	return applicable
 }

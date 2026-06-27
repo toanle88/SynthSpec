@@ -12,6 +12,12 @@ import (
 	"github.com/toanle/synthspec/config"
 )
 
+const (
+	openaiChatURL           = "https://api.openai.com/v1/chat/completions"
+	errParseOpenAIResponse  = "failed to parse OpenAI chat response: %w"
+	errEmptyChoiceOpenAI    = "empty choice array returned from OpenAI"
+)
+
 type OpenAIGateway struct {
 	apiKey string
 	model  string
@@ -137,12 +143,12 @@ Guidelines for evaluation:
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openaiChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -151,11 +157,11 @@ Guidelines for evaluation:
 
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenAI chat response: %w", err)
+		return nil, fmt.Errorf(errParseOpenAIResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty choice array returned from OpenAI")
+		return nil, fmt.Errorf(errEmptyChoiceOpenAI)
 	}
 
 	var oracleResp OracleResponse
@@ -190,12 +196,12 @@ func (o *OpenAIGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openaiChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -204,26 +210,18 @@ func (o *OpenAIGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return "", fmt.Errorf("failed to parse OpenAI chat response: %w", err)
+		return "", fmt.Errorf(errParseOpenAIResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("empty choice array returned from OpenAI")
+		return "", fmt.Errorf(errEmptyChoiceOpenAI)
 	}
 
 	return chatResp.Choices[0].Message.Content, nil
 }
 
 func (o *OpenAIGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
-	var applicableStandards []config.Standard
-	for _, std := range standards {
-		for _, tf := range std.TargetFiles {
-			if tf == fileName {
-				applicableStandards = append(applicableStandards, std)
-				break
-			}
-		}
-	}
+	applicableStandards := FilterApplicableStandards(standards, fileName)
 
 	if len(applicableStandards) == 0 {
 		return nil, nil
@@ -279,12 +277,12 @@ Output only the raw JSON string.`
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openaiChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -293,11 +291,11 @@ Output only the raw JSON string.`
 
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenAI chat response: %w", err)
+		return nil, fmt.Errorf(errParseOpenAIResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty choice array returned from OpenAI")
+		return nil, fmt.Errorf(errEmptyChoiceOpenAI)
 	}
 
 	rawJSON := chatResp.Choices[0].Message.Content
@@ -355,12 +353,12 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openaiChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -369,11 +367,11 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return "", fmt.Errorf("failed to parse OpenAI chat response: %w", err)
+		return "", fmt.Errorf(errParseOpenAIResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("empty choice array returned from OpenAI")
+		return "", fmt.Errorf(errEmptyChoiceOpenAI)
 	}
 
 	return chatResp.Choices[0].Message.Content, nil

@@ -12,6 +12,12 @@ import (
 	"github.com/toanle/synthspec/config"
 )
 
+const (
+	geminiChatURLTemplate     = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
+	errParseGeminiResponse    = "failed to parse Gemini response: %w"
+	errEmptyCandidateGemini   = "empty response candidate returned from Gemini"
+)
+
 type GeminiGateway struct {
 	apiKey string
 	model  string
@@ -159,12 +165,12 @@ Guidelines for evaluation:
 		return nil, err
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	url := fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(contentTypeHeader, applicationJSON)
 
 	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
 	if err != nil {
@@ -173,11 +179,11 @@ Guidelines for evaluation:
 
 	var geminiResp geminiResponse
 	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse Gemini response: %w", err)
+		return nil, fmt.Errorf(errParseGeminiResponse, err)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("empty response candidate returned from Gemini")
+		return nil, fmt.Errorf(errEmptyCandidateGemini)
 	}
 
 	var oracleResp OracleResponse
@@ -216,12 +222,12 @@ func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 		return "", err
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	url := fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(contentTypeHeader, applicationJSON)
 
 	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
 	if err != nil {
@@ -230,26 +236,18 @@ func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 
 	var geminiResp geminiResponse
 	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
-		return "", fmt.Errorf("failed to parse Gemini response: %w", err)
+		return "", fmt.Errorf(errParseGeminiResponse, err)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty response candidate returned from Gemini")
+		return "", fmt.Errorf(errEmptyCandidateGemini)
 	}
 
 	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
 }
 
 func (g *GeminiGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
-	var applicableStandards []config.Standard
-	for _, std := range standards {
-		for _, tf := range std.TargetFiles {
-			if tf == fileName {
-				applicableStandards = append(applicableStandards, std)
-				break
-			}
-		}
-	}
+	applicableStandards := FilterApplicableStandards(standards, fileName)
 
 	if len(applicableStandards) == 0 {
 		return nil, nil
@@ -299,7 +297,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON array stri
 		},
 		Contents: contents,
 		GenerationConfig: &geminiConfig{
-			ResponseMimeType: "application/json",
+			ResponseMimeType: applicationJSON,
 		},
 	}
 
@@ -308,12 +306,12 @@ Do NOT return markdown code block backticks. Output only the raw JSON array stri
 		return nil, err
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	url := fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(contentTypeHeader, applicationJSON)
 
 	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
 	if err != nil {
@@ -322,11 +320,11 @@ Do NOT return markdown code block backticks. Output only the raw JSON array stri
 
 	var geminiResp geminiResponse
 	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse Gemini response: %w", err)
+		return nil, fmt.Errorf(errParseGeminiResponse, err)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("empty response candidate returned from Gemini")
+		return nil, fmt.Errorf(errEmptyCandidateGemini)
 	}
 
 	rawJSON := geminiResp.Candidates[0].Content.Parts[0].Text
@@ -385,10 +383,9 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 		Contents: contents,
 	}
 
-	// For JSON file, enforce json output
 	if fileName == "05_engineering_backlog.json" {
 		reqBody.GenerationConfig = &geminiConfig{
-			ResponseMimeType: "application/json",
+			ResponseMimeType: applicationJSON,
 		}
 	}
 
@@ -397,12 +394,12 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 		return "", err
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	url := fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(contentTypeHeader, applicationJSON)
 
 	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
 	if err != nil {
@@ -411,11 +408,11 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	var geminiResp geminiResponse
 	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
-		return "", fmt.Errorf("failed to parse Gemini response: %w", err)
+		return "", fmt.Errorf(errParseGeminiResponse, err)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty response candidate returned from Gemini")
+		return "", fmt.Errorf(errEmptyCandidateGemini)
 	}
 
 	return geminiResp.Candidates[0].Content.Parts[0].Text, nil

@@ -12,6 +12,16 @@ import (
 	"github.com/toanle/synthspec/config"
 )
 
+const (
+	openrouterChatURL          = "https://openrouter.ai/api/v1/chat/completions"
+	errParseOpenRouterResponse = "failed to parse OpenRouter chat response: %w"
+	errEmptyChoiceOpenRouter   = "empty choice array returned from OpenRouter"
+
+	refererHeader              = "HTTP-Referer"
+	refererValue               = "https://github.com/toanle/synthspec"
+	xTitleHeader               = "X-Title"
+)
+
 type OpenRouterGateway struct {
 	apiKey string
 	model  string
@@ -137,14 +147,14 @@ Guidelines for evaluation:
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openrouterChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/toanle/synthspec")
-	req.Header.Set("X-Title", "SynthSpec")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
+	req.Header.Set(refererHeader, refererValue)
+	req.Header.Set(xTitleHeader, "SynthSpec")
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -153,11 +163,11 @@ Guidelines for evaluation:
 
 	var chatResp openRouterChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenRouter chat response: %w", err)
+		return nil, fmt.Errorf(errParseOpenRouterResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty choice array returned from OpenRouter")
+		return nil, fmt.Errorf(errEmptyChoiceOpenRouter)
 	}
 
 	var oracleResp OracleResponse
@@ -192,14 +202,14 @@ func (o *OpenRouterGateway) GenerateSpecFile(ctx context.Context, facts Facts, f
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openrouterChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/toanle/synthspec")
-	req.Header.Set("X-Title", "SynthSpec")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
+	req.Header.Set(refererHeader, refererValue)
+	req.Header.Set(xTitleHeader, "SynthSpec")
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -208,11 +218,11 @@ func (o *OpenRouterGateway) GenerateSpecFile(ctx context.Context, facts Facts, f
 
 	var chatResp openRouterChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return "", fmt.Errorf("failed to parse OpenRouter chat response: %w", err)
+		return "", fmt.Errorf(errParseOpenRouterResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("empty choice array returned from OpenRouter")
+		return "", fmt.Errorf(errEmptyChoiceOpenRouter)
 	}
 
 	return chatResp.Choices[0].Message.Content, nil
@@ -283,14 +293,14 @@ Output only the raw JSON string.`
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openrouterChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/toanle/synthspec")
-	req.Header.Set("X-Title", "SynthSpec")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
+	req.Header.Set(refererHeader, refererValue)
+	req.Header.Set(xTitleHeader, "SynthSpec")
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -299,11 +309,11 @@ Output only the raw JSON string.`
 
 	var chatResp openRouterChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenRouter chat response: %w", err)
+		return nil, fmt.Errorf(errParseOpenRouterResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("empty choice array returned from OpenRouter")
+		return nil, fmt.Errorf(errEmptyChoiceOpenRouter)
 	}
 
 	rawJSON := chatResp.Choices[0].Message.Content
@@ -361,14 +371,14 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", openrouterChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
-	req.Header.Set("HTTP-Referer", "https://github.com/toanle/synthspec")
-	req.Header.Set("X-Title", "SynthSpec")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
+	req.Header.Set(refererHeader, refererValue)
+	req.Header.Set(xTitleHeader, "SynthSpec")
 
 	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
 	if err != nil {
@@ -377,11 +387,11 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	var chatResp openRouterChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
-		return "", fmt.Errorf("failed to parse OpenRouter chat response: %w", err)
+		return "", fmt.Errorf(errParseOpenRouterResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return "", fmt.Errorf("empty choice array returned from OpenRouter")
+		return "", fmt.Errorf(errEmptyChoiceOpenRouter)
 	}
 
 	return chatResp.Choices[0].Message.Content, nil

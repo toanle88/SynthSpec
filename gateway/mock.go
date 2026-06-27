@@ -81,14 +81,15 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 			Compliance: "Audit logs defined. Export and backup strategy needs alignment.",
 		}
 	default:
+		const readyMsg = "100% complete. Ready for generation."
 		res.ConfidenceScores = ConfidenceScores{Functional: 100, Structural: 100, Security: 100, Compliance: 100}
 		res.NextQuestion = "" // Complete
 		res.NextChoices = nil
 		res.DimensionRationales = DimensionRationales{
-			Functional: "100% complete. Ready for generation.",
-			Structural: "100% complete. Ready for generation.",
-			Security:   "100% complete. Ready for generation.",
-			Compliance: "100% complete. Ready for generation.",
+			Functional: readyMsg,
+			Structural: readyMsg,
+			Security:   readyMsg,
+			Compliance: readyMsg,
 		}
 	}
 
@@ -121,27 +122,22 @@ This specification outlines the functional features compiled during the interrog
 
 * **Status**: 🟢 Approved
 
-## 🏗️ Architectural Topology
-The application is structured as a decoupled, layered system.
+## 🏗️ Backend Topography
+Three-tier architecture with load balancer.
 
-` + "```mermaid" + `
-graph TD
-    Client[CLI Terminal Client] -->|API Calls| API[API Routing Layer]
-    API -->|Storage Interface| DB[(Relational DB)]
-    API -->|Logs| Audit[Audit Trail Service]
-` + "```" + `
-
-## 💾 Compiled Structural Facts
+## 📦 System Database Model
 %s
+
+## 🔀 API Routing Logic
+REST endpoints map to specific service controllers.
 `, facts.Structural), nil
 
 	case "03_security_threat_model.md":
-		return fmt.Sprintf(`# Security & STRIDE Threat Model
+		return fmt.Sprintf(`# Security & Threat Model
 
 * **Status**: 🟢 Approved
 
-## 🛡️ Threats and Mitigations
-
+## 🛡️ STRIDE Threat Assessment
 | Category | Vulnerability | Mitigation Strategy |
 |----------|---------------|---------------------|
 | **Spoofing** | Unauthorized API access | Cryptographic JWT claims and signature validation. |
@@ -152,7 +148,7 @@ graph TD
 `, facts.Security), nil
 
 	case "04_api_architecture_integration.md":
-		return fmt.Sprintf(`# API Architecture & Integration Guide
+		return `# API Architecture & Integration Guide
 
 * **Status**: 🟢 Approved
 
@@ -167,10 +163,10 @@ ISO 8601 timestamps and camelCase naming conventions.
 
 ## 🛠️ Cross-Cutting Concerns
 Validation and rate limiting enabled.
-`), nil
+`, nil
 
 	case "05_coding_standards_guidelines.md":
-		return fmt.Sprintf(`# Coding Standards & Guidelines
+		return `# Coding Standards & Guidelines
 
 * **Status**: 🟢 Approved
 
@@ -181,11 +177,11 @@ Visual directory layout and layer division.
 Strict dependency injection and repository patterns.
 
 ## 🧪 Testing Strategy & Coverage Gates
-Integration testing with mock interfaces. 80%% code coverage gate.
+Integration testing with mock interfaces. 80% code coverage gate.
 
 ## 🧹 Linting & Static Analysis Rules
 Configured strict rules.
-`), nil
+`, nil
 
 	default:
 		return "", fmt.Errorf("unknown file: %s", fileName)

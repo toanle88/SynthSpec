@@ -11,7 +11,7 @@ import (
 
 func TestMain(m *testing.M) {
 	// Stub out the TUI execution so we don't start the Bubble Tea terminal interface
-	runTUI = func(m tui.DashboardModel) error {
+	runTUI = func(_ tui.DashboardModel) error {
 		return nil
 	}
 	os.Exit(m.Run())

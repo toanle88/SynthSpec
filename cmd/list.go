@@ -22,9 +22,11 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
+		const listFormat = "%-20s %-15s %-15s %-15s %-20s\n"
+
 		// Print header
-		fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-15s %-15s %-15s %-20s\n", "PROJECT NAME", "PROVIDER", "MODEL", "SCORES (F/S/S/C)", "LAST UPDATED")
-		fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-15s %-15s %-15s %-20s\n", "------------", "--------", "-----", "----------------", "------------")
+		fmt.Fprintf(cmd.OutOrStdout(), listFormat, "PROJECT NAME", "PROVIDER", "MODEL", "SCORES (F/S/S/C)", "LAST UPDATED")
+		fmt.Fprintf(cmd.OutOrStdout(), listFormat, "------------", "--------", "-----", "----------------", "------------")
 
 		for _, name := range projects {
 			sess, err := state.LoadSession(name)
@@ -34,7 +36,7 @@ var listCmd = &cobra.Command{
 			}
 			scoreStr := fmt.Sprintf("%d/%d/%d/%d", sess.Scores.Functional, sess.Scores.Structural, sess.Scores.Security, sess.Scores.Compliance)
 			updatedStr := sess.UpdatedAt.Format("2006-01-02 15:04:05")
-			fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-15s %-15s %-15s %-20s\n", sess.ProjectName, sess.Provider, sess.Model, scoreStr, updatedStr)
+			fmt.Fprintf(cmd.OutOrStdout(), listFormat, sess.ProjectName, sess.Provider, sess.Model, scoreStr, updatedStr)
 		}
 
 		return nil

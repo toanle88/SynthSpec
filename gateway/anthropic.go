@@ -12,6 +12,15 @@ import (
 	"github.com/toanle/synthspec/config"
 )
 
+const (
+	anthropicChatURL          = "https://api.anthropic.com/v1/messages"
+	authApiKeyHeader          = "X-API-Key"
+	anthropicVersionHeader    = "Anthropic-Version"
+	anthropicVersionValue     = "2023-06-01"
+	errParseAnthropicResponse = "failed to parse Anthropic response: %w"
+	errEmptyContentAnthropic  = "empty content returned from Anthropic"
+)
+
 type AnthropicGateway struct {
 	apiKey string
 	model  string
@@ -148,13 +157,13 @@ Guidelines for evaluation:
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", a.apiKey)
-	req.Header.Set("Anthropic-Version", "2023-06-01")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set(authApiKeyHeader, a.apiKey)
+	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
 	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
 	if err != nil {
@@ -163,11 +172,11 @@ Guidelines for evaluation:
 
 	var anthropicResp anthropicResponse
 	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return nil, fmt.Errorf("failed to parse Anthropic response: %w", err)
+		return nil, fmt.Errorf(errParseAnthropicResponse, err)
 	}
 
 	if len(anthropicResp.Content) == 0 {
-		return nil, fmt.Errorf("empty content returned from Anthropic")
+		return nil, fmt.Errorf(errEmptyContentAnthropic)
 	}
 
 	var oracleResp OracleResponse
@@ -208,13 +217,13 @@ func (a *AnthropicGateway) GenerateSpecFile(ctx context.Context, facts Facts, fi
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", a.apiKey)
-	req.Header.Set("Anthropic-Version", "2023-06-01")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set(authApiKeyHeader, a.apiKey)
+	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
 	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
 	if err != nil {
@@ -223,26 +232,18 @@ func (a *AnthropicGateway) GenerateSpecFile(ctx context.Context, facts Facts, fi
 
 	var anthropicResp anthropicResponse
 	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return "", fmt.Errorf("failed to parse Anthropic response: %w", err)
+		return "", fmt.Errorf(errParseAnthropicResponse, err)
 	}
 
 	if len(anthropicResp.Content) == 0 {
-		return "", fmt.Errorf("empty content returned from Anthropic")
+		return "", fmt.Errorf(errEmptyContentAnthropic)
 	}
 
 	return anthropicResp.Content[0].Text, nil
 }
 
 func (a *AnthropicGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
-	var applicableStandards []config.Standard
-	for _, std := range standards {
-		for _, tf := range std.TargetFiles {
-			if tf == fileName {
-				applicableStandards = append(applicableStandards, std)
-				break
-			}
-		}
-	}
+	applicableStandards := FilterApplicableStandards(standards, fileName)
 
 	if len(applicableStandards) == 0 {
 		return nil, nil
@@ -303,13 +304,13 @@ Output only the raw JSON string. Do NOT output any markdown formatting backticks
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", a.apiKey)
-	req.Header.Set("Anthropic-Version", "2023-06-01")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set(authApiKeyHeader, a.apiKey)
+	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
 	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
 	if err != nil {
@@ -318,11 +319,11 @@ Output only the raw JSON string. Do NOT output any markdown formatting backticks
 
 	var anthropicResp anthropicResponse
 	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return nil, fmt.Errorf("failed to parse Anthropic response: %w", err)
+		return nil, fmt.Errorf(errParseAnthropicResponse, err)
 	}
 
 	if len(anthropicResp.Content) == 0 {
-		return nil, fmt.Errorf("empty content returned from Anthropic")
+		return nil, fmt.Errorf(errEmptyContentAnthropic)
 	}
 
 	rawJSON := anthropicResp.Content[0].Text
@@ -389,13 +390,13 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", a.apiKey)
-	req.Header.Set("Anthropic-Version", "2023-06-01")
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set(authApiKeyHeader, a.apiKey)
+	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
 	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
 	if err != nil {
@@ -404,11 +405,11 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	var anthropicResp anthropicResponse
 	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return "", fmt.Errorf("failed to parse Anthropic response: %w", err)
+		return "", fmt.Errorf(errParseAnthropicResponse, err)
 	}
 
 	if len(anthropicResp.Content) == 0 {
-		return "", fmt.Errorf("empty content returned from Anthropic")
+		return "", fmt.Errorf(errEmptyContentAnthropic)
 	}
 
 	return anthropicResp.Content[0].Text, nil
