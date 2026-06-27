@@ -1,0 +1,28 @@
+{
+  "project_name": "test-project",
+  "provider": "mock",
+  "model": "mock-model",
+  "created_at": "2026-06-27T19:59:38.0801357+07:00",
+  "updated_at": "2026-06-27T19:59:38.0822536+07:00",
+  "history": null,
+  "facts": {
+    "functional": "",
+    "structural": "",
+    "security": "",
+    "compliance": ""
+  },
+  "scores": {
+    "functional": 25,
+    "structural": 15,
+    "security": 10,
+    "compliance": 5
+  },
+  "rationales": {
+    "functional": "Initial target vision is clear, but core user flows are undefined.",
+    "structural": "High-level components are implied; database schema is unmapped.",
+    "security": "Basic auth is assumed but user session duration and details are missing.",
+    "compliance": "Compliance scope (e.g. GDPR, local storage) is not established."
+  },
+  "last_question": "What are the primary user roles and functional workflows of this application?",
+  "total_tokens_used": 470
+}
