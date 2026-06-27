@@ -34,6 +34,50 @@ type Config struct {
 	Mock     bool
 }
 
+func getAPIKeyForProvider(provider string) string {
+	switch provider {
+	case ProviderGemini:
+		return os.Getenv("GEMINI_API_KEY")
+	case ProviderOpenAI:
+		return os.Getenv("OPENAI_API_KEY")
+	case ProviderAnthropic:
+		return os.Getenv("ANTHROPIC_API_KEY")
+	case ProviderOpenRouter:
+		return os.Getenv("OPENROUTER_API_KEY")
+	}
+	return ""
+}
+
+func autoDetectProvider() (string, string) {
+	if k := os.Getenv("GEMINI_API_KEY"); k != "" {
+		return ProviderGemini, k
+	}
+	if k := os.Getenv("OPENAI_API_KEY"); k != "" {
+		return ProviderOpenAI, k
+	}
+	if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
+		return ProviderAnthropic, k
+	}
+	if k := os.Getenv("OPENROUTER_API_KEY"); k != "" {
+		return ProviderOpenRouter, k
+	}
+	return "", ""
+}
+
+func getDefaultModel(provider string) string {
+	switch provider {
+	case ProviderGemini:
+		return DefaultModelGemini
+	case ProviderOpenAI:
+		return DefaultModelOpenAI
+	case ProviderAnthropic:
+		return DefaultModelAnthropic
+	case ProviderOpenRouter:
+		return DefaultModelOpenRouter
+	}
+	return ""
+}
+
 // LoadConfig resolves application configuration based on flags and env variables.
 func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, error) {
 	cfg := &Config{
@@ -46,62 +90,25 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 		return cfg, nil
 	}
 
-	// Auto-detect or use override
-	geminiKey := os.Getenv("GEMINI_API_KEY")
-	openaiKey := os.Getenv("OPENAI_API_KEY")
-	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
-	openrouterKey := os.Getenv("OPENROUTER_API_KEY")
-
 	if providerOverride != "" {
 		cfg.Provider = providerOverride
-		switch providerOverride {
-		case ProviderGemini:
-			cfg.APIKey = geminiKey
-		case ProviderOpenAI:
-			cfg.APIKey = openaiKey
-		case ProviderAnthropic:
-			cfg.APIKey = anthropicKey
-		case ProviderOpenRouter:
-			cfg.APIKey = openrouterKey
-		default:
-			return nil, fmt.Errorf("unsupported provider: %s", providerOverride)
-		}
+		cfg.APIKey = getAPIKeyForProvider(providerOverride)
 		if cfg.APIKey == "" {
 			return nil, fmt.Errorf("API key not set for specified provider %s", providerOverride)
 		}
 	} else {
-		// Auto-detect precedence: Gemini > OpenAI > Anthropic > OpenRouter
-		if geminiKey != "" {
-			cfg.Provider = ProviderGemini
-			cfg.APIKey = geminiKey
-		} else if openaiKey != "" {
-			cfg.Provider = ProviderOpenAI
-			cfg.APIKey = openaiKey
-		} else if anthropicKey != "" {
-			cfg.Provider = ProviderAnthropic
-			cfg.APIKey = anthropicKey
-		} else if openrouterKey != "" {
-			cfg.Provider = ProviderOpenRouter
-			cfg.APIKey = openrouterKey
-		} else {
+		p, k := autoDetectProvider()
+		if p == "" {
 			return nil, fmt.Errorf("no API keys found in environment. Please set GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY")
 		}
+		cfg.Provider = p
+		cfg.APIKey = k
 	}
 
-	// Assign models (override or default)
 	if modelOverride != "" {
 		cfg.Model = modelOverride
 	} else {
-		switch cfg.Provider {
-		case ProviderGemini:
-			cfg.Model = DefaultModelGemini
-		case ProviderOpenAI:
-			cfg.Model = DefaultModelOpenAI
-		case ProviderAnthropic:
-			cfg.Model = DefaultModelAnthropic
-		case ProviderOpenRouter:
-			cfg.Model = DefaultModelOpenRouter
-		}
+		cfg.Model = getDefaultModel(cfg.Provider)
 	}
 
 	return cfg, nil

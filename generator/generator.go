@@ -37,6 +37,7 @@ type ProgressEvent struct {
 	Status  string `json:"status,omitempty"` // pending, skipped, synthesizing, correcting, auditing, refining, done, failed, started, completed, compiling_report, compiling_metadata
 	Details string `json:"details,omitempty"`
 	Message string `json:"message,omitempty"`
+	ValLogs string `json:"val_logs,omitempty"`
 }
 
 func sendProgress(progress chan<- string, event ProgressEvent) {
@@ -424,6 +425,38 @@ func runExternalValidator(ctx context.Context, cmdStr string, filePath string) (
 	return output, nil
 }
 
+func updateComplianceResultWithValidationError(res *gateway.ComplianceResult, valErr error, valOutput string) {
+	if valErr == nil {
+		return
+	}
+	res.Compliant = false
+	res.Score = 0
+	errorMsg := valErr.Error()
+	if strings.TrimSpace(valOutput) != "" {
+		errorMsg = strings.TrimSpace(valOutput)
+	}
+	if res.Feedback != "" {
+		res.Feedback = fmt.Sprintf("%s\nExternal validator failed:\n%s", res.Feedback, errorMsg)
+	} else {
+		res.Feedback = fmt.Sprintf("External validator failed:\n%s", errorMsg)
+	}
+}
+
+func getOrInsertResult(stdID string, resultsMap map[string]*gateway.ComplianceResult, evalResults *[]gateway.ComplianceResult) *gateway.ComplianceResult {
+	res, exists := resultsMap[stdID]
+	if !exists {
+		newRes := gateway.ComplianceResult{
+			StandardID: stdID,
+			Score:      100,
+			Compliant:  true,
+		}
+		*evalResults = append(*evalResults, newRes)
+		res = &(*evalResults)[len(*evalResults)-1]
+		resultsMap[stdID] = res
+	}
+	return res
+}
+
 func (fg *fileGenerator) runExternalValidators(evalResults []gateway.ComplianceResult, standards []config.Standard, filePath string) ([]gateway.ComplianceResult, error) {
 	resultsMap := make(map[string]*gateway.ComplianceResult)
 	for i := range evalResults {
@@ -436,33 +469,30 @@ func (fg *fileGenerator) runExternalValidators(evalResults []gateway.ComplianceR
 			continue
 		}
 
+		sendProgress(fg.progress, ProgressEvent{
+			File:    filepath.Base(filePath),
+			Status:  "auditing",
+			ValLogs: fmt.Sprintf("[%s] Running validator: %s", std.ID, std.ValidatorCmd),
+		})
+
 		valOutput, valErr := runExternalValidator(fg.ctx, std.ValidatorCmd, filePath)
 
-		res, exists := resultsMap[std.ID]
-		if !exists {
-			newRes := gateway.ComplianceResult{
-				StandardID: std.ID,
-				Score:      100,
-				Compliant:  true,
-			}
-			evalResults = append(evalResults, newRes)
-			res = &evalResults[len(evalResults)-1]
-			resultsMap[std.ID] = res
-		}
-
+		statusMsg := "SUCCESS"
 		if valErr != nil {
-			res.Compliant = false
-			res.Score = 0
-			errorMsg := valErr.Error()
-			if strings.TrimSpace(valOutput) != "" {
-				errorMsg = strings.TrimSpace(valOutput)
-			}
-			if res.Feedback != "" {
-				res.Feedback = fmt.Sprintf("%s\nExternal validator failed:\n%s", res.Feedback, errorMsg)
-			} else {
-				res.Feedback = fmt.Sprintf("External validator failed:\n%s", errorMsg)
-			}
+			statusMsg = "FAILED"
 		}
+		logContent := fmt.Sprintf("[%s] Status: %s", std.ID, statusMsg)
+		if strings.TrimSpace(valOutput) != "" {
+			logContent = fmt.Sprintf("%s\n%s", logContent, strings.TrimSpace(valOutput))
+		}
+		sendProgress(fg.progress, ProgressEvent{
+			File:    filepath.Base(filePath),
+			Status:  "auditing",
+			ValLogs: logContent,
+		})
+
+		res := getOrInsertResult(std.ID, resultsMap, &evalResults)
+		updateComplianceResultWithValidationError(res, valErr, valOutput)
 	}
 	return evalResults, nil
 }

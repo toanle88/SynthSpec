@@ -9,6 +9,8 @@ import (
 	"github.com/toanle/synthspec/gateway"
 )
 
+const pendingStr = "⏳ Pending"
+
 func (m DashboardModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing SynthSpec Dashboard..."
@@ -108,68 +110,84 @@ func (m DashboardModel) renderSidebar() string {
 	return strings.Join(sections, "\n\n")
 }
 
-func (m DashboardModel) renderMainChat() string {
+func (m DashboardModel) renderGeneratingState() string {
 	var content []string
-
-	if m.isGenerating {
-		content = append(content, TitleStyle.Render("✨ Final Asset Synthesis in Progress"))
-		content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
-		content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Progress:"))
-		content = append(content, m.renderFileProgressList())
-		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("Status: "+m.genStatus))
-		content = append(content, "\n"+TitleStyle.Render("📋 Engineering Quality Standards Check:"))
-		content = append(content, m.renderStandardsGrid(m.width-45))
-		return strings.Join(content, "\n")
+	content = append(content, TitleStyle.Render("✨ Final Asset Synthesis in Progress"))
+	content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
+	content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Progress:"))
+	content = append(content, m.renderFileProgressList())
+	content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("Status: "+m.genStatus))
+	content = append(content, "\n"+TitleStyle.Render("📋 Engineering Quality Standards Check:"))
+	content = append(content, m.renderStandardsGrid())
+	if len(m.validatorLogs) > 0 {
+		content = append(content, "\n"+TitleStyle.Render("💻 Validator Live Console Logs:"))
+		boxContent := strings.Join(m.validatorLogs, "\n")
+		styledLogs := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#a1a1aa")).
+			Background(lipgloss.Color("#18181b")).
+			Padding(1, 2).
+			Width(m.width - 45).
+			Render(boxContent)
+		content = append(content, styledLogs)
 	}
+	return strings.Join(content, "\n")
+}
 
-	if m.isCompleted {
-		content = append(content, TitleStyle.Render("🎉 Specification Complete!"))
-		content = append(content, "\nAll requirement vectors have achieved 100% confidence and files have been generated.")
-		content = append(content, "You can still edit raw facts to regenerate, or quit:\n")
-		content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate files"))
-		content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to launch Editor & make modifications"))
-		content = append(content, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("  Press [Q] to Save & Exit CLI"))
-		content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Status:"))
-		content = append(content, m.renderFileProgressList())
-		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render(m.genStatus))
-		if m.showScorecard {
-			content = append(content, "\n"+TitleStyle.Render("📊 Final Architectural Quality Scorecard:"))
-			content = append(content, m.renderStandardsGrid(m.width-45))
-		}
-		return strings.Join(content, "\n")
+func (m DashboardModel) renderCompletedState() string {
+	var content []string
+	content = append(content, TitleStyle.Render("🎉 Specification Complete!"))
+	content = append(content, "\nAll requirement vectors have achieved 100% confidence and files have been generated.")
+	content = append(content, "You can still edit raw facts to regenerate, or quit:\n")
+	content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate files"))
+	content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to launch Editor & make modifications"))
+	content = append(content, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("  Press [Q] to Save & Exit CLI"))
+	content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Status:"))
+	content = append(content, m.renderFileProgressList())
+	content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render(m.genStatus))
+	if m.showScorecard {
+		content = append(content, "\n"+TitleStyle.Render("📊 Final Architectural Quality Scorecard:"))
+		content = append(content, m.renderStandardsGrid())
 	}
+	return strings.Join(content, "\n")
+}
 
-	// Interrogation Loop View
+func (m DashboardModel) renderInterrogationState() string {
+	var content []string
 	content = append(content, TitleStyle.Render("💬 Conversation Timeline"))
 
-	// Show last question from Oracle
 	if m.Session.LastQuestion != "" && !m.loading {
 		content = append(content, "\n"+QuestionStyle.Render("Architect's Question:"))
 		content = append(content, wrapText(m.Session.LastQuestion, m.width-45))
 	}
 
-	// Show loading spinner
 	if m.loading {
 		content = append(content, fmt.Sprintf("\n%s Architectural Reasoning in progress. Calling AI API...", m.spinner.View()))
+	} else if m.showTextInput {
+		content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.textInput.View())
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Esc to return to choices)"))
 	} else {
-		if m.showTextInput {
-			content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.textInput.View())
-			content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Esc to return to choices)"))
-		} else {
-			choices := m.getChoicesList()
-			content = append(content, "\nSelect an option:")
-			for i, choice := range choices {
-				if i == m.selectedChoiceIdx {
-					style := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
-					content = append(content, style.Render(fmt.Sprintf("  ❯ %s", choice)))
-				} else {
-					content = append(content, fmt.Sprintf("    %s", choice))
-				}
+		choices := m.getChoicesList()
+		content = append(content, "\nSelect an option:")
+		for i, choice := range choices {
+			if i == m.selectedChoiceIdx {
+				style := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+				content = append(content, style.Render(fmt.Sprintf("  ❯ %s", choice)))
+			} else {
+				content = append(content, fmt.Sprintf("    %s", choice))
 			}
 		}
 	}
-
 	return strings.Join(content, "\n")
+}
+
+func (m DashboardModel) renderMainChat() string {
+	if m.isGenerating {
+		return m.renderGeneratingState()
+	}
+	if m.isCompleted {
+		return m.renderCompletedState()
+	}
+	return m.renderInterrogationState()
 }
 
 func (m DashboardModel) renderFooter() string {
@@ -210,6 +228,40 @@ func (m DashboardModel) renderFooter() string {
 	return FooterStyle.Render(strings.Join(elements, "\n"))
 }
 
+func wrapSingleLine(line string, width int) []string {
+	if len(line) <= width {
+		return []string{line}
+	}
+
+	indent := ""
+	for _, c := range line {
+		if c == ' ' || c == '\t' {
+			indent += string(c)
+		} else {
+			break
+		}
+	}
+
+	trimmed := strings.TrimSpace(line)
+	words := strings.Fields(trimmed)
+	if len(words) == 0 {
+		return []string{indent}
+	}
+
+	var result []string
+	currentLine := indent + words[0]
+	for _, word := range words[1:] {
+		if len(currentLine)+1+len(word) > width {
+			result = append(result, currentLine)
+			currentLine = indent + word
+		} else {
+			currentLine += " " + word
+		}
+	}
+	result = append(result, currentLine)
+	return result
+}
+
 // Simple text wrapping helper
 func wrapText(text string, width int) string {
 	if width <= 0 {
@@ -218,40 +270,8 @@ func wrapText(text string, width int) string {
 	lines := strings.Split(text, "\n")
 	var result []string
 	for _, line := range lines {
-		if len(line) <= width {
-			result = append(result, line)
-			continue
-		}
-
-		// Find leading spaces to preserve indentation
-		indent := ""
-		for _, c := range line {
-			if c == ' ' || c == '\t' {
-				indent += string(c)
-			} else {
-				break
-			}
-		}
-
-		trimmed := strings.TrimSpace(line)
-		words := strings.Fields(trimmed)
-		if len(words) == 0 {
-			result = append(result, indent)
-			continue
-		}
-
-		currentLine := indent + words[0]
-		for _, word := range words[1:] {
-			if len(currentLine)+1+len(word) > width {
-				result = append(result, currentLine)
-				currentLine = indent + word
-			} else {
-				currentLine += " " + word
-			}
-		}
-		result = append(result, currentLine)
+		result = append(result, wrapSingleLine(line, width)...)
 	}
-
 	return strings.Join(result, "\n")
 }
 
@@ -263,36 +283,60 @@ var (
 	StyleError   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")) // Vibrant Red
 )
 
+func (m DashboardModel) getStandardScorecardStatus(std config.Standard) (string, lipgloss.Style) {
+	score, found := m.complianceScores[std.ID]
+	if !found {
+		return "🔴 N/A", StyleError
+	}
+	if score >= std.MinScore {
+		return fmt.Sprintf("🟢 %d%%", score), StyleSuccess
+	} else if score > 0 {
+		return fmt.Sprintf("🟡 %d%%", score), StyleWarning
+	}
+	return fmt.Sprintf("🔴 %d%%", score), StyleError
+}
+
+func isStandardFileInPast(std config.Standard, currentFileIdx int, files []string) bool {
+	for _, tf := range std.TargetFiles {
+		stdFileIdx := -1
+		for i, f := range files {
+			if f == tf {
+				stdFileIdx = i
+				break
+			}
+		}
+		if stdFileIdx >= currentFileIdx {
+			return false
+		}
+	}
+	return true
+}
+
+func checkActiveStandardStatus(std config.Standard, status string) (string, lipgloss.Style, bool) {
+	for _, tf := range std.TargetFiles {
+		if strings.Contains(status, tf) {
+			if strings.Contains(status, "Auditing") || strings.Contains(status, "Refining") || strings.Contains(status, "failed") {
+				return "🔄 Auditing", StyleInfo, true
+			}
+			return "⏳ Building", StyleMuted, true
+		}
+	}
+	return "", lipgloss.Style{}, false
+}
+
 func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss.Style) {
 	if m.showScorecard {
-		score, found := m.complianceScores[std.ID]
-		if !found {
-			return "🔴 N/A", StyleError
-		}
-		if score >= std.MinScore {
-			return fmt.Sprintf("🟢 %d%%", score), StyleSuccess
-		} else if score > 0 {
-			return fmt.Sprintf("🟡 %d%%", score), StyleWarning
-		} else {
-			return fmt.Sprintf("🔴 %d%%", score), StyleError
-		}
+		return m.getStandardScorecardStatus(std)
 	}
 
 	if !m.isGenerating {
-		return "⏳ Pending", StyleMuted
+		return pendingStr, StyleMuted
 	}
 
-	// Check if this standard targets the file currently being processed
-	for _, tf := range std.TargetFiles {
-		if strings.Contains(m.genStatus, tf) {
-			if strings.Contains(m.genStatus, "Auditing") || strings.Contains(m.genStatus, "Refining") || strings.Contains(m.genStatus, "failed") {
-				return "🔄 Auditing", StyleInfo
-			}
-			return "⏳ Building", StyleMuted
-		}
+	if statusText, style, active := checkActiveStandardStatus(std, m.genStatus); active {
+		return statusText, style
 	}
 
-	// Determine if the standard's target file is in the past
 	files := []string{
 		"01_prd_functional.md",
 		"02_system_architecture.md",
@@ -313,31 +357,17 @@ func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss
 		if strings.Contains(m.genStatus, "successfully") || strings.Contains(m.genStatus, "Compiling") || strings.Contains(m.genStatus, "audited") {
 			return "🟢 Verified", StyleSuccess
 		}
-		return "⏳ Pending", StyleMuted
+		return pendingStr, StyleMuted
 	}
 
-	isPast := true
-	for _, tf := range std.TargetFiles {
-		stdFileIdx := -1
-		for i, f := range files {
-			if f == tf {
-				stdFileIdx = i
-				break
-			}
-		}
-		if stdFileIdx >= currentFileIdx {
-			isPast = false
-		}
-	}
-
-	if isPast {
+	if isStandardFileInPast(std, currentFileIdx, files) {
 		return "🟢 Verified", StyleSuccess
 	}
 
-	return "⏳ Pending", StyleMuted
+	return pendingStr, StyleMuted
 }
 
-func (m DashboardModel) renderStandardsGrid(width int) string {
+func (m DashboardModel) renderStandardsGrid() string {
 	var leftCol []string
 	var rightCol []string
 
@@ -381,11 +411,8 @@ func (m DashboardModel) renderFileProgressList() string {
 		var style lipgloss.Style
 
 		switch status {
-		case "pending":
-			icon = "⏳ Pending"
-			style = StyleMuted
-		case "skipped":
-			icon = "🟢 Done" // "Done" or "Skipped" is cleaner, let's use Done as standard completed indicator
+		case "skipped", "done":
+			icon = "🟢 Done"
 			style = StyleSuccess
 		case "synthesizing":
 			icon = "🔄 Synthesizing"
@@ -399,14 +426,11 @@ func (m DashboardModel) renderFileProgressList() string {
 		case "refining":
 			icon = "🛠️ Refining"
 			style = StyleWarning
-		case "done":
-			icon = "🟢 Done"
-			style = StyleSuccess
 		case "failed":
 			icon = "🔴 Failed"
 			style = StyleError
 		default:
-			icon = "⏳ Pending"
+			icon = pendingStr
 			style = StyleMuted
 		}
 

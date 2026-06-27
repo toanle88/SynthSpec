@@ -524,12 +524,7 @@ func TestRunExternalValidator(t *testing.T) {
 	ctx := context.Background()
 
 	// Test success command
-	var successCmd string
-	if runtime.GOOS == "windows" {
-		successCmd = "echo success"
-	} else {
-		successCmd = "echo success"
-	}
+	successCmd := "echo success"
 
 	out, err := runExternalValidator(ctx, successCmd, tempFile.Name())
 	if err != nil {

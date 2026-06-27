@@ -73,6 +73,9 @@ type DashboardModel struct {
 	// Choice selection state
 	selectedChoiceIdx int
 	showTextInput     bool
+
+	// External validator logs
+	validatorLogs     []string
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -270,6 +273,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.genChan = make(chan string, 10)
 					m.genFileStatuses = make(map[string]string)
 					m.genFileDetails = make(map[string]string)
+					m.validatorLogs = nil
 					for _, f := range m.genFiles {
 						m.genFileStatuses[f] = "pending"
 					}
@@ -293,13 +297,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if !m.showTextInput {
 				key := string(msg.Runes)
-				if key == "k" {
+				switch key {
+				case "k":
 					choices := m.getChoicesList()
 					m.selectedChoiceIdx--
 					if m.selectedChoiceIdx < 0 {
 						m.selectedChoiceIdx = len(choices) - 1
 					}
-				} else if key == "j" {
+				case "j":
 					choices := m.getChoicesList()
 					m.selectedChoiceIdx++
 					if m.selectedChoiceIdx >= len(choices) {
@@ -352,6 +357,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.genChan = make(chan string, 10)
 			m.genFileStatuses = make(map[string]string)
 			m.genFileDetails = make(map[string]string)
+			m.validatorLogs = nil
 			for _, f := range m.genFiles {
 				m.genFileStatuses[f] = "pending"
 			}
@@ -392,6 +398,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.genFiles = strings.Split(ev.Details, ",")
 				m.genFileStatuses = make(map[string]string)
 				m.genFileDetails = make(map[string]string)
+				m.validatorLogs = nil
 				for _, f := range m.genFiles {
 					m.genFileStatuses[f] = "pending"
 				}
@@ -405,7 +412,20 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.genFileStatuses[ev.File] = ev.Status
 				m.genFileDetails[ev.File] = ev.Details
 			}
-			m.genStatus = ev.Message
+			if ev.ValLogs != "" {
+				lines := strings.Split(ev.ValLogs, "\n")
+				for _, l := range lines {
+					if strings.TrimSpace(l) != "" {
+						m.validatorLogs = append(m.validatorLogs, l)
+					}
+				}
+				if len(m.validatorLogs) > 10 {
+					m.validatorLogs = m.validatorLogs[len(m.validatorLogs)-10:]
+				}
+			}
+			if ev.Message != "" {
+				m.genStatus = ev.Message
+			}
 		} else {
 			m.genStatus = string(msg)
 		}
