@@ -28,7 +28,7 @@ func Execute() error {
 
 func init() {
 	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&providerFlag, "provider", "p", "", "Explicitly override LLM provider (gemini, openai, anthropic)")
+	rootCmd.PersistentFlags().StringVarP(&providerFlag, "provider", "p", "", "Explicitly override LLM provider (gemini, openai, anthropic, openrouter)")
 	rootCmd.PersistentFlags().StringVarP(&modelFlag, "model", "m", "", "Explicitly override LLM model")
 	rootCmd.PersistentFlags().BoolVar(&mockFlag, "mock", false, "Use mock LLM provider for local testing and development")
 	rootCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Override output directory for generated assets")

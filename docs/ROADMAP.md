@@ -5,8 +5,8 @@ This document tracks current priorities, upcoming milestones, and development st
 ## Milestones
 
 ### Milestone 1: Core CLI & LLM Gateway (v0.1.0) ── [x] Completed
-- [x] Abstract Gateway interface supporting multiple providers (Gemini, OpenAI, Anthropic).
-- [x] Environment variable authentication logic (`GEMINI_API_KEY`, `OPENAI_API_KEY`, etc.).
+- [x] Abstract Gateway interface supporting multiple providers (Gemini, OpenAI, Anthropic, OpenRouter).
+- [x] Environment variable authentication logic (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, etc.).
 - [x] Initial Go CLI setup with commands `init` and `resume`.
 
 ### Milestone 2: Asynchronous TUI & State Controller (v0.2.0) ── [x] Completed

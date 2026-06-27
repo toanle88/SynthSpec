@@ -8,6 +8,7 @@ The system supports secure execution via locally defined environment variables f
 - **Gemini**: `GEMINI_API_KEY`
 - **OpenAI**: `OPENAI_API_KEY`
 - **Anthropic**: `ANTHROPIC_API_KEY`
+- **OpenRouter**: `OPENROUTER_API_KEY`
 
 Routing is determined dynamically via CLI flags (e.g., `--model gemini-1.5-pro` or `--model gpt-4o`). The Gateway abstracts away:
 - System prompt payload formatting.

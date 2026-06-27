@@ -39,6 +39,8 @@ var initCmd = &cobra.Command{
 			gw = gateway.NewOpenAIGateway(cfg.APIKey, cfg.Model)
 		case config.ProviderAnthropic:
 			gw = gateway.NewAnthropicGateway(cfg.APIKey, cfg.Model)
+		case config.ProviderOpenRouter:
+			gw = gateway.NewOpenRouterGateway(cfg.APIKey, cfg.Model)
 		default:
 			return fmt.Errorf("unrecognized provider: %s", cfg.Provider)
 		}
@@ -96,6 +98,8 @@ func getGatewayForSession(sess *state.Session, forceMock bool) (gateway.Gateway,
 		return gateway.NewOpenAIGateway(cfg.APIKey, cfg.Model), nil
 	case config.ProviderAnthropic:
 		return gateway.NewAnthropicGateway(cfg.APIKey, cfg.Model), nil
+	case config.ProviderOpenRouter:
+		return gateway.NewOpenRouterGateway(cfg.APIKey, cfg.Model), nil
 	default:
 		return nil, errors.New("unsupported provider in session")
 	}

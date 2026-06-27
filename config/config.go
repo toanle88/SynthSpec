@@ -10,18 +10,20 @@ import (
 
 // Supported Providers
 const (
-	ProviderGemini    = "gemini"
-	ProviderOpenAI    = "openai"
-	ProviderAnthropic = "anthropic"
-	ProviderMock      = "mock"
+	ProviderGemini     = "gemini"
+	ProviderOpenAI     = "openai"
+	ProviderAnthropic  = "anthropic"
+	ProviderOpenRouter = "openrouter"
+	ProviderMock       = "mock"
 )
 
 // Default Models
 const (
-	DefaultModelGemini    = "gemini-2.5-pro"
-	DefaultModelOpenAI    = "gpt-4o"
-	DefaultModelAnthropic = "claude-3-5-sonnet"
-	DefaultModelMock      = "mock-model"
+	DefaultModelGemini     = "gemini-2.5-pro"
+	DefaultModelOpenAI     = "gpt-4o"
+	DefaultModelAnthropic  = "claude-3-5-sonnet"
+	DefaultModelOpenRouter = "meta-llama/llama-3.1-405b-instruct"
+	DefaultModelMock       = "mock-model"
 )
 
 // Config holds the application configuration
@@ -48,6 +50,7 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	openaiKey := os.Getenv("OPENAI_API_KEY")
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
+	openrouterKey := os.Getenv("OPENROUTER_API_KEY")
 
 	if providerOverride != "" {
 		cfg.Provider = providerOverride
@@ -58,6 +61,8 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 			cfg.APIKey = openaiKey
 		case ProviderAnthropic:
 			cfg.APIKey = anthropicKey
+		case ProviderOpenRouter:
+			cfg.APIKey = openrouterKey
 		default:
 			return nil, fmt.Errorf("unsupported provider: %s", providerOverride)
 		}
@@ -65,7 +70,7 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 			return nil, fmt.Errorf("API key not set for specified provider %s", providerOverride)
 		}
 	} else {
-		// Auto-detect precedence: Gemini > OpenAI > Anthropic
+		// Auto-detect precedence: Gemini > OpenAI > Anthropic > OpenRouter
 		if geminiKey != "" {
 			cfg.Provider = ProviderGemini
 			cfg.APIKey = geminiKey
@@ -75,8 +80,11 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 		} else if anthropicKey != "" {
 			cfg.Provider = ProviderAnthropic
 			cfg.APIKey = anthropicKey
+		} else if openrouterKey != "" {
+			cfg.Provider = ProviderOpenRouter
+			cfg.APIKey = openrouterKey
 		} else {
-			return nil, fmt.Errorf("no API keys found in environment. Please set GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY")
+			return nil, fmt.Errorf("no API keys found in environment. Please set GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY")
 		}
 	}
 
@@ -91,6 +99,8 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 			cfg.Model = DefaultModelOpenAI
 		case ProviderAnthropic:
 			cfg.Model = DefaultModelAnthropic
+		case ProviderOpenRouter:
+			cfg.Model = DefaultModelOpenRouter
 		}
 	}
 

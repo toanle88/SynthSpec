@@ -15,9 +15,11 @@ This runbook outlines operational procedures for development, troubleshooting lo
    ```bash
    # Windows (PowerShell)
    $env:GEMINI_API_KEY="your-key-here"
+   $env:OPENROUTER_API_KEY="your-key-here"
 
    # macOS / Linux
    export GEMINI_API_KEY="your-key-here"
+   export OPENROUTER_API_KEY="your-key-here"
    ```
 
 ## Troubleshooting Local Session Corruptions

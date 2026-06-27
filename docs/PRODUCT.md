@@ -13,7 +13,7 @@ SynthSpec is a privacy-first, open-source command-line utility that transforms v
 ### Core Workflows
 
 #### 1. Initialization and Authentication
-The application must support secure execution via locally defined environment variables (`GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`).
+The application must support secure execution via locally defined environment variables (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENROUTER_API_KEY`).
 
 Running `synthspec init <project_name>` sets up an isolated directory configuration under `./synthspec/<project_name>/` containing state preservation files.
 
@@ -35,7 +35,7 @@ Upon hitting full confidence, the interface exposes an action prompt allowing th
 
 | ID | Feature Name | Description | Acceptance Criteria |
 | :--- | :--- | :--- | :--- |
-| **FR-101** | Multi-Model Routing | Dynamically interface with different upstream LLMs via uniform configurations. | System switches between Gemini, OpenAI, and Anthropic providers without code modification using an abstracted gateway layer. |
+| **FR-101** | Multi-Model Routing | Dynamically interface with different upstream LLMs via uniform configurations. | System switches between Gemini, OpenAI, Anthropic, and OpenRouter providers without code modification using an abstracted gateway layer. |
 | **FR-102** | State Persistence | Save conversational progress natively to protect against accidental session drops. | Creates a local `.synthspec/session.json` file on every turn; running `synthspec resume` fully reinstates the TUI state. |
 | **FR-103** | Interactive TUI | Provide visual feedback indicators instead of standard linear scrolling logs. | Render distinct interface zones for the current question panel, user prompt input field, and live categorical completion meters. |
 | **FR-104** | Direct Editor Link | Allow users to quickly alter raw requirements text mid-session. | Typing `:edit` forks a subprocess opening the system default text editor (`$EDITOR`) to modify the compiled context JSON. |

@@ -74,6 +74,9 @@ export OPENAI_API_KEY="your-openai-key"
 
 # Anthropic
 export ANTHROPIC_API_KEY="your-anthropic-key"
+
+# OpenRouter
+export OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
 **On Windows (PowerShell):**
@@ -86,6 +89,9 @@ $env:OPENAI_API_KEY="your-openai-key"
 
 # Anthropic
 $env:ANTHROPIC_API_KEY="your-anthropic-key"
+
+# OpenRouter
+$env:OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
 ### Run with Live LLM Provider (Default)
