@@ -9,35 +9,19 @@ import (
 )
 
 func TestPerformStaticValidation(t *testing.T) {
-	t.Run("Valid OpenAPI YAML", func(t *testing.T) {
-		validYAML := "openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0"
-		err := PerformStaticValidation("04_openapi_contract.yaml", validYAML)
+	t.Run("Valid non-empty Markdown", func(t *testing.T) {
+		content := "# API Guide"
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
 		if err != nil {
 			t.Errorf("expected no error, got: %v", err)
 		}
 	})
 
-	t.Run("Invalid OpenAPI YAML", func(t *testing.T) {
-		invalidYAML := "openapi: : 3.0.0"
-		err := PerformStaticValidation("04_openapi_contract.yaml", invalidYAML)
+	t.Run("Invalid empty Markdown", func(t *testing.T) {
+		content := "   "
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
 		if err == nil {
-			t.Error("expected syntax error, got nil")
-		}
-	})
-
-	t.Run("Valid Backlog JSON", func(t *testing.T) {
-		validJSON := `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TS-1", "summary": "S1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`
-		err := PerformStaticValidation("05_engineering_backlog.json", validJSON)
-		if err != nil {
-			t.Errorf("expected no error, got: %v", err)
-		}
-	})
-
-	t.Run("Invalid Backlog JSON", func(t *testing.T) {
-		invalidJSON := `{"epics": []}`
-		err := PerformStaticValidation("05_engineering_backlog.json", invalidJSON)
-		if err == nil {
-			t.Error("expected error for empty epics backlog, got nil")
+			t.Error("expected empty content error, got nil")
 		}
 	})
 }

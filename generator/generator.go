@@ -130,8 +130,8 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		"01_prd_functional.md",
 		"02_system_architecture.md",
 		"03_security_threat_model.md",
-		"04_openapi_contract.yaml",
-		"05_engineering_backlog.json",
+		"04_api_architecture_integration.md",
+		"05_coding_standards_guidelines.md",
 	}
 
 	var fileCompliances []FileCompliance
@@ -287,9 +287,6 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		})
 
 		// Write final generated content
-		if fileName == "05_engineering_backlog.json" {
-			content = sanitizeJSONOutput(content)
-		}
 		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to write %s output file: %w", fileName, err)
 		}

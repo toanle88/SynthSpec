@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -152,62 +151,41 @@ graph TD
 %s
 `, facts.Security), nil
 
-	case "04_openapi_contract.yaml":
-		return `openapi: 3.0.3
-info:
-  title: SynthSpec Mock API
-  version: 1.0.0
-  description: Automatically generated OpenAPI contract.
-paths:
-  /api/v1/auth:
-    post:
-      summary: Authenticate User
-      responses:
-        '200':
-          description: Successful login
-  /api/v1/projects:
-    get:
-      summary: List Projects
-      responses:
-        '200':
-          description: List of projects
-`, nil
+	case "04_api_architecture_integration.md":
+		return fmt.Sprintf(`# API Architecture & Integration Guide
 
-	case "05_engineering_backlog.json":
-		backlog := map[string]interface{}{
-			"epics": []map[string]interface{}{
-				{
-					"id":          "EPIC-001",
-					"title":       "Core Foundation",
-					"description": "Establish basic project structure and authentication middleware.",
-					"tasks": []map[string]interface{}{
-						{
-							"id":       "TSK-101",
-							"summary":  "Setup database migrations",
-							"details":  "Establish schema files and table structures.",
-							"acceptance_criteria": []string{
-								"All migrations run successfully in local dev environment.",
-								"Rollback scripts verified.",
-							},
-						},
-						{
-							"id":       "TSK-102",
-							"summary":  "Implement JWT authentication middleware",
-							"details":  "Verify authorization headers and extract tenant context.",
-							"acceptance_criteria": []string{
-								"Reject requests with missing or expired tokens with 401.",
-								"Inject verified tenant ID into request context.",
-							},
-						},
-					},
-				},
-			},
-		}
-		data, err := json.MarshalIndent(backlog, "", "  ")
-		if err != nil {
-			return "", err
-		}
-		return string(data), nil
+* **Status**: 🟢 Approved
+
+## 🌐 Transport & Protocol Standards
+RESTful routing over HTTPS. JSON payload format.
+
+## 🔄 Contract Lifecycle Management
+Semantic versioning inside URL prefix.
+
+## 📦 Global Payload Serialization
+ISO 8601 timestamps and camelCase naming conventions.
+
+## 🛠️ Cross-Cutting Concerns
+Validation and rate limiting enabled.
+`), nil
+
+	case "05_coding_standards_guidelines.md":
+		return fmt.Sprintf(`# Coding Standards & Guidelines
+
+* **Status**: 🟢 Approved
+
+## 📂 Directory & Module Topography
+Visual directory layout and layer division.
+
+## 🏗️ Architectural Pattern Enforcement
+Strict dependency injection and repository patterns.
+
+## 🧪 Testing Strategy & Coverage Gates
+Integration testing with mock interfaces. 80%% code coverage gate.
+
+## 🧹 Linting & Static Analysis Rules
+Configured strict rules.
+`), nil
 
 	default:
 		return "", fmt.Errorf("unknown file: %s", fileName)
@@ -236,7 +214,7 @@ func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, f
 		feedback := ""
 
 		switch std.ID {
-		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support":
+		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support", "directory_module_topography", "architectural_pattern_enforcement", "transport_protocol_standards", "contract_lifecycle_management":
 			score = 100
 			compliant = true
 			feedback = fmt.Sprintf("Successfully implemented %s.", std.Name)
@@ -276,32 +254,6 @@ func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileC
 		ids = append(ids, std.ID)
 	}
 	fixMsg := fmt.Sprintf("refined Fix: compliant with %s", strings.Join(ids, ", "))
-
-	if strings.HasSuffix(fileName, ".yaml") || strings.HasSuffix(fileName, ".yml") {
-		return fmt.Sprintf("%s\n# %s\n", fileContent, fixMsg), nil
-	}
-
-	if strings.HasSuffix(fileName, ".json") {
-		content := strings.TrimSpace(fileContent)
-		if strings.HasPrefix(content, "```") {
-			if idx := strings.Index(content, "\n"); idx != -1 {
-				content = content[idx+1:]
-			}
-			if strings.HasSuffix(content, "```") {
-				content = content[:len(content)-3]
-			}
-			content = strings.TrimSpace(content)
-		}
-
-		var jsonObj map[string]interface{}
-		if err := json.Unmarshal([]byte(content), &jsonObj); err == nil {
-			jsonObj["compliance_refinement"] = fixMsg
-			if bytes, marshalErr := json.MarshalIndent(jsonObj, "", "  "); marshalErr == nil {
-				return string(bytes), nil
-			}
-		}
-		return fileContent, nil
-	}
 
 	return fmt.Sprintf("%s\n\n<!-- %s -->\n", fileContent, fixMsg), nil
 }

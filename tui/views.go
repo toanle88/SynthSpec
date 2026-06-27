@@ -293,8 +293,8 @@ func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss
 		"01_prd_functional.md",
 		"02_system_architecture.md",
 		"03_security_threat_model.md",
-		"04_openapi_contract.yaml",
-		"05_engineering_backlog.json",
+		"04_api_architecture_integration.md",
+		"05_coding_standards_guidelines.md",
 	}
 
 	currentFileIdx := -1

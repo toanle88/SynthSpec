@@ -236,8 +236,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 	t.Run("All success first attempt", func(t *testing.T) {
 		tg := &TestGateway{
 			responses: map[string][]string{
-				"05_engineering_backlog.json": {
-					`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
+				"05_coding_standards_guidelines.md": {
+					`# Coding Guidelines`,
 				},
 			},
 			callCounts: make(map[string]int),
@@ -257,8 +257,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 			"01_prd_functional.md",
 			"02_system_architecture.md",
 			"03_security_threat_model.md",
-			"04_openapi_contract.yaml",
-			"05_engineering_backlog.json",
+			"04_api_architecture_integration.md",
+			"05_coding_standards_guidelines.md",
 			".synthspec-meta.json",
 		}
 		for _, f := range files {
@@ -268,8 +268,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 			}
 		}
 
-		if tg.callCounts["05_engineering_backlog.json"] != 1 {
-			t.Errorf("expected 1 call, got %d", tg.callCounts["05_engineering_backlog.json"])
+		if tg.callCounts["05_coding_standards_guidelines.md"] != 1 {
+			t.Errorf("expected 1 call, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
 		}
 	})
 
@@ -279,9 +279,9 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		os.MkdirAll(tempDir, 0755)
 		tg := &TestGateway{
 			responses: map[string][]string{
-				"05_engineering_backlog.json": {
+				"05_coding_standards_guidelines.md": {
 					"ERROR:timeout",
-					`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
+					`# Coding Guidelines`,
 				},
 			},
 			callCounts: make(map[string]int),
@@ -295,8 +295,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 
 		for range progress {}
 
-		if tg.callCounts["05_engineering_backlog.json"] != 2 {
-			t.Errorf("expected 2 calls (1 retry), got %d", tg.callCounts["05_engineering_backlog.json"])
+		if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
+			t.Errorf("expected 2 calls (1 retry), got %d", tg.callCounts["05_coding_standards_guidelines.md"])
 		}
 	})
 
@@ -306,9 +306,9 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		os.MkdirAll(tempDir, 0755)
 		tg := &TestGateway{
 			responses: map[string][]string{
-				"05_engineering_backlog.json": {
-					`{"epics": []}`, // fails validation
-					`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
+				"05_coding_standards_guidelines.md": {
+					`   `, // fails validation (empty/whitespace)
+					`# Coding Guidelines`,
 				},
 			},
 			callCounts: make(map[string]int),
@@ -322,8 +322,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 
 		for range progress {}
 
-		if tg.callCounts["05_engineering_backlog.json"] != 2 {
-			t.Errorf("expected 2 calls, got %d", tg.callCounts["05_engineering_backlog.json"])
+		if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
+			t.Errorf("expected 2 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
 		}
 	})
 
@@ -333,10 +333,10 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		os.MkdirAll(tempDir, 0755)
 		tg := &TestGateway{
 			responses: map[string][]string{
-				"05_engineering_backlog.json": {
-					`{"epics": []}`,
-					`{"epics": []}`,
-					`{"epics": []}`,
+				"05_coding_standards_guidelines.md": {
+					`   `,
+					`   `,
+					`   `,
 				},
 			},
 			callCounts: make(map[string]int),
@@ -350,8 +350,8 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 
 		for range progress {}
 
-		if tg.callCounts["05_engineering_backlog.json"] != 10 {
-			t.Errorf("expected 10 calls, got %d", tg.callCounts["05_engineering_backlog.json"])
+		if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
+			t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
 		}
 	})
 
@@ -388,11 +388,9 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		// 2. Resume with a healthy gateway
 		tg2 := &TestGateway{
 			responses: map[string][]string{
-				"03_security_threat_model.md": {"Threat model content"},
-				"04_openapi_contract.yaml":    {"openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}"},
-				"05_engineering_backlog.json": {
-					`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
-				},
+				"03_security_threat_model.md":       {"Threat model content"},
+				"04_api_architecture_integration.md": {"# API Integration Guide"},
+				"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
 			},
 			callCounts: make(map[string]int),
 		}
@@ -440,13 +438,11 @@ func TestResumableMidLoop(t *testing.T) {
 
 	tg := &TestGateway{
 		responses: map[string][]string{
-			"01_prd_functional.md":        {"PRD content refined"},
-			"02_system_architecture.md":   {"Arch content"},
-			"03_security_threat_model.md": {"Threat model content"},
-			"04_openapi_contract.yaml":    {"openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}"},
-			"05_engineering_backlog.json": {
-				`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
-			},
+			"01_prd_functional.md":              {"PRD content refined"},
+			"02_system_architecture.md":         {"Arch content"},
+			"03_security_threat_model.md":       {"Threat model content"},
+			"04_api_architecture_integration.md": {"# API Integration Guide"},
+			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
 		},
 		callCounts: make(map[string]int),
 	}

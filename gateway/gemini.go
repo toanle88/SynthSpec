@@ -202,13 +202,10 @@ func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 		prompt = "Write a high-level System Architecture specification markdown file. Detail the component layout, backend layer division, API routing logic, database schema design (include raw SQL tables), and a Mermaid.js diagram showing workflow sequence/architecture. Use these facts:\n"
 	case "03_security_threat_model.md":
 		prompt = "Write a detailed Security & Threat Model markdown file. Perform a STRIDE threat modeling analysis. Map identified threats (at least 5) to mitigations in a clean markdown table. Detail input validation, timeout configurations, and cryptographic standards. Use these facts:\n"
-	case "04_openapi_contract.yaml":
-		prompt = "Write a complete, valid OpenAPI v3.0 REST API specification contract in YAML format. It must outline authentications, request parameters, response models, error states, and endpoints for core workflows. Do NOT include markdown backticks. Output ONLY the raw YAML. Use these facts:\n"
-	case "05_engineering_backlog.json":
-		prompt = `Generate a valid JSON document matching the Engineering Backlog schema.
-The schema requires an object with a root key "epics" containing an array of epics. Each epic has id, title, description, and "tasks". Each task has id, summary, details, and "acceptance_criteria" (array of strings).
-Do NOT include markdown backticks. Output ONLY the raw JSON. Use these facts:
-`
+	case "04_api_architecture_integration.md":
+		prompt = "Write a detailed API Architecture & Integration Guide markdown file. Define transport & protocol standards (e.g., RESTful naming, JSON-RPC, or gRPC), contract lifecycle management (API versioning, documentation policies), global payload serialization (data transforms, ISO 8601 datetimes, null handling, casing), and cross-cutting concerns (middleware layout, validation, idempotency, rate limiting, error responses). Use these facts:\n"
+	case "05_coding_standards_guidelines.md":
+		prompt = "Write a comprehensive Coding Standards & Guidelines markdown file. Include directory & module topography (directory map of logic, adapters, entry points, utilities), architectural pattern enforcement (e.g., Repository, CQRS, Dependency Injection), testing strategy & coverage gates (mock interfaces, integration boundaries, coverage percentages), and linting & static analysis rules (formatting, complexity, forbidden patterns). Use these facts:\n"
 	default:
 		return "", fmt.Errorf("unknown file: %s", fileName)
 	}
@@ -228,13 +225,6 @@ Do NOT include markdown backticks. Output ONLY the raw JSON. Use these facts:
 			Parts: []geminiPart{{Text: "You are a senior solutions architect. Write detailed, enterprise-grade specification files based on the facts provided. Return the exact file content and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."}},
 		},
 		Contents: contents,
-	}
-
-	// For JSON file, enforce json output
-	if fileName == "05_engineering_backlog.json" {
-		reqBody.GenerationConfig = &geminiConfig{
-			ResponseMimeType: "application/json",
-		}
 	}
 
 	payload, err := json.Marshal(reqBody)

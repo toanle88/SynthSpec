@@ -7,7 +7,6 @@ import (
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
-	"gopkg.in/yaml.v3"
 )
 
 // FileCompliance represents the results of auditing a single generated file
@@ -125,15 +124,9 @@ func GenerateComplianceReport(projectName string, fileAudits []FileCompliance, s
 // PerformStaticValidation checks file syntax correctness
 func PerformStaticValidation(fileName string, content string) error {
 	switch fileName {
-	case "04_openapi_contract.yaml":
-		var y map[string]interface{}
-		if err := yaml.Unmarshal([]byte(content), &y); err != nil {
-			return fmt.Errorf("invalid YAML syntax: %w", err)
-		}
-	case "05_engineering_backlog.json":
-		sanitized := sanitizeJSONOutput(content)
-		if err := validateBacklog(sanitized); err != nil {
-			return fmt.Errorf("invalid Backlog JSON schema: %w", err)
+	case "04_api_architecture_integration.md", "05_coding_standards_guidelines.md":
+		if strings.TrimSpace(content) == "" {
+			return fmt.Errorf("generated file content is empty")
 		}
 	}
 	return nil
