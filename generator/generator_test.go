@@ -221,7 +221,7 @@ func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, file
 }
 
 
-func TestGenerateWithRetryAndValidation(t *testing.T) {
+func TestGenerate_AllSuccess(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -233,194 +233,235 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		Provider:    "test-provider",
 	}
 
-	t.Run("All success first attempt", func(t *testing.T) {
-		tg := &TestGateway{
-			responses: map[string][]string{
-				"05_coding_standards_guidelines.md": {
-					`# Coding Guidelines`,
-				},
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"05_coding_standards_guidelines.md": {
+				`# Coding Guidelines`,
 			},
-			callCounts: make(map[string]int),
-		}
+		},
+		callCounts: make(map[string]int),
+	}
 
-		progress := make(chan string, 20)
-		go func() {
-			for range progress {}
-		}()
-		err := Generate(context.Background(), tg, sess, tempDir, progress)
-		if err != nil {
-			t.Fatalf("expected success, got err: %v", err)
+	progress := make(chan string, 20)
+	go func() {
+		for range progress {
+			continue
 		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err != nil {
+		t.Fatalf("expected success, got err: %v", err)
+	}
 
-		// Verify files exist
-		files := []string{
-			"01_prd_functional.md",
-			"02_system_architecture.md",
-			"03_security_threat_model.md",
-			"04_api_architecture_integration.md",
-			"05_coding_standards_guidelines.md",
-			".synthspec-meta.json",
+	// Verify files exist
+	files := []string{
+		"01_prd_functional.md",
+		"02_system_architecture.md",
+		"03_security_threat_model.md",
+		"04_api_architecture_integration.md",
+		"05_coding_standards_guidelines.md",
+		".synthspec-meta.json",
+	}
+	for _, f := range files {
+		path := filepath.Join(tempDir, f)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected file %s to exist", f)
 		}
-		for _, f := range files {
-			path := filepath.Join(tempDir, f)
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				t.Errorf("expected file %s to exist", f)
-			}
-		}
+	}
 
-		if tg.callCounts["05_coding_standards_guidelines.md"] != 1 {
-			t.Errorf("expected 1 call, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
-		}
-	})
+	if tg.callCounts["05_coding_standards_guidelines.md"] != 1 {
+		t.Errorf("expected 1 call, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	}
+}
 
-	t.Run("Transient API failure retry", func(t *testing.T) {
-		sess.GeneratedFiles = nil
-		os.RemoveAll(tempDir)
-		os.MkdirAll(tempDir, 0755)
-		tg := &TestGateway{
-			responses: map[string][]string{
-				"05_coding_standards_guidelines.md": {
-					"ERROR:timeout",
-					`# Coding Guidelines`,
-				},
+func TestGenerate_TransientAPIFailure(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-project",
+		Provider:    "test-provider",
+	}
+
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"05_coding_standards_guidelines.md": {
+				"ERROR:timeout",
+				`# Coding Guidelines`,
 			},
-			callCounts: make(map[string]int),
-		}
+		},
+		callCounts: make(map[string]int),
+	}
 
-		progress := make(chan string, 20)
-		go func() {
-			for range progress {}
-		}()
-		err := Generate(context.Background(), tg, sess, tempDir, progress)
-		if err != nil {
-			t.Fatalf("expected success, got err: %v", err)
+	progress := make(chan string, 20)
+	go func() {
+		for range progress {
+			continue
 		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err != nil {
+		t.Fatalf("expected success, got err: %v", err)
+	}
 
-		if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
-			t.Errorf("expected 2 calls (1 retry), got %d", tg.callCounts["05_coding_standards_guidelines.md"])
-		}
-	})
+	if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
+		t.Errorf("expected 2 calls (1 retry), got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	}
+}
 
-	t.Run("Transient validation failure retry", func(t *testing.T) {
-		sess.GeneratedFiles = nil
-		os.RemoveAll(tempDir)
-		os.MkdirAll(tempDir, 0755)
-		tg := &TestGateway{
-			responses: map[string][]string{
-				"05_coding_standards_guidelines.md": {
-					`   `, // fails validation (empty/whitespace)
-					`# Coding Guidelines`,
-				},
+func TestGenerate_TransientValidationFailure(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-project",
+		Provider:    "test-provider",
+	}
+
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"05_coding_standards_guidelines.md": {
+				`   `, // fails validation (empty/whitespace)
+				`# Coding Guidelines`,
 			},
-			callCounts: make(map[string]int),
-		}
+		},
+		callCounts: make(map[string]int),
+	}
 
-		progress := make(chan string, 20)
-		go func() {
-			for range progress {}
-		}()
-		err := Generate(context.Background(), tg, sess, tempDir, progress)
-		if err != nil {
-			t.Fatalf("expected success, got err: %v", err)
+	progress := make(chan string, 20)
+	go func() {
+		for range progress {
+			continue
 		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err != nil {
+		t.Fatalf("expected success, got err: %v", err)
+	}
 
-		if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
-			t.Errorf("expected 2 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
-		}
-	})
+	if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
+		t.Errorf("expected 2 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	}
+}
 
-	t.Run("Persistent failure", func(t *testing.T) {
-		sess.GeneratedFiles = nil
-		os.RemoveAll(tempDir)
-		os.MkdirAll(tempDir, 0755)
-		tg := &TestGateway{
-			responses: map[string][]string{
-				"05_coding_standards_guidelines.md": {
-					`   `,
-					`   `,
-					`   `,
-				},
+func TestGenerate_PersistentFailure(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-project",
+		Provider:    "test-provider",
+	}
+
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"05_coding_standards_guidelines.md": {
+				`   `,
+				`   `,
+				`   `,
 			},
-			callCounts: make(map[string]int),
-		}
+		},
+		callCounts: make(map[string]int),
+	}
 
-		progress := make(chan string, 20)
-		go func() {
-			for range progress {}
-		}()
-		err := Generate(context.Background(), tg, sess, tempDir, progress)
-		if err == nil {
-			t.Fatal("expected failure, got success")
+	progress := make(chan string, 20)
+	go func() {
+		for range progress {
+			continue
 		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err == nil {
+		t.Fatal("expected failure, got success")
+	}
 
-		if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
-			t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
-		}
-	})
+	if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
+		t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	}
+}
 
-	t.Run("Resumable progress skip completed", func(t *testing.T) {
-		sess.GeneratedFiles = nil
-		os.RemoveAll(tempDir)
-		os.MkdirAll(tempDir, 0755)
+func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
-		// 1. Simulate a failure on the third file ("03_security_threat_model.md")
-		tg1 := &TestGateway{
-			responses: map[string][]string{
-				"01_prd_functional.md":        {"PRD content"},
-				"02_system_architecture.md":   {"Arch content"},
-				"03_security_threat_model.md": {"ERROR:mocked_api_failure"},
-			},
-			callCounts: make(map[string]int),
-		}
+	sess := &state.Session{
+		ProjectName: "test-project",
+		Provider:    "test-provider",
+	}
 
-		progress1 := make(chan string, 20)
-		go func() {
-			for range progress1 {}
-		}()
-		err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
-		if err1 == nil {
-			t.Fatal("expected failure on 03_security_threat_model.md, got success")
-		}
+	// 1. Simulate a failure on the third file ("03_security_threat_model.md")
+	tg1 := &TestGateway{
+		responses: map[string][]string{
+			"01_prd_functional.md":        {"PRD content"},
+			"02_system_architecture.md":   {"Arch content"},
+			"03_security_threat_model.md": {"ERROR:mocked_api_failure"},
+		},
+		callCounts: make(map[string]int),
+	}
 
-		// Verify first two files were generated and written, but not the third
-		if len(sess.GeneratedFiles) != 2 {
-			t.Errorf("expected 2 files in GeneratedFiles cache, got %d", len(sess.GeneratedFiles))
+	progress1 := make(chan string, 20)
+	go func() {
+		for range progress1 {
+			continue
 		}
-		if sess.GeneratedFiles[0].FileName != "01_prd_functional.md" || sess.GeneratedFiles[1].FileName != "02_system_architecture.md" {
-			t.Errorf("unexpected cached files list: %+v", sess.GeneratedFiles)
-		}
+	}()
+	err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
+	if err1 == nil {
+		t.Fatal("expected failure on 03_security_threat_model.md, got success")
+	}
 
-		// 2. Resume with a healthy gateway
-		tg2 := &TestGateway{
-			responses: map[string][]string{
-				"03_security_threat_model.md":       {"Threat model content"},
-				"04_api_architecture_integration.md": {"# API Integration Guide"},
-				"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
-			},
-			callCounts: make(map[string]int),
-		}
+	// Verify first two files were generated and written, but not the third
+	if len(sess.GeneratedFiles) != 2 {
+		t.Errorf("expected 2 files in GeneratedFiles cache, got %d", len(sess.GeneratedFiles))
+	}
+	if sess.GeneratedFiles[0].FileName != "01_prd_functional.md" || sess.GeneratedFiles[1].FileName != "02_system_architecture.md" {
+		t.Errorf("unexpected cached files list: %+v", sess.GeneratedFiles)
+	}
 
-		progress2 := make(chan string, 20)
-		go func() {
-			for range progress2 {}
-		}()
-		err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
-		if err2 != nil {
-			t.Fatalf("expected resumption success, got err: %v", err2)
-		}
+	// 2. Resume with a healthy gateway
+	tg2 := &TestGateway{
+		responses: map[string][]string{
+			"03_security_threat_model.md":       {"Threat model content"},
+			"04_api_architecture_integration.md": {"# API Integration Guide"},
+			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
+		},
+		callCounts: make(map[string]int),
+	}
 
-		// Verify skipping occurred: tg2 call count for first two files must be 0
-		if tg2.callCounts["01_prd_functional.md"] != 0 {
-			t.Errorf("expected 0 calls for 01_prd_functional.md on resume, got %d", tg2.callCounts["01_prd_functional.md"])
+	progress2 := make(chan string, 20)
+	go func() {
+		for range progress2 {
+			continue
 		}
-		if tg2.callCounts["02_system_architecture.md"] != 0 {
-			t.Errorf("expected 0 calls for 02_system_architecture.md on resume, got %d", tg2.callCounts["02_system_architecture.md"])
-		}
-		// Remaining files must have been generated
-		if tg2.callCounts["03_security_threat_model.md"] != 1 {
-			t.Errorf("expected 1 call for 03_security_threat_model.md, got %d", tg2.callCounts["03_security_threat_model.md"])
-		}
-	})
+	}()
+	err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
+	if err2 != nil {
+		t.Fatalf("expected resumption success, got err: %v", err2)
+	}
+
+	// Verify skipping occurred: tg2 call count for first two files must be 0
+	if tg2.callCounts["01_prd_functional.md"] != 0 {
+		t.Errorf("expected 0 calls for 01_prd_functional.md on resume, got %d", tg2.callCounts["01_prd_functional.md"])
+	}
+	if tg2.callCounts["02_system_architecture.md"] != 0 {
+		t.Errorf("expected 0 calls for 02_system_architecture.md on resume, got %d", tg2.callCounts["02_system_architecture.md"])
+	}
+	// Remaining files must have been generated
+	if tg2.callCounts["03_security_threat_model.md"] != 1 {
+		t.Errorf("expected 1 call for 03_security_threat_model.md, got %d", tg2.callCounts["03_security_threat_model.md"])
+	}
 }
 
 func TestResumableMidLoop(t *testing.T) {
@@ -456,7 +497,9 @@ func TestResumableMidLoop(t *testing.T) {
 
 	progress := make(chan string, 20)
 	go func() {
-		for range progress {}
+		for range progress {
+			continue
+		}
 	}()
 	err = Generate(context.Background(), tg, sess, tempDir, progress)
 	if err != nil {

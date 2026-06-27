@@ -74,9 +74,7 @@ func sanitizeJSONOutput(content string) string {
 		if idx := strings.Index(content, "\n"); idx != -1 {
 			content = content[idx+1:]
 		}
-		if strings.HasSuffix(content, "```") {
-			content = content[:len(content)-3]
-		}
+		content = strings.TrimSuffix(content, "```")
 		content = strings.TrimSpace(content)
 	}
 	return content
@@ -94,34 +92,57 @@ func validateBacklog(content string) error {
 	}
 
 	for i, epic := range backlog.Epics {
-		if epic.ID == "" {
-			return fmt.Errorf("epic %d is missing ID", i)
-		}
-		if epic.Title == "" {
-			return fmt.Errorf("epic %s is missing Title", epic.ID)
-		}
-		if epic.Description == "" {
-			return fmt.Errorf("epic %s is missing Description", epic.ID)
-		}
-		if len(epic.Tasks) == 0 {
-			return fmt.Errorf("epic %s must contain at least one task", epic.ID)
-		}
-		for j, task := range epic.Tasks {
-			if task.ID == "" {
-				return fmt.Errorf("task %d in epic %s is missing ID", j, epic.ID)
-			}
-			if task.Summary == "" {
-				return fmt.Errorf("task %s in epic %s is missing Summary", task.ID, epic.ID)
-			}
-			if task.Details == "" {
-				return fmt.Errorf("task %s in epic %s is missing Details", task.ID, epic.ID)
-			}
-			if len(task.AcceptanceCriteria) == 0 {
-				return fmt.Errorf("task %s in epic %s must contain at least one acceptance criterion", task.ID, epic.ID)
-			}
+		if err := validateEpic(epic, i); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func validateEpic(epic Epic, index int) error {
+	if epic.ID == "" {
+		return fmt.Errorf("epic %d is missing ID", index)
+	}
+	if epic.Title == "" {
+		return fmt.Errorf("epic %s is missing Title", epic.ID)
+	}
+	if epic.Description == "" {
+		return fmt.Errorf("epic %s is missing Description", epic.ID)
+	}
+	if len(epic.Tasks) == 0 {
+		return fmt.Errorf("epic %s must contain at least one task", epic.ID)
+	}
+	for j, task := range epic.Tasks {
+		if err := validateTask(task, j, epic.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTask(task Task, index int, epicID string) error {
+	if task.ID == "" {
+		return fmt.Errorf("task %d in epic %s is missing ID", index, epicID)
+	}
+	if task.Summary == "" {
+		return fmt.Errorf("task %s in epic %s is missing Summary", task.ID, epicID)
+	}
+	if task.Details == "" {
+		return fmt.Errorf("task %s in epic %s is missing Details", task.ID, epicID)
+	}
+	if len(task.AcceptanceCriteria) == 0 {
+		return fmt.Errorf("task %s in epic %s must contain at least one acceptance criterion", task.ID, epicID)
+	}
+	return nil
+}
+
+// Generate runs sequential spec generation for all files
+type fileGenerator struct {
+	ctx       context.Context
+	gw        gateway.Gateway
+	sess      *state.Session
+	outputDir string
+	progress  chan<- string
 }
 
 // Generate runs sequential spec generation for all files
@@ -152,267 +173,316 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 
 	sendProgress(progress, ProgressEvent{Status: "started", Details: strings.Join(files, ","), Message: "Starting spec generation..."})
 
+	fg := &fileGenerator{
+		ctx:       ctx,
+		gw:        gw,
+		sess:      sess,
+		outputDir: outputDir,
+		progress:  progress,
+	}
+
 	var fileCompliances []FileCompliance
 
 	for _, fileName := range files {
-		// Check if file is already successfully generated in session and exists on disk
-		cachedIdx := -1
-		for idx, gf := range sess.GeneratedFiles {
-			if gf.FileName == fileName {
-				cachedIdx = idx
-				break
-			}
+		compliance, err := fg.processFile(fileName, standards)
+		if err != nil {
+			return err
 		}
+		fileCompliances = append(fileCompliances, compliance)
+	}
 
-		filePath := filepath.Join(outputDir, fileName)
-		_, statErr := os.Stat(filePath)
+	return fg.finishGeneration(fileCompliances, standards)
+}
 
-		if cachedIdx != -1 && statErr == nil && !sess.GeneratedFiles[cachedIdx].HasError {
-			sendProgress(progress, ProgressEvent{
+func getCachedIndex(sess *state.Session, fileName string) int {
+	for idx, gf := range sess.GeneratedFiles {
+		if gf.FileName == fileName {
+			return idx
+		}
+	}
+	return -1
+}
+
+func (fg *fileGenerator) processFile(fileName string, standards []config.Standard) (FileCompliance, error) {
+	cachedIdx := getCachedIndex(fg.sess, fileName)
+	filePath := filepath.Join(fg.outputDir, fileName)
+	_, statErr := os.Stat(filePath)
+
+	if cachedIdx != -1 && statErr == nil && !fg.sess.GeneratedFiles[cachedIdx].HasError {
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "skipped",
+			Details: "already generated",
+			Message: fmt.Sprintf("Skipping %s (already generated)", fileName),
+		})
+		return FileCompliance{
+			FileName: fileName,
+			Results:  fg.sess.GeneratedFiles[cachedIdx].Results,
+			Err:      nil,
+		}, nil
+	}
+
+	content, startAttempt, err := fg.getInitialContentOrResume(fileName)
+	if err != nil {
+		return FileCompliance{}, err
+	}
+
+	content, complianceResults, checkErr, err := fg.runSelfCorrection(fileName, content, startAttempt, standards)
+	if err != nil {
+		return FileCompliance{}, err
+	}
+
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "failed",
+			Details: fmt.Sprintf("write failed: %v", err),
+			Message: fmt.Sprintf("Failed to write %s: %v", fileName, err),
+		})
+		return FileCompliance{}, fmt.Errorf("failed to write %s output file: %w", fileName, err)
+	}
+
+	if err := updateSessionProgress(fg.sess, fileName, complianceResults, checkErr); err != nil {
+		return FileCompliance{}, err
+	}
+
+	sendProgress(fg.progress, ProgressEvent{
+		File:    fileName,
+		Status:  "done",
+		Details: "completed successfully",
+		Message: fmt.Sprintf("Finished generating %s", fileName),
+	})
+
+	return FileCompliance{
+		FileName: fileName,
+		Results:  complianceResults,
+		Err:      checkErr,
+	}, nil
+}
+
+func (fg *fileGenerator) getInitialContentOrResume(fileName string) (string, int, error) {
+	cachedIdx := getCachedIndex(fg.sess, fileName)
+	maxRetries := 10
+
+	if cachedIdx != -1 && fg.sess.GeneratedFiles[cachedIdx].InProgressText != "" {
+		content := fg.sess.GeneratedFiles[cachedIdx].InProgressText
+		startAttempt := fg.sess.GeneratedFiles[cachedIdx].CurrentAttempt
+		if startAttempt < 1 {
+			startAttempt = 1
+		}
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "synthesizing",
+			Details: fmt.Sprintf("resuming from attempt %d/%d", startAttempt, maxRetries),
+			Message: fmt.Sprintf("Resuming %s synthesis from attempt %d...", fileName, startAttempt),
+		})
+		return content, startAttempt, nil
+	}
+
+	sendProgress(fg.progress, ProgressEvent{
+		File:    fileName,
+		Status:  "synthesizing",
+		Details: fmt.Sprintf("attempt 1/%d", maxRetries),
+		Message: fmt.Sprintf("Synthesizing %s...", fileName),
+	})
+
+	var content string
+	var err error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.sess.Facts, fileName)
+		if err == nil {
+			break
+		}
+		if attempt == maxRetries {
+			sendProgress(fg.progress, ProgressEvent{
 				File:    fileName,
-				Status:  "skipped",
-				Details: "already generated",
-				Message: fmt.Sprintf("Skipping %s (already generated)", fileName),
+				Status:  "failed",
+				Details: fmt.Sprintf("failed: %v", err),
+				Message: fmt.Sprintf("Failed to generate %s: %v", fileName, err),
 			})
-			fileCompliances = append(fileCompliances, FileCompliance{
-				FileName: fileName,
-				Results:  sess.GeneratedFiles[cachedIdx].Results,
-				Err:      nil,
-			})
+			return "", 0, fmt.Errorf("failed to generate %s after %d attempts: %w", fileName, maxRetries, err)
+		}
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "synthesizing",
+			Details: fmt.Sprintf("error (attempt %d/%d): %v", attempt, maxRetries, err),
+			Message: fmt.Sprintf("Error generating %s (attempt %d/%d): %v. Retrying...", fileName, attempt, maxRetries, err),
+		})
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	_ = updateInProgressState(fg.sess, fileName, content, 1)
+	return content, 1, nil
+}
+
+func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, error) {
+	maxRetries := 10
+	var complianceResults []gateway.ComplianceResult
+	var checkErr error
+
+	applicableStds := getApplicableStandards(standards, fileName)
+
+	for attempt := startAttempt; attempt < maxRetries; attempt++ {
+		checkErr = PerformStaticValidation(fileName, content)
+		if checkErr != nil {
+			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr)
 			continue
 		}
 
-		var content string
-		var err error
-		maxRetries := 10
-		startAttempt := 1
-		resuming := false
-
-		if cachedIdx != -1 && sess.GeneratedFiles[cachedIdx].InProgressText != "" {
-			content = sess.GeneratedFiles[cachedIdx].InProgressText
-			startAttempt = sess.GeneratedFiles[cachedIdx].CurrentAttempt
-			if startAttempt < 1 {
-				startAttempt = 1
+		if len(applicableStds) > 0 {
+			var passed bool
+			var err error
+			content, complianceResults, checkErr, passed, err = fg.handleComplianceEvaluation(fileName, content, attempt, standards)
+			if err != nil {
+				return content, nil, nil, err
 			}
-			resuming = true
-			sendProgress(progress, ProgressEvent{
-				File:    fileName,
-				Status:  "synthesizing",
-				Details: fmt.Sprintf("resuming from attempt %d/%d", startAttempt, maxRetries),
-				Message: fmt.Sprintf("Resuming %s synthesis from attempt %d...", fileName, startAttempt),
-			})
-		} else {
-			sendProgress(progress, ProgressEvent{
-				File:    fileName,
-				Status:  "synthesizing",
-				Details: fmt.Sprintf("attempt 1/%d", maxRetries),
-				Message: fmt.Sprintf("Synthesizing %s...", fileName),
-			})
-		}
-
-		// Initial Generation
-		if !resuming {
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				content, err = gw.GenerateSpecFile(ctx, sess.Facts, fileName)
-				if err != nil {
-					if attempt == maxRetries {
-						sendProgress(progress, ProgressEvent{
-							File:    fileName,
-							Status:  "failed",
-							Details: fmt.Sprintf("failed: %v", err),
-							Message: fmt.Sprintf("Failed to generate %s: %v", fileName, err),
-						})
-						return fmt.Errorf("failed to generate %s after %d attempts: %w", fileName, maxRetries, err)
-					}
-					sendProgress(progress, ProgressEvent{
-						File:    fileName,
-						Status:  "synthesizing",
-						Details: fmt.Sprintf("error (attempt %d/%d): %v", attempt, maxRetries, err),
-						Message: fmt.Sprintf("Error generating %s (attempt %d/%d): %v. Retrying...", fileName, attempt, maxRetries, err),
-					})
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-				break
-			}
-			// Save immediately after successful initial generation
-			if err == nil {
-				_ = updateInProgressState(sess, fileName, content, 1)
-			}
-		}
-
-		// Self-Correction Loop for Syntax and Compliance Checks
-		var complianceResults []gateway.ComplianceResult
-		var checkErr error
-
-		var applicableStds []config.Standard
-		for _, std := range standards {
-			for _, tf := range std.TargetFiles {
-				if tf == fileName {
-					applicableStds = append(applicableStds, std)
-					break
-				}
-			}
-		}
-
-		for attempt := startAttempt; attempt < maxRetries; attempt++ {
-			// Step A: Static syntax validation (YAML / JSON validation)
-			checkErr = PerformStaticValidation(fileName, content)
-			if checkErr != nil {
-				sendProgress(progress, ProgressEvent{
-					File:    fileName,
-					Status:  "correcting",
-					Details: fmt.Sprintf("syntax error: %v (attempt %d/%d)", checkErr, attempt+1, maxRetries),
-					Message: fmt.Sprintf("⚠️ Syntax error in %s: %v. Correcting (attempt %d/%d)...", fileName, checkErr, attempt+1, maxRetries),
-				})
-				feedback := fmt.Sprintf("Static syntax validation failed: %v. Please rewrite the file to output syntactically valid contents.", checkErr)
-				refined, refineErr := gw.RefineSpecFile(ctx, fileName, content, feedback, nil)
-				if refineErr == nil {
-					content = refined
-					_ = updateInProgressState(sess, fileName, content, attempt+1)
-				}
-				time.Sleep(100 * time.Millisecond)
+			if !passed {
 				continue
 			}
-
-			// Step B: Qualitative standard validation
-			if len(applicableStds) > 0 {
-				sendProgress(progress, ProgressEvent{
-					File:    fileName,
-					Status:  "auditing",
-					Details: fmt.Sprintf("attempt %d/%d", attempt, maxRetries),
-					Message: fmt.Sprintf("🔍 Auditing standards compliance for %s...", fileName),
-				})
-				evalResults, evalErr := gw.EvaluateCompliance(ctx, fileName, content, standards)
-				if evalErr != nil {
-					sendProgress(progress, ProgressEvent{
-						File:    fileName,
-						Status:  "failed",
-						Details: fmt.Sprintf("compliance eval failed: %v", evalErr),
-						Message: fmt.Sprintf("⚠️ Compliance evaluation failed for %s: %v", fileName, evalErr),
-					})
-					checkErr = evalErr
-					break
-				}
-
-				complianceResults = evalResults
-
-				// Identify failed standards
-				var failedStds []config.Standard
-				var feedbackLines []string
-				for _, res := range complianceResults {
-					var stdDef config.Standard
-					for _, std := range standards {
-						if std.ID == res.StandardID {
-							stdDef = std
-							break
-						}
-					}
-					if !res.Compliant || res.Score < stdDef.MinScore {
-						failedStds = append(failedStds, stdDef)
-						feedbackLines = append(feedbackLines, fmt.Sprintf("- Standard '%s' failed (Score: %d%%, Required: %d%%): %s", stdDef.Name, res.Score, stdDef.MinScore, res.Feedback))
-					}
-				}
-
-				// If failed, trigger targeted refinement
-				if len(failedStds) > 0 {
-					feedbackText := strings.Join(feedbackLines, "\n")
-					sendProgress(progress, ProgressEvent{
-						File:    fileName,
-						Status:  "refining",
-						Details: fmt.Sprintf("%d standards failed (attempt %d/%d)", len(failedStds), attempt+1, maxRetries),
-						Message: fmt.Sprintf("🔄 Standards check failed for %s. Refining (attempt %d/%d)...", fileName, attempt+1, maxRetries),
-					})
-					refined, refineErr := gw.RefineSpecFile(ctx, fileName, content, feedbackText, failedStds)
-					if refineErr == nil {
-						content = refined
-						_ = updateInProgressState(sess, fileName, content, attempt+1)
-					}
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-			}
-
-			// All checks passed!
-			checkErr = nil
-			break
 		}
 
-		// If static syntax check failed, abort and return a hard error
-		if staticErr := PerformStaticValidation(fileName, content); staticErr != nil {
-			sendProgress(progress, ProgressEvent{
-				File:    fileName,
-				Status:  "failed",
-				Details: fmt.Sprintf("syntax validation failed: %v", staticErr),
-				Message: fmt.Sprintf("Syntax validation failed for %s: %v", fileName, staticErr),
-			})
-			return fmt.Errorf("failed to validate syntax for %s after %d attempts: %w", fileName, maxRetries, staticErr)
-		}
+		checkErr = nil
+		break
+	}
 
-		// Record compliance findings
-		fileCompliances = append(fileCompliances, FileCompliance{
-			FileName: fileName,
-			Results:  complianceResults,
-			Err:      checkErr,
+	if staticErr := PerformStaticValidation(fileName, content); staticErr != nil {
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "failed",
+			Details: fmt.Sprintf("syntax validation failed: %v", staticErr),
+			Message: fmt.Sprintf("Syntax validation failed for %s: %v", fileName, staticErr),
 		})
+		return content, nil, nil, fmt.Errorf("failed to validate syntax for %s after %d attempts: %w", fileName, maxRetries, staticErr)
+	}
 
-		// Write final generated content
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			sendProgress(progress, ProgressEvent{
-				File:    fileName,
-				Status:  "failed",
-				Details: fmt.Sprintf("write failed: %v", err),
-				Message: fmt.Sprintf("Failed to write %s: %v", fileName, err),
-			})
-			return fmt.Errorf("failed to write %s output file: %w", fileName, err)
-		}
+	return content, complianceResults, checkErr, nil
+}
 
-		// Update session progress
-		newGenState := state.GeneratedFileState{
-			FileName: fileName,
-			Results:  complianceResults,
-			HasError: checkErr != nil,
-		}
-		if checkErr != nil {
-			newGenState.ErrorStr = checkErr.Error()
-		}
-
-		found := false
-		for idx, gf := range sess.GeneratedFiles {
-			if gf.FileName == fileName {
-				sess.GeneratedFiles[idx] = newGenState
-				found = true
+func getApplicableStandards(standards []config.Standard, fileName string) []config.Standard {
+	var applicableStds []config.Standard
+	for _, std := range standards {
+		for _, tf := range std.TargetFiles {
+			if tf == fileName {
+				applicableStds = append(applicableStds, std)
 				break
 			}
 		}
-		if !found {
-			sess.GeneratedFiles = append(sess.GeneratedFiles, newGenState)
-		}
+	}
+	return applicableStds
+}
 
-		if err := sess.Save(); err != nil {
-			return fmt.Errorf("failed to save session state after generating %s: %w", fileName, err)
-		}
+func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error) (string, error) {
+	maxRetries := 10
+	sendProgress(fg.progress, ProgressEvent{
+		File:    fileName,
+		Status:  "correcting",
+		Details: fmt.Sprintf("syntax error: %v (attempt %d/%d)", checkErr, attempt+1, maxRetries),
+		Message: fmt.Sprintf("⚠️ Syntax error in %s: %v. Correcting (attempt %d/%d)...", fileName, checkErr, attempt+1, maxRetries),
+	})
+	feedback := fmt.Sprintf("Static syntax validation failed: %v. Please rewrite the file to output syntactically valid contents.", checkErr)
+	refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedback, nil)
+	if refineErr == nil {
+		content = refined
+		_ = updateInProgressState(fg.sess, fileName, content, attempt+1)
+	}
+	time.Sleep(100 * time.Millisecond)
+	return content, checkErr
+}
 
-		sendProgress(progress, ProgressEvent{
+func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, bool, error) {
+	maxRetries := 10
+	sendProgress(fg.progress, ProgressEvent{
+		File:    fileName,
+		Status:  "auditing",
+		Details: fmt.Sprintf("attempt %d/%d", attempt, maxRetries),
+		Message: fmt.Sprintf("🔍 Auditing standards compliance for %s...", fileName),
+	})
+	evalResults, evalErr := fg.gw.EvaluateCompliance(fg.ctx, fileName, content, standards)
+	if evalErr != nil {
+		sendProgress(fg.progress, ProgressEvent{
 			File:    fileName,
-			Status:  "done",
-			Details: "completed successfully",
-			Message: fmt.Sprintf("Finished generating %s", fileName),
+			Status:  "failed",
+			Details: fmt.Sprintf("compliance eval failed: %v", evalErr),
+			Message: fmt.Sprintf("⚠️ Compliance evaluation failed for %s: %v", fileName, evalErr),
 		})
+		return content, nil, evalErr, false, evalErr
 	}
 
-	// Compile and write compliance report markdown
-	sendProgress(progress, ProgressEvent{
+	var failedStds []config.Standard
+	var feedbackLines []string
+	for _, res := range evalResults {
+		var stdDef config.Standard
+		for _, std := range standards {
+			if std.ID == res.StandardID {
+				stdDef = std
+				break
+			}
+		}
+		if !res.Compliant || res.Score < stdDef.MinScore {
+			failedStds = append(failedStds, stdDef)
+			feedbackLines = append(feedbackLines, fmt.Sprintf("- Standard '%s' failed (Score: %d%%, Required: %d%%): %s", stdDef.Name, res.Score, stdDef.MinScore, res.Feedback))
+		}
+	}
+
+	if len(failedStds) > 0 {
+		feedbackText := strings.Join(feedbackLines, "\n")
+		sendProgress(fg.progress, ProgressEvent{
+			File:    fileName,
+			Status:  "refining",
+			Details: fmt.Sprintf("%d standards failed (attempt %d/%d)", len(failedStds), attempt+1, maxRetries),
+			Message: fmt.Sprintf("🔄 Standards check failed for %s. Refining (attempt %d/%d)...", fileName, attempt+1, maxRetries),
+		})
+		refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedbackText, failedStds)
+		if refineErr == nil {
+			content = refined
+			_ = updateInProgressState(fg.sess, fileName, content, attempt+1)
+		}
+		time.Sleep(100 * time.Millisecond)
+		return content, evalResults, nil, false, nil
+	}
+
+	return content, evalResults, nil, true, nil
+}
+
+func updateSessionProgress(sess *state.Session, fileName string, complianceResults []gateway.ComplianceResult, checkErr error) error {
+	newGenState := state.GeneratedFileState{
+		FileName: fileName,
+		Results:  complianceResults,
+		HasError: checkErr != nil,
+	}
+	if checkErr != nil {
+		newGenState.ErrorStr = checkErr.Error()
+	}
+
+	found := false
+	for idx, gf := range sess.GeneratedFiles {
+		if gf.FileName == fileName {
+			sess.GeneratedFiles[idx] = newGenState
+			found = true
+			break
+		}
+	}
+	if !found {
+		sess.GeneratedFiles = append(sess.GeneratedFiles, newGenState)
+	}
+
+	if err := sess.Save(); err != nil {
+		return fmt.Errorf("failed to save session state after generating %s: %w", fileName, err)
+	}
+	return nil
+}
+
+func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, standards []config.Standard) error {
+	sendProgress(fg.progress, ProgressEvent{
 		Status:  "compiling_report",
 		Message: "Compiling compliance report (00_compliance_report.md)...",
 	})
-	reportContent := GenerateComplianceReport(sess.ProjectName, fileCompliances, standards)
-	reportPath := filepath.Join(outputDir, "00_compliance_report.md")
+	reportContent := GenerateComplianceReport(fg.sess.ProjectName, fileCompliances, standards)
+	reportPath := filepath.Join(fg.outputDir, "00_compliance_report.md")
 	if err := os.WriteFile(reportPath, []byte(reportContent), 0644); err != nil {
 		return fmt.Errorf("failed to write 00_compliance_report.md: %w", err)
 	}
 
-	// Prepare metadata and compliance summary mapping
 	complianceSummary := make(map[string]int)
 	for _, fc := range fileCompliances {
 		for _, res := range fc.Results {
@@ -420,20 +490,19 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		}
 	}
 
-	// Generate .synthspec-meta.json
-	sendProgress(progress, ProgressEvent{
+	sendProgress(fg.progress, ProgressEvent{
 		Status:  "compiling_metadata",
 		Message: "Compiling solution metadata (.synthspec-meta.json)...",
 	})
 
 	meta := TelemetryMetadata{
-		ProjectName:         sess.ProjectName,
+		ProjectName:         fg.sess.ProjectName,
 		GenerationTimestamp: time.Now().Format(time.RFC3339),
 		EngineVersion:       "1.0.0",
-		ProviderUsed:        sess.Provider,
+		ProviderUsed:        fg.sess.Provider,
 		CompletionMetrics: CompletionMetrics{
-			TotalTurns:     len(sess.History) / 2,
-			TokensConsumed: sess.TotalTokensUsed,
+			TotalTurns:     len(fg.sess.History) / 2,
+			TokensConsumed: fg.sess.TotalTokensUsed,
 		},
 		ComplianceSummary: complianceSummary,
 	}
@@ -443,15 +512,15 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		return fmt.Errorf("failed to serialize telemetry metadata: %w", err)
 	}
 
-	metaPath := filepath.Join(outputDir, ".synthspec-meta.json")
+	metaPath := filepath.Join(fg.outputDir, ".synthspec-meta.json")
 	if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
 		return fmt.Errorf("failed to write .synthspec-meta.json: %w", err)
 	}
 
-	sendProgress(progress, ProgressEvent{
+	sendProgress(fg.progress, ProgressEvent{
 		Status:  "completed",
-		Details: outputDir,
-		Message: fmt.Sprintf("All files generated in: %s", outputDir),
+		Details: fg.outputDir,
+		Message: fmt.Sprintf("All files generated in: %s", fg.outputDir),
 	})
 	return nil
 }
