@@ -244,13 +244,13 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 
 		progress := make(chan string, 20)
+		go func() {
+			for range progress {}
+		}()
 		err := Generate(context.Background(), tg, sess, tempDir, progress)
 		if err != nil {
 			t.Fatalf("expected success, got err: %v", err)
 		}
-
-		// Drain progress
-		for range progress {}
 
 		// Verify files exist
 		files := []string{
@@ -288,12 +288,13 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 
 		progress := make(chan string, 20)
+		go func() {
+			for range progress {}
+		}()
 		err := Generate(context.Background(), tg, sess, tempDir, progress)
 		if err != nil {
 			t.Fatalf("expected success, got err: %v", err)
 		}
-
-		for range progress {}
 
 		if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
 			t.Errorf("expected 2 calls (1 retry), got %d", tg.callCounts["05_coding_standards_guidelines.md"])
@@ -315,12 +316,13 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 
 		progress := make(chan string, 20)
+		go func() {
+			for range progress {}
+		}()
 		err := Generate(context.Background(), tg, sess, tempDir, progress)
 		if err != nil {
 			t.Fatalf("expected success, got err: %v", err)
 		}
-
-		for range progress {}
 
 		if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
 			t.Errorf("expected 2 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
@@ -343,12 +345,13 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 
 		progress := make(chan string, 20)
+		go func() {
+			for range progress {}
+		}()
 		err := Generate(context.Background(), tg, sess, tempDir, progress)
 		if err == nil {
 			t.Fatal("expected failure, got success")
 		}
-
-		for range progress {}
 
 		if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
 			t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
@@ -371,11 +374,13 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 
 		progress1 := make(chan string, 20)
+		go func() {
+			for range progress1 {}
+		}()
 		err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
 		if err1 == nil {
 			t.Fatal("expected failure on 03_security_threat_model.md, got success")
 		}
-		for range progress1 {}
 
 		// Verify first two files were generated and written, but not the third
 		if len(sess.GeneratedFiles) != 2 {
@@ -396,11 +401,13 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 
 		progress2 := make(chan string, 20)
+		go func() {
+			for range progress2 {}
+		}()
 		err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
 		if err2 != nil {
 			t.Fatalf("expected resumption success, got err: %v", err2)
 		}
-		for range progress2 {}
 
 		// Verify skipping occurred: tg2 call count for first two files must be 0
 		if tg2.callCounts["01_prd_functional.md"] != 0 {
@@ -448,11 +455,13 @@ func TestResumableMidLoop(t *testing.T) {
 	}
 
 	progress := make(chan string, 20)
+	go func() {
+		for range progress {}
+	}()
 	err = Generate(context.Background(), tg, sess, tempDir, progress)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
-	for range progress {}
 
 	// Verify that GenerateSpecFile was NOT called for 01_prd_functional.md because we resumed (it goes straight to refinement/validation)
 	if tg.callCounts["01_prd_functional.md"] != 0 {
