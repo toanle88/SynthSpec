@@ -14,3 +14,6 @@ templates:
   - file_name: "05_coding_standards_guidelines.md"
     name: "Coding Standards & Guidelines"
     prompt: "Write a comprehensive Coding Standards & Guidelines markdown file. Include directory & module topography (directory map of logic, adapters, entry points, utilities), architectural pattern enforcement (e.g., Repository, CQRS, Dependency Injection), testing strategy & coverage gates (mock interfaces, integration boundaries, coverage percentages), and linting & static analysis rules (formatting, complexity, forbidden patterns). Use these facts:\n"
+  - file_name: "06_domain_model_use_cases.md"
+    name: "Domain Model & Use Cases"
+    prompt: "Write a comprehensive Domain Model & Use Cases markdown file. Detail bounded contexts, core domain entities, value objects, aggregates, and scenario walkthroughs (including actor, preconditions, triggers, main flow, and postconditions). Use these facts:\n"

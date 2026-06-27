@@ -221,3 +221,21 @@ standards:
     criteria: |
       Verify that rules for API versioning (e.g., URI vs Header versioning) and contract update documentation policy are detailed.
     min_score: 100
+
+  - id: domain_scenario_sequence_diagrams
+    name: Domain Scenario Sequence Diagrams
+    description: Scenario walkthroughs must contain Mermaid sequence diagrams.
+    target_files:
+      - 06_domain_model_use_cases.md
+    criteria: |
+      Each primary scenario walkthrough MUST contain a structured Mermaid.js sequence diagram showing the step-by-step actor and system interactions.
+    min_score: 90
+
+  - id: domain_bounded_contexts
+    name: Bounded Context Separation
+    description: Define contexts and map entities uniquely within them.
+    target_files:
+      - 06_domain_model_use_cases.md
+    criteria: |
+      Clearly define bounded contexts and ensure domain entities are mapped uniquely within their respective context to prevent context bleed.
+    min_score: 85

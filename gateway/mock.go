@@ -183,6 +183,22 @@ Integration testing with mock interfaces. 80% code coverage gate.
 Configured strict rules.
 `, nil
 
+	case "06_domain_model_use_cases.md":
+		return `# Domain Model & Use Cases
+
+* **Status**: 🟢 Approved
+
+## 🗺️ Bounded Context Map
+Account Management Context, Spec Synthesis Context.
+
+## 🧱 Core Domain Entities & Value Objects
+Entities: Project, Requirement, Standard.
+Value Objects: Score, Rationale.
+
+## 🚀 Scenario Walkthroughs
+Primary use case scenario details.
+`, nil
+
 	default:
 		return "", fmt.Errorf("unknown file: %s", fileName)
 	}
@@ -210,7 +226,7 @@ func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, f
 		feedback := ""
 
 		switch std.ID {
-		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support", "directory_module_topography", "architectural_pattern_enforcement", "transport_protocol_standards", "contract_lifecycle_management":
+		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support", "directory_module_topography", "architectural_pattern_enforcement", "transport_protocol_standards", "contract_lifecycle_management", "domain_scenario_sequence_diagrams", "domain_bounded_contexts":
 			score = 100
 			compliant = true
 			feedback = fmt.Sprintf("Successfully implemented %s.", std.Name)
