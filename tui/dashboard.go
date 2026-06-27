@@ -57,10 +57,13 @@ type DashboardModel struct {
 	editorTempPath  string
 	
 	// Generation state
-	isCompleted     bool
-	isGenerating    bool
-	genStatus       string
-	genChan         chan string
+	isCompleted       bool
+	isGenerating      bool
+	genStatus         string
+	genChan           chan string
+	genFiles          []string
+	genFileStatuses   map[string]string
+	genFileDetails    map[string]string
 
 	// Compliance scorecard state
 	standards        []config.Standard
@@ -110,6 +113,19 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 
 	showTextInput := len(sess.LastChoices) == 0
 
+	genFiles := []string{
+		"01_prd_functional.md",
+		"02_system_architecture.md",
+		"03_security_threat_model.md",
+		"04_api_architecture_integration.md",
+		"05_coding_standards_guidelines.md",
+	}
+	genFileStatuses := make(map[string]string)
+	genFileDetails := make(map[string]string)
+	for _, f := range genFiles {
+		genFileStatuses[f] = "pending"
+	}
+
 	return DashboardModel{
 		Session:           sess,
 		Gateway:           gw,
@@ -122,6 +138,9 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		showScorecard:     showScorecard,
 		selectedChoiceIdx: 0,
 		showTextInput:     showTextInput,
+		genFiles:          genFiles,
+		genFileStatuses:   genFileStatuses,
+		genFileDetails:    genFileDetails,
 	}
 }
 
@@ -249,6 +268,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.isGenerating = true
 					m.genStatus = "Starting spec generation..."
 					m.genChan = make(chan string, 10)
+					m.genFileStatuses = make(map[string]string)
+					m.genFileDetails = make(map[string]string)
+					for _, f := range m.genFiles {
+						m.genFileStatuses[f] = "pending"
+					}
 					return m, tea.Batch(
 						m.generateSpecsCmd(),
 						m.recvGenProgressCmd(),
@@ -326,6 +350,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.isGenerating = true
 			m.genStatus = "Starting spec generation..."
 			m.genChan = make(chan string, 10)
+			m.genFileStatuses = make(map[string]string)
+			m.genFileDetails = make(map[string]string)
+			for _, f := range m.genFiles {
+				m.genFileStatuses[f] = "pending"
+			}
 			batchCmds = append(batchCmds, m.generateSpecsCmd(), m.recvGenProgressCmd())
 		} else if !m.isCompleted {
 			m.loading = true
@@ -357,7 +386,29 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.queryOracleCmd("Requirements updated manually via editor.")
 
 	case genProgressMsg:
-		m.genStatus = string(msg)
+		var ev generator.ProgressEvent
+		if err := json.Unmarshal([]byte(msg), &ev); err == nil {
+			if ev.Status == "started" {
+				m.genFiles = strings.Split(ev.Details, ",")
+				m.genFileStatuses = make(map[string]string)
+				m.genFileDetails = make(map[string]string)
+				for _, f := range m.genFiles {
+					m.genFileStatuses[f] = "pending"
+				}
+			} else if ev.File != "" {
+				if m.genFileStatuses == nil {
+					m.genFileStatuses = make(map[string]string)
+				}
+				if m.genFileDetails == nil {
+					m.genFileDetails = make(map[string]string)
+				}
+				m.genFileStatuses[ev.File] = ev.Status
+				m.genFileDetails[ev.File] = ev.Details
+			}
+			m.genStatus = ev.Message
+		} else {
+			m.genStatus = string(msg)
+		}
 		return m, m.recvGenProgressCmd()
 
 	case genFinishedMsg:

@@ -114,7 +114,9 @@ func (m DashboardModel) renderMainChat() string {
 	if m.isGenerating {
 		content = append(content, TitleStyle.Render("✨ Final Asset Synthesis in Progress"))
 		content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
-		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render(m.genStatus))
+		content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Progress:"))
+		content = append(content, m.renderFileProgressList())
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("Status: "+m.genStatus))
 		content = append(content, "\n"+TitleStyle.Render("📋 Engineering Quality Standards Check:"))
 		content = append(content, m.renderStandardsGrid(m.width-45))
 		return strings.Join(content, "\n")
@@ -127,6 +129,8 @@ func (m DashboardModel) renderMainChat() string {
 		content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate files"))
 		content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to launch Editor & make modifications"))
 		content = append(content, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("  Press [Q] to Save & Exit CLI"))
+		content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Status:"))
+		content = append(content, m.renderFileProgressList())
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render(m.genStatus))
 		if m.showScorecard {
 			content = append(content, "\n"+TitleStyle.Render("📊 Final Architectural Quality Scorecard:"))
@@ -365,5 +369,59 @@ func (m DashboardModel) renderStandardsGrid(width int) string {
 		"       ", // spacer
 		rightBlock,
 	)
+}
+
+func (m DashboardModel) renderFileProgressList() string {
+	var lines []string
+	for _, file := range m.genFiles {
+		status := m.genFileStatuses[file]
+		details := m.genFileDetails[file]
+
+		var icon string
+		var style lipgloss.Style
+
+		switch status {
+		case "pending":
+			icon = "⏳ Pending"
+			style = StyleMuted
+		case "skipped":
+			icon = "🟢 Done" // "Done" or "Skipped" is cleaner, let's use Done as standard completed indicator
+			style = StyleSuccess
+		case "synthesizing":
+			icon = "🔄 Synthesizing"
+			style = StyleInfo
+		case "correcting":
+			icon = "⚠️ Correcting"
+			style = StyleWarning
+		case "auditing":
+			icon = "🔍 Auditing"
+			style = StyleInfo
+		case "refining":
+			icon = "🛠️ Refining"
+			style = StyleWarning
+		case "done":
+			icon = "🟢 Done"
+			style = StyleSuccess
+		case "failed":
+			icon = "🔴 Failed"
+			style = StyleError
+		default:
+			icon = "⏳ Pending"
+			style = StyleMuted
+		}
+
+		styledIcon := style.Bold(true).Render(icon)
+		styledFile := lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render(file)
+
+		var line string
+		if details != "" && details != "completed successfully" && details != "already generated" {
+			styledDetails := lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("(%s)", details))
+			line = fmt.Sprintf("  %s %s %s", styledIcon, styledFile, styledDetails)
+		} else {
+			line = fmt.Sprintf("  %s %s", styledIcon, styledFile)
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
