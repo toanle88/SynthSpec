@@ -155,7 +155,7 @@ func (tg *TestGateway) QueryOracle(ctx context.Context, facts gateway.Facts, his
 	return tg.queryResult, tg.queryErr
 }
 
-func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts, fileName string) (string, error) {
+func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts, fileName string, promptTemplate string) (string, error) {
 	tg.callCounts[fileName]++
 	resps, ok := tg.responses[fileName]
 	if !ok || len(resps) == 0 {

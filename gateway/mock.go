@@ -96,7 +96,7 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	return res, nil
 }
 
-func (m *MockGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string) (string, error) {
+func (m *MockGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	switch fileName {
 	case "01_prd_functional.md":
 		return fmt.Sprintf(`# Functional Requirements Document (PRD)

@@ -63,7 +63,7 @@ type Gateway interface {
 	QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error)
 
 	// GenerateSpecFile generates the contents of a specific output asset based on the compiled facts.
-	GenerateSpecFile(ctx context.Context, facts Facts, fileName string) (string, error)
+	GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error)
 
 	// EvaluateCompliance evaluates a generated file's content against a set of standards
 	EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error)

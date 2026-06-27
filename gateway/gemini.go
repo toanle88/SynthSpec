@@ -193,25 +193,9 @@ Guidelines for evaluation:
 	return &oracleResp, nil
 }
 
-func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string) (string, error) {
-	var prompt string
-	switch fileName {
-	case "01_prd_functional.md":
-		prompt = "Write a comprehensive Product Requirements Document (PRD) markdown file. Include product vision, user stories, features list, and a detailed functional requirements matrix with ID, Feature Name, Description, and Acceptance Criteria. Use these facts:\n"
-	case "02_system_architecture.md":
-		prompt = "Write a high-level System Architecture specification markdown file. Detail the component layout, backend layer division, API routing logic, database schema design (include raw SQL tables), and a Mermaid.js diagram showing workflow sequence/architecture. Use these facts:\n"
-	case "03_security_threat_model.md":
-		prompt = "Write a detailed Security & Threat Model markdown file. Perform a STRIDE threat modeling analysis. Map identified threats (at least 5) to mitigations in a clean markdown table. Detail input validation, timeout configurations, and cryptographic standards. Use these facts:\n"
-	case "04_api_architecture_integration.md":
-		prompt = "Write a detailed API Architecture & Integration Guide markdown file. Define transport & protocol standards (e.g., RESTful naming, JSON-RPC, or gRPC), contract lifecycle management (API versioning, documentation policies), global payload serialization (data transforms, ISO 8601 datetimes, null handling, casing), and cross-cutting concerns (middleware layout, validation, idempotency, rate limiting, error responses). Use these facts:\n"
-	case "05_coding_standards_guidelines.md":
-		prompt = "Write a comprehensive Coding Standards & Guidelines markdown file. Include directory & module topography (directory map of logic, adapters, entry points, utilities), architectural pattern enforcement (e.g., Repository, CQRS, Dependency Injection), testing strategy & coverage gates (mock interfaces, integration boundaries, coverage percentages), and linting & static analysis rules (formatting, complexity, forbidden patterns). Use these facts:\n"
-	default:
-		return "", fmt.Errorf("unknown file: %s", fileName)
-	}
-
+func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	factsJSON, _ := json.MarshalIndent(facts, "", "  ")
-	fullPrompt := prompt + string(factsJSON)
+	fullPrompt := promptTemplate + string(factsJSON)
 
 	contents := []geminiContent{
 		{

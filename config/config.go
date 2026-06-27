@@ -159,3 +159,43 @@ func LoadStandards() ([]Standard, error) {
 	return cfg.Standards, nil
 }
 
+//go:embed templates.yaml
+var defaultTemplatesYAML []byte
+
+type Template struct {
+	FileName string `yaml:"file_name"`
+	Name     string `yaml:"name"`
+	Prompt   string `yaml:"prompt"`
+}
+
+type TemplatesConfig struct {
+	Templates []Template `yaml:"templates"`
+}
+
+// LoadTemplates loads the templates from a local override file or falls back to the embedded defaults.
+func LoadTemplates() ([]Template, error) {
+	data := defaultTemplatesYAML
+
+	// Check for local overrides in order of preference
+	overridePaths := []string{
+		"templates.yaml",
+		".synthspec/templates.yaml",
+	}
+
+	for _, p := range overridePaths {
+		if _, err := os.Stat(p); err == nil {
+			if fileData, readErr := os.ReadFile(p); readErr == nil {
+				data = fileData
+				break
+			}
+		}
+	}
+
+	var cfg TemplatesConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse templates configuration: %w", err)
+	}
+
+	return cfg.Templates, nil
+}
+

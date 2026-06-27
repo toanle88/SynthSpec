@@ -152,6 +152,12 @@ type fileGenerator struct {
 func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outputDir string, progress chan<- string) error {
 	defer close(progress)
 
+	// Load templates
+	templates, err := config.LoadTemplates()
+	if err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
+
 	// Load quality standards configuration
 	standards, err := config.LoadStandards()
 	if err != nil {
@@ -166,12 +172,9 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	files := []string{
-		"01_prd_functional.md",
-		"02_system_architecture.md",
-		"03_security_threat_model.md",
-		"04_api_architecture_integration.md",
-		"05_coding_standards_guidelines.md",
+	var files []string
+	for _, t := range templates {
+		files = append(files, t.FileName)
 	}
 
 	sendProgress(progress, ProgressEvent{Status: "started", Details: strings.Join(files, ","), Message: "Starting spec generation..."})
@@ -186,8 +189,8 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 
 	var fileCompliances []FileCompliance
 
-	for _, fileName := range files {
-		compliance, err := fg.processFile(fileName, standards)
+	for _, t := range templates {
+		compliance, err := fg.processFile(t.FileName, t.Prompt, standards)
 		if err != nil {
 			return err
 		}
@@ -206,7 +209,7 @@ func getCachedIndex(sess *state.Session, fileName string) int {
 	return -1
 }
 
-func (fg *fileGenerator) processFile(fileName string, standards []config.Standard) (FileCompliance, error) {
+func (fg *fileGenerator) processFile(fileName string, promptTemplate string, standards []config.Standard) (FileCompliance, error) {
 	cachedIdx := getCachedIndex(fg.sess, fileName)
 	filePath := filepath.Join(fg.outputDir, fileName)
 	_, statErr := os.Stat(filePath)
@@ -225,7 +228,7 @@ func (fg *fileGenerator) processFile(fileName string, standards []config.Standar
 		}, nil
 	}
 
-	content, startAttempt, err := fg.getInitialContentOrResume(fileName)
+	content, startAttempt, err := fg.getInitialContentOrResume(fileName, promptTemplate)
 	if err != nil {
 		return FileCompliance{}, err
 	}
@@ -263,7 +266,7 @@ func (fg *fileGenerator) processFile(fileName string, standards []config.Standar
 	}, nil
 }
 
-func (fg *fileGenerator) getInitialContentOrResume(fileName string) (string, int, error) {
+func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTemplate string) (string, int, error) {
 	cachedIdx := getCachedIndex(fg.sess, fileName)
 	maxRetries := 10
 
@@ -292,7 +295,7 @@ func (fg *fileGenerator) getInitialContentOrResume(fileName string) (string, int
 	var content string
 	var err error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.sess.Facts, fileName)
+		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.sess.Facts, fileName, promptTemplate)
 		if err == nil {
 			break
 		}

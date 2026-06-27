@@ -121,12 +121,10 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 
 	showTextInput := len(sess.LastChoices) == 0
 
-	genFiles := []string{
-		"01_prd_functional.md",
-		"02_system_architecture.md",
-		"03_security_threat_model.md",
-		"04_api_architecture_integration.md",
-		"05_coding_standards_guidelines.md",
+	templates, _ := config.LoadTemplates()
+	var genFiles []string
+	for _, t := range templates {
+		genFiles = append(genFiles, t.FileName)
 	}
 	genFileStatuses := make(map[string]string)
 	genFileDetails := make(map[string]string)
