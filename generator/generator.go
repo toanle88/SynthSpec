@@ -159,24 +159,42 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 			continue
 		}
 
-		progress <- fmt.Sprintf("Synthesizing %s...", fileName)
-
 		var content string
 		var err error
 		maxRetries := 10
+		startAttempt := 1
+		resuming := false
+
+		if cachedIdx != -1 && sess.GeneratedFiles[cachedIdx].InProgressText != "" {
+			content = sess.GeneratedFiles[cachedIdx].InProgressText
+			startAttempt = sess.GeneratedFiles[cachedIdx].CurrentAttempt
+			if startAttempt < 1 {
+				startAttempt = 1
+			}
+			resuming = true
+			progress <- fmt.Sprintf("Resuming %s synthesis from attempt %d...", fileName, startAttempt)
+		} else {
+			progress <- fmt.Sprintf("Synthesizing %s...", fileName)
+		}
 
 		// Initial Generation
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			content, err = gw.GenerateSpecFile(ctx, sess.Facts, fileName)
-			if err != nil {
-				if attempt == maxRetries {
-					return fmt.Errorf("failed to generate %s after %d attempts: %w", fileName, maxRetries, err)
+		if !resuming {
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				content, err = gw.GenerateSpecFile(ctx, sess.Facts, fileName)
+				if err != nil {
+					if attempt == maxRetries {
+						return fmt.Errorf("failed to generate %s after %d attempts: %w", fileName, maxRetries, err)
+					}
+					progress <- fmt.Sprintf("Error generating %s (attempt %d/%d): %v. Retrying...", fileName, attempt, maxRetries, err)
+					time.Sleep(100 * time.Millisecond)
+					continue
 				}
-				progress <- fmt.Sprintf("Error generating %s (attempt %d/%d): %v. Retrying...", fileName, attempt, maxRetries, err)
-				time.Sleep(100 * time.Millisecond)
-				continue
+				break
 			}
-			break
+			// Save immediately after successful initial generation
+			if err == nil {
+				_ = updateInProgressState(sess, fileName, content, 1)
+			}
 		}
 
 		// Self-Correction Loop for Syntax and Compliance Checks
@@ -193,7 +211,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 			}
 		}
 
-		for attempt := 1; attempt < maxRetries; attempt++ {
+		for attempt := startAttempt; attempt < maxRetries; attempt++ {
 			// Step A: Static syntax validation (YAML / JSON validation)
 			checkErr = PerformStaticValidation(fileName, content)
 			if checkErr != nil {
@@ -202,6 +220,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 				refined, refineErr := gw.RefineSpecFile(ctx, fileName, content, feedback, nil)
 				if refineErr == nil {
 					content = refined
+					_ = updateInProgressState(sess, fileName, content, attempt+1)
 				}
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -243,6 +262,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 					refined, refineErr := gw.RefineSpecFile(ctx, fileName, content, feedbackText, failedStds)
 					if refineErr == nil {
 						content = refined
+						_ = updateInProgressState(sess, fileName, content, attempt+1)
 					}
 					time.Sleep(100 * time.Millisecond)
 					continue
@@ -345,3 +365,27 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 	progress <- fmt.Sprintf("All files generated in: %s", outputDir)
 	return nil
 }
+
+func updateInProgressState(sess *state.Session, fileName, content string, attempt int) error {
+	newGenState := state.GeneratedFileState{
+		FileName:       fileName,
+		InProgressText: content,
+		CurrentAttempt: attempt,
+		HasError:       true,
+	}
+	found := false
+	for idx, gf := range sess.GeneratedFiles {
+		if gf.FileName == fileName {
+			newGenState.Results = gf.Results
+			newGenState.ErrorStr = gf.ErrorStr
+			sess.GeneratedFiles[idx] = newGenState
+			found = true
+			break
+		}
+	}
+	if !found {
+		sess.GeneratedFiles = append(sess.GeneratedFiles, newGenState)
+	}
+	return sess.Save()
+}
+

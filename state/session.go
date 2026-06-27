@@ -13,10 +13,12 @@ import (
 
 // GeneratedFileState represents the status and compliance audit of a generated file
 type GeneratedFileState struct {
-	FileName string                     `json:"file_name"`
-	Results  []gateway.ComplianceResult `json:"results"`
-	HasError bool                       `json:"has_error"`
-	ErrorStr string                     `json:"error_str,omitempty"`
+	FileName       string                     `json:"file_name"`
+	Results        []gateway.ComplianceResult `json:"results"`
+	HasError       bool                       `json:"has_error"`
+	ErrorStr       string                     `json:"error_str,omitempty"`
+	InProgressText string                     `json:"in_progress_text,omitempty"`
+	CurrentAttempt int                        `json:"current_attempt,omitempty"`
 }
 
 // Session represents a project session state

@@ -417,3 +417,50 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestResumableMidLoop(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-gen-resumable-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-resumable-project",
+		Provider:    "test-provider",
+		GeneratedFiles: []state.GeneratedFileState{
+			{
+				FileName:       "01_prd_functional.md",
+				InProgressText: "In-progress draft of PRD",
+				CurrentAttempt: 5,
+				HasError:       true,
+			},
+		},
+	}
+
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"01_prd_functional.md":        {"PRD content refined"},
+			"02_system_architecture.md":   {"Arch content"},
+			"03_security_threat_model.md": {"Threat model content"},
+			"04_openapi_contract.yaml":    {"openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}"},
+			"05_engineering_backlog.json": {
+				`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
+			},
+		},
+		callCounts: make(map[string]int),
+	}
+
+	progress := make(chan string, 20)
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err != nil {
+		t.Fatalf("expected success, got err: %v", err)
+	}
+	for range progress {}
+
+	// Verify that GenerateSpecFile was NOT called for 01_prd_functional.md because we resumed (it goes straight to refinement/validation)
+	if tg.callCounts["01_prd_functional.md"] != 0 {
+		t.Errorf("expected 0 calls to GenerateSpecFile/RefineSpecFile for resumed file, got %d", tg.callCounts["01_prd_functional.md"])
+	}
+}
+
