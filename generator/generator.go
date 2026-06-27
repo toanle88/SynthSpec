@@ -137,9 +137,32 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 	var fileCompliances []FileCompliance
 
 	for _, fileName := range files {
+		// Check if file is already successfully generated in session and exists on disk
+		cachedIdx := -1
+		for idx, gf := range sess.GeneratedFiles {
+			if gf.FileName == fileName {
+				cachedIdx = idx
+				break
+			}
+		}
+
+		filePath := filepath.Join(outputDir, fileName)
+		_, statErr := os.Stat(filePath)
+
+		if cachedIdx != -1 && statErr == nil && !sess.GeneratedFiles[cachedIdx].HasError {
+			progress <- fmt.Sprintf("Skipping %s (already generated)", fileName)
+			fileCompliances = append(fileCompliances, FileCompliance{
+				FileName: fileName,
+				Results:  sess.GeneratedFiles[cachedIdx].Results,
+				Err:      nil,
+			})
+			continue
+		}
+
 		progress <- fmt.Sprintf("Synthesizing %s...", fileName)
 
 		var content string
+		var err error
 		maxRetries := 3
 
 		// Initial Generation
@@ -244,12 +267,37 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		})
 
 		// Write final generated content
-		filePath := filepath.Join(outputDir, fileName)
 		if fileName == "05_engineering_backlog.json" {
 			content = sanitizeJSONOutput(content)
 		}
 		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to write %s output file: %w", fileName, err)
+		}
+
+		// Update session progress
+		newGenState := state.GeneratedFileState{
+			FileName: fileName,
+			Results:  complianceResults,
+			HasError: checkErr != nil,
+		}
+		if checkErr != nil {
+			newGenState.ErrorStr = checkErr.Error()
+		}
+
+		found := false
+		for idx, gf := range sess.GeneratedFiles {
+			if gf.FileName == fileName {
+				sess.GeneratedFiles[idx] = newGenState
+				found = true
+				break
+			}
+		}
+		if !found {
+			sess.GeneratedFiles = append(sess.GeneratedFiles, newGenState)
+		}
+
+		if err := sess.Save(); err != nil {
+			return fmt.Errorf("failed to save session state after generating %s: %w", fileName, err)
 		}
 	}
 

@@ -11,6 +11,14 @@ import (
 	"github.com/toanle/synthspec/gateway"
 )
 
+// GeneratedFileState represents the status and compliance audit of a generated file
+type GeneratedFileState struct {
+	FileName string                     `json:"file_name"`
+	Results  []gateway.ComplianceResult `json:"results"`
+	HasError bool                       `json:"has_error"`
+	ErrorStr string                     `json:"error_str,omitempty"`
+}
+
 // Session represents a project session state
 type Session struct {
 	ProjectName     string                      `json:"project_name"`
@@ -25,6 +33,7 @@ type Session struct {
 	LastQuestion    string                      `json:"last_question"`
 	LastChoices     []string                    `json:"last_choices"`
 	TotalTokensUsed int                         `json:"total_tokens_used"`
+	GeneratedFiles  []GeneratedFileState        `json:"generated_files,omitempty"`
 }
 
 // GetSessionDir returns the project directory path

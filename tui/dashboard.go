@@ -306,6 +306,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Session.Rationales = msg.resp.DimensionRationales
 		m.Session.LastQuestion = msg.resp.NextQuestion
 		m.Session.LastChoices = msg.resp.NextChoices
+		m.Session.GeneratedFiles = nil
 		m.selectedChoiceIdx = 0
 		m.showTextInput = len(m.Session.LastChoices) == 0
 		
@@ -347,6 +348,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.Session.Facts = editedFacts
+		m.Session.GeneratedFiles = nil
 		m.Session.Save()
 
 		// Re-trigger Oracle query to evaluate updated facts

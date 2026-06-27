@@ -273,6 +273,9 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 	})
 
 	t.Run("Transient API failure retry", func(t *testing.T) {
+		sess.GeneratedFiles = nil
+		os.RemoveAll(tempDir)
+		os.MkdirAll(tempDir, 0755)
 		tg := &TestGateway{
 			responses: map[string][]string{
 				"05_engineering_backlog.json": {
@@ -297,6 +300,9 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 	})
 
 	t.Run("Transient validation failure retry", func(t *testing.T) {
+		sess.GeneratedFiles = nil
+		os.RemoveAll(tempDir)
+		os.MkdirAll(tempDir, 0755)
 		tg := &TestGateway{
 			responses: map[string][]string{
 				"05_engineering_backlog.json": {
@@ -321,6 +327,9 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 	})
 
 	t.Run("Persistent failure", func(t *testing.T) {
+		sess.GeneratedFiles = nil
+		os.RemoveAll(tempDir)
+		os.MkdirAll(tempDir, 0755)
 		tg := &TestGateway{
 			responses: map[string][]string{
 				"05_engineering_backlog.json": {
@@ -342,6 +351,68 @@ func TestGenerateWithRetryAndValidation(t *testing.T) {
 
 		if tg.callCounts["05_engineering_backlog.json"] != 3 {
 			t.Errorf("expected 3 calls, got %d", tg.callCounts["05_engineering_backlog.json"])
+		}
+	})
+
+	t.Run("Resumable progress skip completed", func(t *testing.T) {
+		sess.GeneratedFiles = nil
+		os.RemoveAll(tempDir)
+		os.MkdirAll(tempDir, 0755)
+
+		// 1. Simulate a failure on the third file ("03_security_threat_model.md")
+		tg1 := &TestGateway{
+			responses: map[string][]string{
+				"01_prd_functional.md":        {"PRD content"},
+				"02_system_architecture.md":   {"Arch content"},
+				"03_security_threat_model.md": {"ERROR:mocked_api_failure"},
+			},
+			callCounts: make(map[string]int),
+		}
+
+		progress1 := make(chan string, 20)
+		err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
+		if err1 == nil {
+			t.Fatal("expected failure on 03_security_threat_model.md, got success")
+		}
+		for range progress1 {}
+
+		// Verify first two files were generated and written, but not the third
+		if len(sess.GeneratedFiles) != 2 {
+			t.Errorf("expected 2 files in GeneratedFiles cache, got %d", len(sess.GeneratedFiles))
+		}
+		if sess.GeneratedFiles[0].FileName != "01_prd_functional.md" || sess.GeneratedFiles[1].FileName != "02_system_architecture.md" {
+			t.Errorf("unexpected cached files list: %+v", sess.GeneratedFiles)
+		}
+
+		// 2. Resume with a healthy gateway
+		tg2 := &TestGateway{
+			responses: map[string][]string{
+				"03_security_threat_model.md": {"Threat model content"},
+				"04_openapi_contract.yaml":    {"OpenAPI content"},
+				"05_engineering_backlog.json": {
+					`{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "D1", "acceptance_criteria": ["AC"]}]}]}`,
+				},
+			},
+			callCounts: make(map[string]int),
+		}
+
+		progress2 := make(chan string, 20)
+		err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
+		if err2 != nil {
+			t.Fatalf("expected resumption success, got err: %v", err2)
+		}
+		for range progress2 {}
+
+		// Verify skipping occurred: tg2 call count for first two files must be 0
+		if tg2.callCounts["01_prd_functional.md"] != 0 {
+			t.Errorf("expected 0 calls for 01_prd_functional.md on resume, got %d", tg2.callCounts["01_prd_functional.md"])
+		}
+		if tg2.callCounts["02_system_architecture.md"] != 0 {
+			t.Errorf("expected 0 calls for 02_system_architecture.md on resume, got %d", tg2.callCounts["02_system_architecture.md"])
+		}
+		// Remaining files must have been generated
+		if tg2.callCounts["03_security_threat_model.md"] != 1 {
+			t.Errorf("expected 1 call for 03_security_threat_model.md, got %d", tg2.callCounts["03_security_threat_model.md"])
 		}
 	})
 }
