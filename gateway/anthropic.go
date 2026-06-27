@@ -169,6 +169,7 @@ Guidelines for evaluation:
 
 	oracleResp.TokensPrompt = anthropicResp.Usage.InputTokens
 	oracleResp.TokensCompletion = anthropicResp.Usage.OutputTokens
+	oracleResp.NextQuestion = SanitizeNextQuestion(oracleResp.NextQuestion)
 
 	return &oracleResp, nil
 }

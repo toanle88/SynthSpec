@@ -74,6 +74,7 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 		}
 	}
 
+	res.NextQuestion = SanitizeNextQuestion(res.NextQuestion)
 	return res, nil
 }
 

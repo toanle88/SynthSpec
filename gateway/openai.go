@@ -157,6 +157,7 @@ Guidelines for evaluation:
 
 	oracleResp.TokensPrompt = chatResp.Usage.PromptTokens
 	oracleResp.TokensCompletion = chatResp.Usage.CompletionTokens
+	oracleResp.NextQuestion = SanitizeNextQuestion(oracleResp.NextQuestion)
 
 	return &oracleResp, nil
 }

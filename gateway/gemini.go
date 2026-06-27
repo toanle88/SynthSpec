@@ -179,6 +179,7 @@ Guidelines for evaluation:
 
 	oracleResp.TokensPrompt = geminiResp.UsageMetadata.PromptTokenCount
 	oracleResp.TokensCompletion = geminiResp.UsageMetadata.CandidatesTokenCount
+	oracleResp.NextQuestion = SanitizeNextQuestion(oracleResp.NextQuestion)
 
 	return &oracleResp, nil
 }

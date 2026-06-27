@@ -29,6 +29,11 @@ type genFinishedMsg struct {
 	err error
 }
 
+type contextPruneResultMsg struct {
+	pruned bool
+	err    error
+}
+
 // DashboardModel represents the TUI state
 type DashboardModel struct {
 	Session         *state.Session
@@ -213,14 +218,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.genStatus = "Starting spec generation..."
 			m.genChan = make(chan string, 10)
 			batchCmds = append(batchCmds, m.generateSpecsCmd(), m.recvGenProgressCmd())
-		}
-
-		// Context Pruning check
-		pruned, pruneErr := m.Session.CheckAndPruneContext(context.Background(), m.Gateway)
-		if pruneErr != nil {
-			m.err = fmt.Errorf("context pruning failed: %w", pruneErr)
-		} else if pruned {
-			m.err = fmt.Errorf("conversation summarized to fit context limit")
+		} else if !m.isCompleted {
+			m.loading = true
+			batchCmds = append(batchCmds, m.pruneContextCmd())
 		}
 
 		return m, tea.Batch(batchCmds...)
@@ -257,6 +257,15 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.genStatus = "All specifications synthesized successfully!"
 			m.Session.Save() // Save final state
+		}
+		return m, nil
+
+	case contextPruneResultMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.err = fmt.Errorf("context pruning failed: %w", msg.err)
+		} else if msg.pruned {
+			m.err = fmt.Errorf("conversation summarized to fit context limit")
 		}
 		return m, nil
 	}
@@ -314,5 +323,12 @@ func (m DashboardModel) generateSpecsCmd() tea.Cmd {
 		ctx := context.Background()
 		err := generator.Generate(ctx, m.Gateway, m.Session, m.OutputDir, m.genChan)
 		return genFinishedMsg{err: err}
+	}
+}
+
+func (m DashboardModel) pruneContextCmd() tea.Cmd {
+	return func() tea.Msg {
+		pruned, err := m.Session.CheckAndPruneContext(context.Background(), m.Gateway)
+		return contextPruneResultMsg{pruned: pruned, err: err}
 	}
 }
