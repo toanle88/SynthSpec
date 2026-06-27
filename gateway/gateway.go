@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"strings"
+
+	"github.com/toanle/synthspec/config"
 )
 
 // Message represents a single turn in the conversation history
@@ -45,6 +47,14 @@ type OracleResponse struct {
 	TokensCompletion    int                 `json:"-"`
 }
 
+// ComplianceResult represents the evaluation result of a single standard
+type ComplianceResult struct {
+	StandardID string `json:"standard_id"`
+	Score      int    `json:"score"`
+	Compliant  bool   `json:"compliant"`
+	Feedback   string `json:"feedback"`
+}
+
 // Gateway defines the uniform interface for communicating with upstream LLMs
 type Gateway interface {
 	// QueryOracle sends the current facts, conversation history, and latest input
@@ -53,6 +63,12 @@ type Gateway interface {
 
 	// GenerateSpecFile generates the contents of a specific output asset based on the compiled facts.
 	GenerateSpecFile(ctx context.Context, facts Facts, fileName string) (string, error)
+
+	// EvaluateCompliance evaluates a generated file's content against a set of standards
+	EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error)
+
+	// RefineSpecFile attempts to fix a generated file to comply with standards based on feedback
+	RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error)
 }
 
 // SanitizeNextQuestion enforces the strict single question constraint on LLM output.

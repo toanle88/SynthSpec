@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/toanle/synthspec/config"
 )
 
 type AnthropicGateway struct {
@@ -242,3 +245,183 @@ Do NOT include markdown backticks. Output ONLY the raw JSON. Use these facts:
 
 	return anthropicResp.Content[0].Text, nil
 }
+
+func (a *AnthropicGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
+	var applicableStandards []config.Standard
+	for _, std := range standards {
+		for _, tf := range std.TargetFiles {
+			if tf == fileName {
+				applicableStandards = append(applicableStandards, std)
+				break
+			}
+		}
+	}
+
+	if len(applicableStandards) == 0 {
+		return nil, nil
+	}
+
+	systemPrompt := `You are an expert software engineering auditor. Your job is to evaluate if a generated specification file complies with specific architectural and software development standards.
+For each standard provided, evaluate the file content and return a JSON object with a root key "results" containing an array of evaluation objects.
+Each evaluation object must contain:
+1. "standard_id": the ID of the standard being evaluated.
+2. "score": an integer from 0 to 100 indicating compliance (0 for completely absent/fails, 100 for fully compliant).
+3. "compliant": a boolean indicating if it meets the minimum threshold or is acceptable.
+4. "feedback": a concise explanation of the score and specific details of what is missing or incorrect.
+
+Your response MUST be a JSON object matching this structure:
+{
+  "results": [
+    {
+      "standard_id": "clean_architecture",
+      "score": 75,
+      "compliant": true,
+      "feedback": "Decoupling is partially complete..."
+    }
+  ]
+}
+Output only the raw JSON string. Do NOT output any markdown formatting backticks.`
+
+	type auditPayload struct {
+		FileName    string            `json:"file_name"`
+		FileContent string            `json:"file_content"`
+		Standards   []config.Standard `json:"standards"`
+	}
+
+	payloadStruct := auditPayload{
+		FileName:    fileName,
+		FileContent: fileContent,
+		Standards:   applicableStandards,
+	}
+	payloadBytes, _ := json.Marshal(payloadStruct)
+
+	messages := []anthropicMessage{
+		{
+			Role: "user",
+			Content: []anthropicContentPart{
+				{Type: "text", Text: string(payloadBytes)},
+			},
+		},
+	}
+
+	reqBody := anthropicRequest{
+		Model:     a.model,
+		System:    systemPrompt,
+		Messages:  messages,
+		MaxTokens: 4000,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", a.apiKey)
+	req.Header.Set("Anthropic-Version", "2023-06-01")
+
+	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	if err != nil {
+		return nil, err
+	}
+
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Anthropic response: %w", err)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		return nil, fmt.Errorf("empty content returned from Anthropic")
+	}
+
+	rawJSON := anthropicResp.Content[0].Text
+
+	// Enforce parsing object wrappers
+	if idx := strings.Index(rawJSON, "{"); idx != -1 {
+		if endIdx := strings.LastIndex(rawJSON, "}"); endIdx != -1 && endIdx > idx {
+			rawJSON = rawJSON[idx : endIdx+1]
+		}
+	}
+
+	var envelope struct {
+		Results []ComplianceResult `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &envelope); err != nil {
+		return nil, fmt.Errorf("Anthropic returned invalid compliance JSON: %w (Raw content: %s)", err, rawJSON)
+	}
+
+	return envelope.Results, nil
+}
+
+func (a *AnthropicGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+	systemPrompt := "You are a senior solutions architect. Your job is to modify an existing specification file to fix quality standards violations. Return only the updated file contents and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."
+
+	var criteriaLines []string
+	for _, std := range failedStandards {
+		criteriaLines = append(criteriaLines, fmt.Sprintf("- Standard '%s' (%s): %s", std.Name, std.ID, std.Criteria))
+	}
+	criteriaText := strings.Join(criteriaLines, "\n")
+
+	prompt := fmt.Sprintf(`We generated a specification file named "%s" but it failed standard quality checks.
+Here is the feedback on why it failed:
+%s
+
+Please update the file content to address the feedback and satisfy the following standards:
+%s
+
+Original File Content:
+%s
+
+Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks like `+"```"+` or include any conversational filler.`,
+		fileName, feedback, criteriaText, fileContent)
+
+	messages := []anthropicMessage{
+		{
+			Role: "user",
+			Content: []anthropicContentPart{
+				{Type: "text", Text: prompt},
+			},
+		},
+	}
+
+	reqBody := anthropicRequest{
+		Model:     a.model,
+		System:    systemPrompt,
+		Messages:  messages,
+		MaxTokens: 4000,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", a.apiKey)
+	req.Header.Set("Anthropic-Version", "2023-06-01")
+
+	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	if err != nil {
+		return "", err
+	}
+
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
+		return "", fmt.Errorf("failed to parse Anthropic response: %w", err)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		return "", fmt.Errorf("empty content returned from Anthropic")
+	}
+
+	return anthropicResp.Content[0].Text, nil
+}
+

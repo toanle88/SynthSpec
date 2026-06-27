@@ -1,8 +1,11 @@
 package config
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Supported Providers
@@ -93,3 +96,48 @@ func LoadConfig(providerOverride, modelOverride string, mock bool) (*Config, err
 
 	return cfg, nil
 }
+
+//go:embed standards.yaml
+var defaultStandardsYAML []byte
+
+// Standard represents an engineering or quality standard
+type Standard struct {
+	ID          string   `yaml:"id" json:"id"`
+	Name        string   `yaml:"name" json:"name"`
+	Description string   `yaml:"description" json:"description"`
+	TargetFiles []string `yaml:"target_files" json:"target_files"`
+	Criteria    string   `yaml:"criteria" json:"criteria"`
+	MinScore    int      `yaml:"min_score" json:"min_score"`
+}
+
+type StandardsConfig struct {
+	Standards []Standard `yaml:"standards"`
+}
+
+// LoadStandards loads the standards from a local override file or falls back to the embedded defaults.
+func LoadStandards() ([]Standard, error) {
+	data := defaultStandardsYAML
+
+	// Check for local overrides in order of preference
+	overridePaths := []string{
+		"standards.yaml",
+		".synthspec/standards.yaml",
+	}
+
+	for _, p := range overridePaths {
+		if _, err := os.Stat(p); err == nil {
+			if fileData, readErr := os.ReadFile(p); readErr == nil {
+				data = fileData
+				break
+			}
+		}
+	}
+
+	var cfg StandardsConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse standards configuration: %w", err)
+	}
+
+	return cfg.Standards, nil
+}
+

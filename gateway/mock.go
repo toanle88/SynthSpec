@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/toanle/synthspec/config"
 )
 
 // MockGateway implements the Gateway interface for local testing
@@ -194,3 +197,96 @@ paths:
 		return "", fmt.Errorf("unknown file: %s", fileName)
 	}
 }
+
+// EvaluateCompliance returns mocked compliance scores matching the standards checklist
+func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
+	var results []ComplianceResult
+
+	for _, std := range standards {
+		// Only check standards that target this file
+		targetsFile := false
+		for _, tf := range std.TargetFiles {
+			if tf == fileName {
+				targetsFile = true
+				break
+			}
+		}
+		if !targetsFile {
+			continue
+		}
+
+		score := 0
+		compliant := false
+		feedback := ""
+
+		switch std.ID {
+		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support":
+			score = 100
+			compliant = true
+			feedback = fmt.Sprintf("Successfully implemented %s.", std.Name)
+		case "clean_architecture":
+			score = 70
+			compliant = score >= std.MinScore
+			feedback = "Clean architecture partial separation. Routing layers are slightly coupled."
+		default:
+			// Starts at 0%
+			score = 0
+			compliant = false
+			feedback = fmt.Sprintf("Standard %s has not been implemented in the generated documentation.", std.Name)
+		}
+
+		// Simulating self-correction progress:
+		// If the fileContent contains indicators of self-correction, bump the score to 100.
+		if strings.Contains(fileContent, "Fix:") || strings.Contains(fileContent, "refined") || strings.Contains(fileContent, "compliant") {
+			score = 100
+			compliant = true
+			feedback = fmt.Sprintf("Successfully refined standard: %s to 100%% compliance after self-correction.", std.Name)
+		}
+
+		results = append(results, ComplianceResult{
+			StandardID: std.ID,
+			Score:      score,
+			Compliant:  compliant,
+			Feedback:   feedback,
+		})
+	}
+
+	return results, nil
+}
+
+func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+	var ids []string
+	for _, std := range failedStandards {
+		ids = append(ids, std.ID)
+	}
+	fixMsg := fmt.Sprintf("refined Fix: compliant with %s", strings.Join(ids, ", "))
+
+	if strings.HasSuffix(fileName, ".yaml") || strings.HasSuffix(fileName, ".yml") {
+		return fmt.Sprintf("%s\n# %s\n", fileContent, fixMsg), nil
+	}
+
+	if strings.HasSuffix(fileName, ".json") {
+		content := strings.TrimSpace(fileContent)
+		if strings.HasPrefix(content, "```") {
+			if idx := strings.Index(content, "\n"); idx != -1 {
+				content = content[idx+1:]
+			}
+			if strings.HasSuffix(content, "```") {
+				content = content[:len(content)-3]
+			}
+			content = strings.TrimSpace(content)
+		}
+
+		var jsonObj map[string]interface{}
+		if err := json.Unmarshal([]byte(content), &jsonObj); err == nil {
+			jsonObj["compliance_refinement"] = fixMsg
+			if bytes, marshalErr := json.MarshalIndent(jsonObj, "", "  "); marshalErr == nil {
+				return string(bytes), nil
+			}
+		}
+		return fileContent, nil
+	}
+
+	return fmt.Sprintf("%s\n\n<!-- %s -->\n", fileContent, fixMsg), nil
+}
+

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/state"
 )
@@ -20,6 +21,7 @@ type TelemetryMetadata struct {
 	EngineVersion       string            `json:"engine_version"`
 	ProviderUsed        string            `json:"provider_used"`
 	CompletionMetrics   CompletionMetrics `json:"completion_metrics"`
+	ComplianceSummary   map[string]int    `json:"compliance_summary,omitempty"`
 }
 
 type CompletionMetrics struct {
@@ -110,6 +112,12 @@ func validateBacklog(content string) error {
 func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outputDir string, progress chan<- string) error {
 	defer close(progress)
 
+	// Load quality standards configuration
+	standards, err := config.LoadStandards()
+	if err != nil {
+		return fmt.Errorf("failed to load quality standards: %w", err)
+	}
+
 	// Ensure output directory exists
 	if outputDir == "" {
 		outputDir = filepath.Join(state.GetSessionDir(sess.ProjectName), "output")
@@ -126,13 +134,15 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		"05_engineering_backlog.json",
 	}
 
+	var fileCompliances []FileCompliance
+
 	for _, fileName := range files {
 		progress <- fmt.Sprintf("Synthesizing %s...", fileName)
 
 		var content string
-		var err error
 		maxRetries := 3
 
+		// Initial Generation
 		for attempt := 1; attempt <= maxRetries; attempt++ {
 			content, err = gw.GenerateSpecFile(ctx, sess.Facts, fileName)
 			if err != nil {
@@ -143,29 +153,119 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-
-			// Perform validation for specific files (e.g. JSON backlog)
-			if fileName == "05_engineering_backlog.json" {
-				sanitized := sanitizeJSONOutput(content)
-				if valErr := validateBacklog(sanitized); valErr != nil {
-					err = valErr
-					if attempt == maxRetries {
-						return fmt.Errorf("failed to validate %s after %d attempts: %w. Content: %s", fileName, maxRetries, valErr, content)
-					}
-					progress <- fmt.Sprintf("Validation failed for %s (attempt %d/%d): %v. Retrying...", fileName, attempt, maxRetries, valErr)
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-				content = sanitized
-			}
-
-			err = nil
 			break
 		}
 
+		// Self-Correction Loop for Syntax and Compliance Checks
+		var complianceResults []gateway.ComplianceResult
+		var checkErr error
+
+		var applicableStds []config.Standard
+		for _, std := range standards {
+			for _, tf := range std.TargetFiles {
+				if tf == fileName {
+					applicableStds = append(applicableStds, std)
+					break
+				}
+			}
+		}
+
+		for attempt := 1; attempt < maxRetries; attempt++ {
+			// Step A: Static syntax validation (YAML / JSON validation)
+			checkErr = PerformStaticValidation(fileName, content)
+			if checkErr != nil {
+				progress <- fmt.Sprintf("⚠️ Syntax error in %s: %v. Correcting (attempt %d/%d)...", fileName, checkErr, attempt+1, maxRetries)
+				feedback := fmt.Sprintf("Static syntax validation failed: %v. Please rewrite the file to output syntactically valid contents.", checkErr)
+				refined, refineErr := gw.RefineSpecFile(ctx, fileName, content, feedback, nil)
+				if refineErr == nil {
+					content = refined
+				}
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			// Step B: Qualitative standard validation
+			if len(applicableStds) > 0 {
+				progress <- fmt.Sprintf("🔍 Auditing standards compliance for %s...", fileName)
+				evalResults, evalErr := gw.EvaluateCompliance(ctx, fileName, content, standards)
+				if evalErr != nil {
+					progress <- fmt.Sprintf("⚠️ Compliance evaluation failed for %s: %v", fileName, evalErr)
+					checkErr = evalErr
+					break
+				}
+
+				complianceResults = evalResults
+
+				// Identify failed standards
+				var failedStds []config.Standard
+				var feedbackLines []string
+				for _, res := range complianceResults {
+					var stdDef config.Standard
+					for _, std := range standards {
+						if std.ID == res.StandardID {
+							stdDef = std
+							break
+						}
+					}
+					if !res.Compliant || res.Score < stdDef.MinScore {
+						failedStds = append(failedStds, stdDef)
+						feedbackLines = append(feedbackLines, fmt.Sprintf("- Standard '%s' failed (Score: %d%%, Required: %d%%): %s", stdDef.Name, res.Score, stdDef.MinScore, res.Feedback))
+					}
+				}
+
+				// If failed, trigger targeted refinement
+				if len(failedStds) > 0 {
+					feedbackText := strings.Join(feedbackLines, "\n")
+					progress <- fmt.Sprintf("🔄 Standards check failed for %s. Refining (attempt %d/%d)...", fileName, attempt+1, maxRetries)
+					refined, refineErr := gw.RefineSpecFile(ctx, fileName, content, feedbackText, failedStds)
+					if refineErr == nil {
+						content = refined
+					}
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+			}
+
+			// All checks passed!
+			checkErr = nil
+			break
+		}
+
+		// If static syntax check failed, abort and return a hard error
+		if staticErr := PerformStaticValidation(fileName, content); staticErr != nil {
+			return fmt.Errorf("failed to validate syntax for %s after %d attempts: %w", fileName, maxRetries, staticErr)
+		}
+
+		// Record compliance findings
+		fileCompliances = append(fileCompliances, FileCompliance{
+			FileName: fileName,
+			Results:  complianceResults,
+			Err:      checkErr,
+		})
+
+		// Write final generated content
 		filePath := filepath.Join(outputDir, fileName)
+		if fileName == "05_engineering_backlog.json" {
+			content = sanitizeJSONOutput(content)
+		}
 		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to write %s output file: %w", fileName, err)
+		}
+	}
+
+	// Compile and write compliance report markdown
+	progress <- "Compiling compliance report (00_compliance_report.md)..."
+	reportContent := GenerateComplianceReport(sess.ProjectName, fileCompliances, standards)
+	reportPath := filepath.Join(outputDir, "00_compliance_report.md")
+	if err := os.WriteFile(reportPath, []byte(reportContent), 0644); err != nil {
+		return fmt.Errorf("failed to write 00_compliance_report.md: %w", err)
+	}
+
+	// Prepare metadata and compliance summary mapping
+	complianceSummary := make(map[string]int)
+	for _, fc := range fileCompliances {
+		for _, res := range fc.Results {
+			complianceSummary[res.StandardID] = res.Score
 		}
 	}
 
@@ -178,9 +278,10 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		EngineVersion:       "1.0.0",
 		ProviderUsed:        sess.Provider,
 		CompletionMetrics: CompletionMetrics{
-			TotalTurns:     len(sess.History) / 2, // Pairs of user/assistant turns
+			TotalTurns:     len(sess.History) / 2,
 			TokensConsumed: sess.TotalTokensUsed,
 		},
+		ComplianceSummary: complianceSummary,
 	}
 
 	metaData, err := json.MarshalIndent(meta, "", "  ")

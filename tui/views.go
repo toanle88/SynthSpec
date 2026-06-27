@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/toanle/synthspec/config"
 )
 
 func (m DashboardModel) View() string {
@@ -113,6 +114,8 @@ func (m DashboardModel) renderMainChat() string {
 		content = append(content, TitleStyle.Render("✨ Final Asset Synthesis in Progress"))
 		content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render(m.genStatus))
+		content = append(content, "\n"+TitleStyle.Render("📋 Engineering Quality Standards Check:"))
+		content = append(content, m.renderStandardsGrid(m.width-45))
 		return strings.Join(content, "\n")
 	}
 
@@ -124,6 +127,10 @@ func (m DashboardModel) renderMainChat() string {
 		content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to launch Editor & make modifications"))
 		content = append(content, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("  Press [Q] to Save & Exit CLI"))
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render(m.genStatus))
+		if m.showScorecard {
+			content = append(content, "\n"+TitleStyle.Render("📊 Final Architectural Quality Scorecard:"))
+			content = append(content, m.renderStandardsGrid(m.width-45))
+		}
 		return strings.Join(content, "\n")
 	}
 
@@ -189,3 +196,120 @@ func wrapText(text string, width int) string {
 
 	return strings.Join(lines, "\n")
 }
+
+var (
+	StyleSuccess = lipgloss.NewStyle().Foreground(ColorSuccess)
+	StyleWarning = lipgloss.NewStyle().Foreground(ColorWarning)
+	StyleInfo    = lipgloss.NewStyle().Foreground(ColorInfo)
+	StyleMuted   = lipgloss.NewStyle().Foreground(ColorMuted)
+	StyleError   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")) // Vibrant Red
+)
+
+func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss.Style) {
+	if m.showScorecard {
+		score, found := m.complianceScores[std.ID]
+		if !found {
+			return "🔴 N/A", StyleError
+		}
+		if score >= std.MinScore {
+			return fmt.Sprintf("🟢 %d%%", score), StyleSuccess
+		} else if score > 0 {
+			return fmt.Sprintf("🟡 %d%%", score), StyleWarning
+		} else {
+			return fmt.Sprintf("🔴 %d%%", score), StyleError
+		}
+	}
+
+	if !m.isGenerating {
+		return "⏳ Pending", StyleMuted
+	}
+
+	// Check if this standard targets the file currently being processed
+	for _, tf := range std.TargetFiles {
+		if strings.Contains(m.genStatus, tf) {
+			if strings.Contains(m.genStatus, "Auditing") || strings.Contains(m.genStatus, "Refining") || strings.Contains(m.genStatus, "failed") {
+				return "🔄 Auditing", StyleInfo
+			}
+			return "⏳ Building", StyleMuted
+		}
+	}
+
+	// Determine if the standard's target file is in the past
+	files := []string{
+		"01_prd_functional.md",
+		"02_system_architecture.md",
+		"03_security_threat_model.md",
+		"04_openapi_contract.yaml",
+		"05_engineering_backlog.json",
+	}
+
+	currentFileIdx := -1
+	for i, f := range files {
+		if strings.Contains(m.genStatus, f) {
+			currentFileIdx = i
+			break
+		}
+	}
+
+	if currentFileIdx == -1 {
+		if strings.Contains(m.genStatus, "successfully") || strings.Contains(m.genStatus, "Compiling") || strings.Contains(m.genStatus, "audited") {
+			return "🟢 Verified", StyleSuccess
+		}
+		return "⏳ Pending", StyleMuted
+	}
+
+	isPast := true
+	for _, tf := range std.TargetFiles {
+		stdFileIdx := -1
+		for i, f := range files {
+			if f == tf {
+				stdFileIdx = i
+				break
+			}
+		}
+		if stdFileIdx >= currentFileIdx {
+			isPast = false
+		}
+	}
+
+	if isPast {
+		return "🟢 Verified", StyleSuccess
+	}
+
+	return "⏳ Pending", StyleMuted
+}
+
+func (m DashboardModel) renderStandardsGrid(width int) string {
+	var leftCol []string
+	var rightCol []string
+
+	half := (len(m.standards) + 1) / 2
+	for i, std := range m.standards {
+		statusText, style := m.getStandardStatus(std)
+
+		styledLabel := lipgloss.NewStyle().Foreground(ColorText).Render(std.Name)
+		styledStatus := style.Bold(true).Render(statusText)
+
+		padding := 28 - len(std.Name)
+		if padding < 1 {
+			padding = 1
+		}
+		item := fmt.Sprintf("  %s:%s%s", styledLabel, strings.Repeat(" ", padding), styledStatus)
+
+		if i < half {
+			leftCol = append(leftCol, item)
+		} else {
+			rightCol = append(rightCol, item)
+		}
+	}
+
+	leftBlock := strings.Join(leftCol, "\n")
+	rightBlock := strings.Join(rightCol, "\n")
+
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		leftBlock,
+		"       ", // spacer
+		rightBlock,
+	)
+}
+

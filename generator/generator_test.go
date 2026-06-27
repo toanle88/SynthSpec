@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/state"
 )
@@ -157,6 +158,9 @@ func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts
 	tg.callCounts[fileName]++
 	resps, ok := tg.responses[fileName]
 	if !ok || len(resps) == 0 {
+		if fileName == "04_openapi_contract.yaml" {
+			return "openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}", nil
+		}
 		return "Mock generic content", nil
 	}
 	
@@ -172,6 +176,49 @@ func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts
 	}
 	return resp, nil
 }
+
+func (tg *TestGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]gateway.ComplianceResult, error) {
+	var results []gateway.ComplianceResult
+	for _, std := range standards {
+		hasTarget := false
+		for _, tf := range std.TargetFiles {
+			if tf == fileName {
+				hasTarget = true
+				break
+			}
+		}
+		if !hasTarget {
+			continue
+		}
+		results = append(results, gateway.ComplianceResult{
+			StandardID: std.ID,
+			Score:      100,
+			Compliant:  true,
+			Feedback:   "Mock passing standard",
+		})
+	}
+	return results, nil
+}
+
+func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+	tg.callCounts[fileName]++
+	resps, ok := tg.responses[fileName]
+	if !ok || len(resps) == 0 {
+		return fileContent, nil
+	}
+
+	count := tg.callCounts[fileName]
+	if count > len(resps) {
+		return resps[len(resps)-1], nil
+	}
+
+	resp := resps[count-1]
+	if strings.HasPrefix(resp, "ERROR:") {
+		return "", errors.New(strings.TrimPrefix(resp, "ERROR:"))
+	}
+	return resp, nil
+}
+
 
 func TestGenerateWithRetryAndValidation(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")

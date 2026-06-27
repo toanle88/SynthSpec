@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/toanle/synthspec/config"
 )
 
 type GeminiGateway struct {
@@ -256,3 +259,183 @@ Do NOT include markdown backticks. Output ONLY the raw JSON. Use these facts:
 
 	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
 }
+
+func (g *GeminiGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
+	var applicableStandards []config.Standard
+	for _, std := range standards {
+		for _, tf := range std.TargetFiles {
+			if tf == fileName {
+				applicableStandards = append(applicableStandards, std)
+				break
+			}
+		}
+	}
+
+	if len(applicableStandards) == 0 {
+		return nil, nil
+	}
+
+	systemPrompt := `You are an expert software engineering auditor. Your job is to evaluate if a generated specification file complies with specific architectural and software development standards.
+For each standard provided, evaluate the file content and return:
+1. "standard_id": the ID of the standard being evaluated.
+2. "score": an integer from 0 to 100 indicating compliance (0 for completely absent/fails, 100 for fully compliant).
+3. "compliant": a boolean indicating if it meets the minimum threshold or is acceptable.
+4. "feedback": a concise explanation of the score and specific details of what is missing or incorrect.
+
+Your response MUST be a JSON array of objects representing these evaluation results, like this:
+[
+  {
+    "standard_id": "clean_architecture",
+    "score": 75,
+    "compliant": true,
+    "feedback": "Decoupling is partially complete..."
+  }
+]
+Do NOT return markdown code block backticks. Output only the raw JSON array string.`
+
+	type auditPayload struct {
+		FileName    string            `json:"file_name"`
+		FileContent string            `json:"file_content"`
+		Standards   []config.Standard `json:"standards"`
+	}
+
+	payloadStruct := auditPayload{
+		FileName:    fileName,
+		FileContent: fileContent,
+		Standards:   applicableStandards,
+	}
+	payloadBytes, _ := json.Marshal(payloadStruct)
+
+	contents := []geminiContent{
+		{
+			Role:  "user",
+			Parts: []geminiPart{{Text: string(payloadBytes)}},
+		},
+	}
+
+	reqBody := geminiRequest{
+		SystemInstruction: &geminiInstruction{
+			Parts: []geminiPart{{Text: systemPrompt}},
+		},
+		Contents: contents,
+		GenerationConfig: &geminiConfig{
+			ResponseMimeType: "application/json",
+		},
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	if err != nil {
+		return nil, err
+	}
+
+	var geminiResp geminiResponse
+	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Gemini response: %w", err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response candidate returned from Gemini")
+	}
+
+	rawJSON := geminiResp.Candidates[0].Content.Parts[0].Text
+	
+	// Enforce trimming block wrappers if returned in text
+	if idx := strings.Index(rawJSON, "["); idx != -1 {
+		if endIdx := strings.LastIndex(rawJSON, "]"); endIdx != -1 && endIdx > idx {
+			rawJSON = rawJSON[idx : endIdx+1]
+		}
+	}
+
+	var results []ComplianceResult
+	if err := json.Unmarshal([]byte(rawJSON), &results); err != nil {
+		return nil, fmt.Errorf("Gemini returned invalid compliance JSON: %w (Raw content: %s)", err, rawJSON)
+	}
+
+	return results, nil
+}
+
+func (g *GeminiGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+	systemPrompt := "You are a senior solutions architect. Your job is to modify an existing specification file to fix quality standards violations. Return only the updated file contents and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."
+
+	// Format standard criteria to make instructions clear
+	var criteriaLines []string
+	for _, std := range failedStandards {
+		criteriaLines = append(criteriaLines, fmt.Sprintf("- Standard '%s' (%s): %s", std.Name, std.ID, std.Criteria))
+	}
+	criteriaText := strings.Join(criteriaLines, "\n")
+
+	prompt := fmt.Sprintf(`We generated a specification file named "%s" but it failed standard quality checks.
+Here is the feedback on why it failed:
+%s
+
+Please update the file content to address the feedback and satisfy the following standards:
+%s
+
+Original File Content:
+%s
+
+Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks like `+"```"+` or include any conversational filler.`,
+		fileName, feedback, criteriaText, fileContent)
+
+	contents := []geminiContent{
+		{
+			Role:  "user",
+			Parts: []geminiPart{{Text: prompt}},
+		},
+	}
+
+	reqBody := geminiRequest{
+		SystemInstruction: &geminiInstruction{
+			Parts: []geminiPart{{Text: systemPrompt}},
+		},
+		Contents: contents,
+	}
+
+	// For JSON file, enforce json output
+	if fileName == "05_engineering_backlog.json" {
+		reqBody.GenerationConfig = &geminiConfig{
+			ResponseMimeType: "application/json",
+		}
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	if err != nil {
+		return "", err
+	}
+
+	var geminiResp geminiResponse
+	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		return "", fmt.Errorf("failed to parse Gemini response: %w", err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response candidate returned from Gemini")
+	}
+
+	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+}
+

@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
+	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/generator"
 	"github.com/toanle/synthspec/state"
@@ -53,10 +57,15 @@ type DashboardModel struct {
 	editorTempPath  string
 	
 	// Generation state
-	isCompleted     bool // When confidence is 100%
+	isCompleted     bool
 	isGenerating    bool
 	genStatus       string
 	genChan         chan string
+
+	// Compliance scorecard state
+	standards        []config.Standard
+	complianceScores map[string]int
+	showScorecard    bool
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -73,13 +82,38 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 	// Check if already 100% completed
 	completed := checkCompletion(sess.Scores)
 
+	standards, _ := config.LoadStandards()
+
+	// If already completed and output meta exists, try to load scores
+	complianceScores := make(map[string]int)
+	showScorecard := false
+	if completed {
+		dir := outputDir
+		if dir == "" {
+			dir = filepath.Join(state.GetSessionDir(sess.ProjectName), "output")
+		}
+		metaPath := filepath.Join(dir, ".synthspec-meta.json")
+		if metaBytes, readErr := os.ReadFile(metaPath); readErr == nil {
+			var meta struct {
+				ComplianceSummary map[string]int `json:"compliance_summary"`
+			}
+			if jsonErr := json.Unmarshal(metaBytes, &meta); jsonErr == nil && len(meta.ComplianceSummary) > 0 {
+				complianceScores = meta.ComplianceSummary
+				showScorecard = true
+			}
+		}
+	}
+
 	return DashboardModel{
-		Session:     sess,
-		Gateway:     gw,
-		OutputDir:   outputDir,
-		textInput:   ti,
-		spinner:     s,
-		isCompleted: completed,
+		Session:          sess,
+		Gateway:          gw,
+		OutputDir:        outputDir,
+		textInput:        ti,
+		spinner:          s,
+		isCompleted:      completed,
+		standards:        standards,
+		complianceScores: complianceScores,
+		showScorecard:    showScorecard,
 	}
 }
 
@@ -257,6 +291,23 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.genStatus = "All specifications synthesized successfully!"
 			m.Session.Save() // Save final state
+
+			// Try to read .synthspec-meta.json to populate complianceScores
+			dir := m.OutputDir
+			if dir == "" {
+				dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
+			}
+			metaPath := filepath.Join(dir, ".synthspec-meta.json")
+			if metaBytes, readErr := os.ReadFile(metaPath); readErr == nil {
+				var meta struct {
+					ComplianceSummary map[string]int `json:"compliance_summary"`
+				}
+				if jsonErr := json.Unmarshal(metaBytes, &meta); jsonErr == nil {
+					m.complianceScores = meta.ComplianceSummary
+					m.showScorecard = true
+					m.genStatus = "All specifications synthesized and audited successfully!"
+				}
+			}
 		}
 		return m, nil
 
