@@ -199,6 +199,29 @@ Value Objects: Score, Rationale.
 Primary use case scenario details.
 `, nil
 
+	case "07_engineering_roadmap.md":
+		return `# Engineering Roadmap
+
+* **Status**: 🟢 Approved
+
+## 🗺️ Phase-by-Phase Execution
+- Phase 1 MVP: Basic CLI and Core Logic.
+- Phase 2 Scale: Additional Gateway APIs.
+- Phase 3 Future: Enterprise Web UI.
+
+## 📅 Milestones
+1. MVP release in Q3.
+2. Web UI beta in Q4.
+
+## 📊 Gantt Timeline
+` + "```mermaid" + `
+gantt
+    title Project Timeline
+    section Phase 1
+    MVP :active, 2026-07-01, 30d
+` + "```" + `
+`, nil
+
 	default:
 		return "", fmt.Errorf("unknown file: %s", fileName)
 	}
@@ -226,7 +249,7 @@ func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, f
 		feedback := ""
 
 		switch std.ID {
-		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support", "directory_module_topography", "architectural_pattern_enforcement", "transport_protocol_standards", "contract_lifecycle_management", "domain_scenario_sequence_diagrams", "domain_bounded_contexts":
+		case "sql_parameterization", "soft_delete", "uuid_primary_keys", "timestamptz", "connection_pooling", "structured_logging", "prometheus_metrics", "cors", "theme_support", "directory_module_topography", "architectural_pattern_enforcement", "transport_protocol_standards", "contract_lifecycle_management", "domain_scenario_sequence_diagrams", "domain_bounded_contexts", "roadmap_phases_milestones", "roadmap_gantt_diagram":
 			score = 100
 			compliant = true
 			feedback = fmt.Sprintf("Successfully implemented %s.", std.Name)

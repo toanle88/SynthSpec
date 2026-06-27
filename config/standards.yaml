@@ -239,3 +239,21 @@ standards:
     criteria: |
       Clearly define bounded contexts and ensure domain entities are mapped uniquely within their respective context to prevent context bleed.
     min_score: 85
+
+  - id: roadmap_phases_milestones
+    name: Roadmap Phases & Milestones
+    description: Roadmap must specify at least 3 delivery phases with milestones.
+    target_files:
+      - 07_engineering_roadmap.md
+    criteria: |
+      Verify that the roadmap specifies at least 3 distinct delivery phases (MVP, Scaling, Future/Optimization) with clearly defined milestones for each.
+    min_score: 90
+
+  - id: roadmap_gantt_diagram
+    name: Roadmap Gantt Diagram
+    description: Roadmap must include a Mermaid.js Gantt chart.
+    target_files:
+      - 07_engineering_roadmap.md
+    criteria: |
+      Verify that the roadmap includes a Mermaid.js Gantt chart depicting the phases and milestone timeline.
+    min_score: 85

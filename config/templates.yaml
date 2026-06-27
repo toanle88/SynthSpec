@@ -17,3 +17,6 @@ templates:
   - file_name: "06_domain_model_use_cases.md"
     name: "Domain Model & Use Cases"
     prompt: "Write a comprehensive Domain Model & Use Cases markdown file. Detail bounded contexts, core domain entities, value objects, aggregates, and scenario walkthroughs (including actor, preconditions, triggers, main flow, and postconditions). Use these facts:\n"
+  - file_name: "07_engineering_roadmap.md"
+    name: "Engineering Roadmap"
+    prompt: "Write a comprehensive Engineering Roadmap markdown file. Detail phase-by-phase execution (e.g. Phase 1 MVP, Phase 2 Scale, Phase 3 Future), milestone definitions, task dependencies, and a Mermaid.js Gantt chart representing the timeline. Use these facts:\n"
