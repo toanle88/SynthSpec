@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/state"
 	"github.com/toanle/synthspec/tui"
@@ -64,9 +63,7 @@ var resumeCmd = &cobra.Command{
 		// 3. Boot Dashboard
 		fmt.Printf("Resuming project '%s' using %s (%s)...\n", projectName, sess.Provider, sess.Model)
 		m := tui.NewDashboardModel(sess, gw, outputFlag)
-		p := tea.NewProgram(m, tea.WithAltScreen())
-
-		if _, err := p.Run(); err != nil {
+		if err := runTUI(m); err != nil {
 			return fmt.Errorf("bubbletea execution failed: %w", err)
 		}
 

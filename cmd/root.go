@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/toanle/synthspec/tui"
 )
 
 var (
@@ -9,6 +11,12 @@ var (
 	modelFlag    string
 	mockFlag     bool
 	outputFlag   string
+
+	runTUI = func(m tui.DashboardModel) error {
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		_, err := p.Run()
+		return err
+	}
 )
 
 var rootCmd = &cobra.Command{

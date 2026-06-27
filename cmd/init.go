@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
@@ -66,9 +65,7 @@ var initCmd = &cobra.Command{
 		// 4. Run TUI Dashboard
 		fmt.Printf("Initializing project '%s' using %s (%s)...\n", projectName, cfg.Provider, cfg.Model)
 		m := tui.NewDashboardModel(&sess, gw, outputFlag)
-		p := tea.NewProgram(m, tea.WithAltScreen())
-
-		if _, err := p.Run(); err != nil {
+		if err := runTUI(m); err != nil {
 			return fmt.Errorf("bubbletea execution failed: %w", err)
 		}
 
