@@ -42,6 +42,7 @@ type OracleResponse struct {
 	Facts               Facts               `json:"facts"`
 	ConfidenceScores    ConfidenceScores    `json:"confidence_scores"`
 	NextQuestion        string              `json:"next_question"`
+	NextChoices         []string            `json:"next_choices"`
 	DimensionRationales DimensionRationales `json:"dimension_rationales"`
 	TokensPrompt        int                 `json:"-"`
 	TokensCompletion    int                 `json:"-"`

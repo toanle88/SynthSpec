@@ -23,6 +23,7 @@ type Session struct {
 	Scores          gateway.ConfidenceScores    `json:"scores"`
 	Rationales      gateway.DimensionRationales `json:"rationales"`
 	LastQuestion    string                      `json:"last_question"`
+	LastChoices     []string                    `json:"last_choices"`
 	TotalTokensUsed int                         `json:"total_tokens_used"`
 }
 

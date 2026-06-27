@@ -148,7 +148,21 @@ func (m DashboardModel) renderMainChat() string {
 	if m.loading {
 		content = append(content, fmt.Sprintf("\n%s Architectural Reasoning in progress. Calling AI API...", m.spinner.View()))
 	} else {
-		content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.textInput.View())
+		if m.showTextInput {
+			content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.textInput.View())
+			content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Esc to return to choices)"))
+		} else {
+			choices := m.getChoicesList()
+			content = append(content, "\nSelect an option:")
+			for i, choice := range choices {
+				if i == m.selectedChoiceIdx {
+					style := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+					content = append(content, style.Render(fmt.Sprintf("  ❯ %s", choice)))
+				} else {
+					content = append(content, fmt.Sprintf("    %s", choice))
+				}
+			}
+		}
 	}
 
 	return strings.Join(content, "\n")

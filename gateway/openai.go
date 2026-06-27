@@ -76,6 +76,7 @@ Your response MUST be a single valid JSON object matching the following structur
     "compliance": 0 to 100 integer
   },
   "next_question": "Exactly ONE question targeting missing details. Leave empty if ALL scores are 100.",
+  "next_choices": ["Option 1", "Option 2", "Option 3"],
   "dimension_rationales": {
     "functional": "Why did you assign this functional score?",
     "structural": "Why did you assign this structural score?",
@@ -83,6 +84,11 @@ Your response MUST be a single valid JSON object matching the following structur
     "compliance": "Why did you assign this compliance score?"
   }
 }
+
+Guidelines for next_choices:
+- Under "next_choices", provide a JSON array of 3-5 concise, specific choice options that directly answer "next_question".
+- Put the most recommended or industry-standard option as the first item in the array.
+- Leave this array empty if "next_question" is empty.
 
 Guidelines for evaluation:
 - Be strict. Do not give 100% confidence on any dimension until the specific requirements are clear and complete.

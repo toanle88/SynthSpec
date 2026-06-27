@@ -42,6 +42,11 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	case turns < 2:
 		res.ConfidenceScores = ConfidenceScores{Functional: 25, Structural: 15, Security: 10, Compliance: 5}
 		res.NextQuestion = "What are the primary user roles and functional workflows of this application?"
+		res.NextChoices = []string{
+			"Standard Admin, Editor, Viewer roles",
+			"E-commerce Buyer and Seller workflows",
+			"SaaS Tenant Owner and Member workflows",
+		}
 		res.DimensionRationales = DimensionRationales{
 			Functional: "Initial target vision is clear, but core user flows are undefined.",
 			Structural: "High-level components are implied; database schema is unmapped.",
@@ -51,6 +56,11 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	case turns < 4:
 		res.ConfidenceScores = ConfidenceScores{Functional: 60, Structural: 45, Security: 30, Compliance: 20}
 		res.NextQuestion = "How do you plan to handle data storage, database transactions, and tenant isolation?"
+		res.NextChoices = []string{
+			"PostgreSQL with Schema-based tenant isolation",
+			"MongoDB with Document-level tenant isolation",
+			"SQLite for local-only single-tenant operation",
+		}
 		res.DimensionRationales = DimensionRationales{
 			Functional: "Functional requirements are mostly mapped. User roles are clear.",
 			Structural: "Database requirements identified, but table design is outstanding.",
@@ -60,6 +70,11 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	case turns < 6:
 		res.ConfidenceScores = ConfidenceScores{Functional: 90, Structural: 80, Security: 70, Compliance: 60}
 		res.NextQuestion = "What are the compliance and security threat boundaries, and are there any specific auditing requirements?"
+		res.NextChoices = []string{
+			"Strict SOC2/GDPR compliance with automated audit logs",
+			"HIPAA compliance with encrypted storage and access control",
+			"No formal external compliance boundaries required",
+		}
 		res.DimensionRationales = DimensionRationales{
 			Functional: "Functional specs are complete.",
 			Structural: "Relational database schema agreed upon; API routes are structured.",
@@ -69,6 +84,7 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	default:
 		res.ConfidenceScores = ConfidenceScores{Functional: 100, Structural: 100, Security: 100, Compliance: 100}
 		res.NextQuestion = "" // Complete
+		res.NextChoices = nil
 		res.DimensionRationales = DimensionRationales{
 			Functional: "100% complete. Ready for generation.",
 			Structural: "100% complete. Ready for generation.",

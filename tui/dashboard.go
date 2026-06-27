@@ -66,6 +66,10 @@ type DashboardModel struct {
 	standards        []config.Standard
 	complianceScores map[string]int
 	showScorecard    bool
+
+	// Choice selection state
+	selectedChoiceIdx int
+	showTextInput     bool
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -104,16 +108,20 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		}
 	}
 
+	showTextInput := len(sess.LastChoices) == 0
+
 	return DashboardModel{
-		Session:          sess,
-		Gateway:          gw,
-		OutputDir:        outputDir,
-		textInput:        ti,
-		spinner:          s,
-		isCompleted:      completed,
-		standards:        standards,
-		complianceScores: complianceScores,
-		showScorecard:    showScorecard,
+		Session:           sess,
+		Gateway:           gw,
+		OutputDir:         outputDir,
+		textInput:         ti,
+		spinner:           s,
+		isCompleted:       completed,
+		standards:         standards,
+		complianceScores:  complianceScores,
+		showScorecard:     showScorecard,
+		selectedChoiceIdx: 0,
+		showTextInput:     showTextInput,
 	}
 }
 
@@ -157,32 +165,80 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			val := strings.TrimSpace(m.textInput.Value())
-			if val == "" {
-				return m, nil
-			}
-
-			m.textInput.SetValue("")
-
-			// Handle Editor command direct typing
-			if val == ":edit" {
-				// Run Editor Subprocess
-				editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
-				if err != nil {
-					m.err = err
+			if m.showTextInput {
+				val := strings.TrimSpace(m.textInput.Value())
+				if val == "" {
 					return m, nil
 				}
-				m.editorTempPath = tempPath
-				// Suspend Bubble Tea and run editor
-				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-					return editorFinishedMsg{err: err}
-				})
+
+				m.textInput.SetValue("")
+
+				// Handle Editor command direct typing
+				if val == ":edit" {
+					// Run Editor Subprocess
+					editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
+					if err != nil {
+						m.err = err
+						return m, nil
+					}
+					m.editorTempPath = tempPath
+					// Suspend Bubble Tea and run editor
+					return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+						return editorFinishedMsg{err: err}
+					})
+				}
+
+				// Regular answer submission
+				m.loading = true
+				m.err = nil
+				return m, m.queryOracleCmd(val)
+			} else {
+				choices := m.getChoicesList()
+				selected := choices[m.selectedChoiceIdx]
+
+				if selected == "Custom user input..." {
+					m.showTextInput = true
+					m.textInput.Focus()
+					m.textInput.SetValue("")
+					return m, nil
+				}
+
+				var val string
+				if selected == "Let AI decide" {
+					val = "Let the AI decide based on current facts and context."
+				} else {
+					// Extract raw choice
+					val = m.Session.LastChoices[m.selectedChoiceIdx]
+				}
+
+				m.loading = true
+				m.err = nil
+				return m, m.queryOracleCmd(val)
 			}
 
-			// Regular answer submission
-			m.loading = true
-			m.err = nil
-			return m, m.queryOracleCmd(val)
+		case tea.KeyUp, tea.KeyPgUp:
+			if !m.showTextInput {
+				choices := m.getChoicesList()
+				m.selectedChoiceIdx--
+				if m.selectedChoiceIdx < 0 {
+					m.selectedChoiceIdx = len(choices) - 1
+				}
+			}
+
+		case tea.KeyDown, tea.KeyPgDown:
+			if !m.showTextInput {
+				choices := m.getChoicesList()
+				m.selectedChoiceIdx++
+				if m.selectedChoiceIdx >= len(choices) {
+					m.selectedChoiceIdx = 0
+				}
+			}
+
+		case tea.KeyEsc:
+			if m.showTextInput && len(m.Session.LastChoices) > 0 {
+				m.showTextInput = false
+				m.textInput.Blur()
+			}
 
 		case tea.KeyRunes:
 			if m.isCompleted {
@@ -211,6 +267,21 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "q":
 					return m, tea.Quit
 				}
+			} else if !m.showTextInput {
+				key := string(msg.Runes)
+				if key == "k" {
+					choices := m.getChoicesList()
+					m.selectedChoiceIdx--
+					if m.selectedChoiceIdx < 0 {
+						m.selectedChoiceIdx = len(choices) - 1
+					}
+				} else if key == "j" {
+					choices := m.getChoicesList()
+					m.selectedChoiceIdx++
+					if m.selectedChoiceIdx >= len(choices) {
+						m.selectedChoiceIdx = 0
+					}
+				}
 			}
 		}
 
@@ -234,6 +305,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Session.Scores = msg.resp.ConfidenceScores
 		m.Session.Rationales = msg.resp.DimensionRationales
 		m.Session.LastQuestion = msg.resp.NextQuestion
+		m.Session.LastChoices = msg.resp.NextChoices
+		m.selectedChoiceIdx = 0
+		m.showTextInput = len(m.Session.LastChoices) == 0
 		
 		// If user entered answer, record history (except boot queries)
 		if len(m.Session.History) > 0 || m.textInput.Value() != "" {
@@ -322,7 +396,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Update text input
-	if !m.isCompleted && !m.loading {
+	if !m.isCompleted && !m.loading && m.showTextInput {
 		m.textInput, cmd = m.textInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
@@ -382,4 +456,18 @@ func (m DashboardModel) pruneContextCmd() tea.Cmd {
 		pruned, err := m.Session.CheckAndPruneContext(context.Background(), m.Gateway)
 		return contextPruneResultMsg{pruned: pruned, err: err}
 	}
+}
+
+func (m DashboardModel) getChoicesList() []string {
+	var list []string
+	for i, c := range m.Session.LastChoices {
+		if i == 0 {
+			list = append(list, "(Recommended) "+c)
+		} else {
+			list = append(list, c)
+		}
+	}
+	list = append(list, "Let AI decide")
+	list = append(list, "Custom user input...")
+	return list
 }
