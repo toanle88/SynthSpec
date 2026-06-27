@@ -15,10 +15,10 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] Score calculation mechanics evaluating categorical completion confidence.
 - [x] Non-blocking TUI spinner during LLM API round-trips.
 
-### Milestone 3: Interrogation Mechanics (v0.3.0) ── [/] In Progress
-- [ ] Implement strict Single Question Constraint on LLM Prompts.
-- [ ] Link `:edit` command to fork host editor (`$EDITOR`) to edit transient context.
-- [ ] Background thread for Context Pruning & summarization when exceeding 75% context limit.
+### Milestone 3: Interrogation Mechanics (v0.3.0) ── [x] Completed
+- [x] Implement strict Single Question Constraint on LLM Prompts.
+- [x] Link `:edit` command to fork host editor (`$EDITOR`) to edit transient context.
+- [x] Background thread for Context Pruning & summarization when exceeding 75% context limit.
 
 ### Milestone 4: Asset Generation (The Draftsman) (v0.4.0) ── [ ] Planned
 - [ ] Enable the asset generator gate to unlock at 100% confidence.
