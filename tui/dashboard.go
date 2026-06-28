@@ -1340,11 +1340,17 @@ func (m *DashboardModel) handleGenProgressStart(ev generator.ProgressEvent) {
 		m.genPhase = ev.Phase
 	}
 	m.genFiles = strings.Split(ev.Details, ",")
-	m.genFileStatuses = make(map[string]string)
-	m.genFileDetails = make(map[string]string)
+	if m.genFileStatuses == nil {
+		m.genFileStatuses = make(map[string]string)
+	}
+	if m.genFileDetails == nil {
+		m.genFileDetails = make(map[string]string)
+	}
 	m.validatorLogs = nil
 	for _, f := range m.genFiles {
-		m.genFileStatuses[f] = "pending"
+		if _, exists := m.genFileStatuses[f]; !exists {
+			m.genFileStatuses[f] = "pending"
+		}
 	}
 }
 

@@ -457,17 +457,28 @@ var synthesisFiles = []string{
 	"07_engineering_roadmap.md",
 }
 
-func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss.Style) {
-	if m.showScorecard {
-		return m.getStandardScorecardStatus(std)
-	}
+const verifiedStr = "🟢 Verified"
 
-	if !m.isGenerating {
-		return pendingStr, StyleMuted
+func (m DashboardModel) areAllTargetFilesDone(std config.Standard) bool {
+	if len(std.TargetFiles) == 0 {
+		return false
 	}
+	for _, tf := range std.TargetFiles {
+		status := m.genFileStatuses[tf]
+		if status != "done" && status != "skipped" {
+			return false
+		}
+	}
+	return true
+}
 
+func (m DashboardModel) getActiveGenerationStandardStatus(std config.Standard) (string, lipgloss.Style) {
 	if statusText, style, active := checkActiveStandardStatus(std, m.genStatus); active {
 		return statusText, style
+	}
+
+	if m.areAllTargetFilesDone(std) {
+		return verifiedStr, StyleSuccess
 	}
 
 	currentFileIdx := -1
@@ -480,16 +491,28 @@ func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss
 
 	if currentFileIdx == -1 {
 		if strings.Contains(m.genStatus, "successfully") || strings.Contains(m.genStatus, "Compiling") || strings.Contains(m.genStatus, "audited") {
-			return "🟢 Verified", StyleSuccess
+			return verifiedStr, StyleSuccess
 		}
 		return pendingStr, StyleMuted
 	}
 
 	if isStandardFileInPast(std, currentFileIdx, synthesisFiles) {
-		return "🟢 Verified", StyleSuccess
+		return verifiedStr, StyleSuccess
 	}
 
 	return pendingStr, StyleMuted
+}
+
+func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss.Style) {
+	if m.showScorecard {
+		return m.getStandardScorecardStatus(std)
+	}
+
+	if !m.isGenerating {
+		return pendingStr, StyleMuted
+	}
+
+	return m.getActiveGenerationStandardStatus(std)
 }
 
 func (m DashboardModel) groupStandardsByFile() (map[string][]config.Standard, []config.Standard) {
