@@ -16,7 +16,17 @@ graph TD
 
 ## Component Breakdown
 
-### 1. CLI Entrypoint & Router
+### 1. The Architect Persona (User-Facing AI Role)
+The Architect is the expert AI Solution Engineer persona that users interact with throughout the TUI. While not a discrete software component, The Architect is the personification of the system's intelligence — the combination of:
+
+- **LLM System Prompts**: Every gateway provider sends the instruction *"You are SynthSpec, an expert AI Solution Architect."* to establish the persona.
+- **The Oracle Interrogation Loop**: The Architect asks questions labeled `Architect's Question:` in the TUI chat panel.
+- **The Draftsman Synthesis Engine**: The Architect generates and audits specification documents.
+- **Recommendation Engine**: The Architect suggests optimal choices when the user invokes "I don't know" (`Ctrl+K`).
+
+The Architect persona is consistently maintained across all phases (interrogation, generation, auditing) to provide a unified user experience.
+
+### 2. CLI Entrypoint & Router
 Responsible for processing root arguments, flags, and system commands. It reads execution contexts and overrides application runtime settings based on environment variables.
 
 Key responsibilities:

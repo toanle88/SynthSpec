@@ -2,6 +2,23 @@
 
 The LLM Provider Gateway is an abstraction interface that converts unified application schemas into vendor-specific payload calls. This enables SynthSpec to switch dynamically between upstream LLMs without modifying core application logic.
 
+## The Architect Persona via System Prompts
+
+Every gateway provider sends a consistent system prompt that establishes **"The Architect"** persona — the expert AI Solution Engineer that users interact with throughout the TUI:
+
+```
+You are SynthSpec, an expert AI Solution Architect.
+Your role is to conduct a structured requirements discovery
+session by asking ONE clear question at a time.
+```
+
+This system prompt is formatted according to each provider's API structure:
+- **Gemini**: Sent as the `system_instruction` field.
+- **OpenAI / OpenRouter**: Sent as a `role: "system"` message in the messages array.
+- **Anthropic**: Sent as the root-level `system` parameter (the Anthropic API way).
+
+The Architect persona is maintained across all LLM interactions — interrogation, generation, compliance evaluation, refinement, and consistency verification — ensuring a unified conversational identity.
+
 ## Multi-Model Routing
 
 The system supports secure execution via locally defined environment variables for the following providers:

@@ -2,6 +2,17 @@
 
 The TUI (Terminal User Interface) Dashboard Engine is built using an asynchronous terminal framework in Go. It controls terminal display state, isolates standard output streams from system errors, renders layout regions, and intercepts keyboard event loops.
 
+## The Architect Persona in the TUI
+
+The TUI prominently displays **"The Architect"** persona throughout the user's journey, reinforcing the expert AI Solution Engineer role that drives the entire specification process:
+
+- **Dashboard Header**: Shows *"SynthSpec Solution Architect Dashboard"* with project metadata and an overall confidence progress bar.
+- **Chat Panel**: The current interrogation question is labeled **`Architect's Question:`**, establishing the Architect as the user's conversational partner.
+- **Sidebar**: Four dimension progress bars (Functional, Structural, Security, Compliance) represent the Architect's confidence assessment of collected requirements.
+- **Thought Box**: During API queries, a *"Streaming Thought Box (Reasoning Tokens)"* panel displays the Architect's raw reasoning tokens in real-time, offering transparency into its decision-making.
+- **Generation View**: During synthesis, status messages reflect the Architect's systematic workflow — *"Source document locked"*, *"Parallel downstream generation"*, *"Auditing standards compliance"*, and *"Verifying cross-document consistency"*.
+- **Approval Gate**: After generating the source domain model, the Architect presents it for user review and approval before proceeding with parallel downstream synthesis.
+
 ## Layout and Regions
 
 The TUI provides visual feedback indicators instead of standard linear scrolling logs. It renders distinct interface zones:

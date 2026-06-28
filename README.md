@@ -6,6 +6,20 @@ Operating on a **Bring Your Own Key (BYOK)** paradigm, SynthSpec runs entirely o
 
 ---
 
+## Core Persona: The SynthSpec Solution Architect
+
+At the heart of SynthSpec is **"The Architect"** — an expert AI Solution Architect persona that guides you from vague ideas to production-ready engineering specifications. Displayed prominently across the TUI interface, The Architect:
+
+- **Interrogates** — Asks precise, single-question cross-examinations to surface hidden requirements, edge cases, and architectural dependencies (labeled **`Architect's Question:`** in the dashboard chat).
+- **Recommends** — When you respond with `Ctrl+K` ("I don't know"), The Architect leverages industry best practices to suggest optimal architectural, compliance, or security choices on your behalf.
+- **Synthesizes** — Transforms validated requirements into a structured suite of 7 specification documents using a source-first, parallel-generation pipeline.
+- **Audits** — Evaluates every generated document against 20+ engineering quality standards (clean architecture, SQL parameterization, STRIDE threat modeling, etc.) and iteratively refines until passing.
+- **Verifies** — Performs cross-document consistency checks to ensure logical coherence across all deliverables, flagging contradictions for automatic correction.
+
+> 💡 **The Architect operates under a strict Single Question Constraint** — it asks one question at a time to prevent cognitive overload and maintain focused, productive conversations throughout the interrogation loop.
+
+---
+
 ## Core Workflows
 
 ```mermaid

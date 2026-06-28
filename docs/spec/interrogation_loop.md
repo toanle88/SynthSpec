@@ -1,6 +1,8 @@
 # The Oracle Interrogation Loop
 
-The Interactive Interrogation Loop (code-named "The Oracle") guides users from vague, high-level project summaries to a complete, formal specification structure. Each question turn is treated as a fresh prompt, with the current facts and the latest answer forming the only live context.
+The Interactive Interrogation Loop (code-named **"The Oracle"**) is the conversational engine driven by **"The Architect"** — the expert AI Solution Architect persona at the heart of SynthSpec. The Architect guides users from vague, high-level project summaries to a complete, formal specification structure. Each question turn is treated as a fresh prompt, with the current facts and the latest answer forming the only live context.
+
+In the TUI dashboard, the current question is displayed under the label **`Architect's Question:`** in the main chat panel, reinforcing the persona of an experienced solution architect conducting a structured requirements discovery session.
 
 ## Core Mechanics
 

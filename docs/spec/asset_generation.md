@@ -1,6 +1,12 @@
 # Asset Generation (Source-First Synthesis)
 
-Once the interrogation loop reaches 100% confidence across all categories, SynthSpec unlocks the synthesis phase. This module generates a standardized project directory containing markdown documentation and machine-parsable configuration files.
+Once the interrogation loop reaches 100% confidence across all categories, **The Architect** — the expert AI Solution Engineer persona — unlocks the synthesis phase. This module generates a standardized project directory containing markdown documentation and machine-parsable configuration files.
+
+The Architect executes a disciplined three-phase generation strategy:
+
+1. **Source Phase** — Generates `01_domain_model_use_cases.md` first, then presents it for user approval at the **Domain Approval Gate** before proceeding.
+2. **Parallel Phase** — Fans out the remaining 6 downstream documents concurrently, each undergoing independent synthesis, static validation, compliance auditing, and self-correction loops.
+3. **Consolidation Phase** — Verifies cross-document logical consistency across all 7 deliverables, producing the final compliance report and metadata.
 
 ## Generation Strategy
 

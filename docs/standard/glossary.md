@@ -5,7 +5,6 @@ This glossary defines terms and vocabulary used throughout the SynthSpec ecosyst
 ## Terminology
 
 | Term | Definition |
-| :--- | :--- |
 | **BYOK (Bring Your Own Key)** | A security paradigm where users execute the software locally using their own API keys, preventing data from being routed through centralized servers. |
 | **The Oracle** | The code-name for the interactive terminal interrogation loop that cross-examines users to complete requirement specifications. |
 | **Source-First Synthesis** | The asset synthesis engine that generates `01_domain_model_use_cases.md` first, then fans out downstream documents in parallel from that locked source of truth. |

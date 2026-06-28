@@ -10,6 +10,17 @@
 ### Product Vision
 SynthSpec is a privacy-first, open-source command-line utility that transforms vague application ideas into production-ready, enterprise-grade engineering specifications. Operating on a "Bring Your Own Key" (BYOK) paradigm, the tool executes locally, utilizing advanced LLM reasoning to systematically cross-examine users, identify missing edge cases, map out architectural dependencies, and output structured markdown and machine-readable development assets.
 
+### The Solution Architect Persona
+The entire user experience is driven by **"The Architect"** — an expert AI Solution Architect persona that the user interacts with throughout the TUI dashboard. The Architect:
+
+- **Displays** as the primary conversational partner, with questions prefixed by **`Architect's Question:`** in the chat panel.
+- **Employs** a structured interrogation methodology, probing one dimension at a time across Functional, Structural, Security, and Compliance vectors.
+- **Recommends** industry-standard solutions when the user requests assistance via `Ctrl+K` ("I don't know").
+- **Synthesizes** final specification documents once all confidence thresholds are met.
+- **Audits** each generated document against a comprehensive standards checklist, iteratively refining content until compliance is achieved.
+
+The Architect persona is reinforced through the system prompt sent to all LLM providers: *"You are SynthSpec, an expert AI Solution Architect."*
+
 ### Core Workflows
 
 #### 1. Initialization and Authentication

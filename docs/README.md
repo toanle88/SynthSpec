@@ -8,8 +8,8 @@ Welcome to the SynthSpec project documentation. This workspace contains technica
 
 ### 1. [Architecture Design](architecture/system.md)
 Detailed breakdowns of the CLI's internal event-driven architecture, models, and component boundaries.
-- **[System & Component Design](architecture/system.md)**: Entrypoint, State Controller, and overall architecture graph.
-- **[TUI Dashboard Engine](architecture/tui.md)**: Asynchronous UI rendering, layouts, and input mapping.
+- **[System & Component Design](architecture/system.md)**: Entrypoint, State Controller, The Architect persona, and overall architecture graph.
+- **[TUI Dashboard Engine](architecture/tui.md)**: Asynchronous UI rendering, layouts, input mapping, and The Architect persona integration.
 - **[LLM Gateway](architecture/gateway.md)**: Multi-model routing, token optimization, and exponential backoff retry algorithms.
 
 ### 2. [Functional Specifications](spec/README.md)
