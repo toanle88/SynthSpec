@@ -16,6 +16,7 @@ import (
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/generator"
+	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
 )
 
@@ -181,6 +182,7 @@ func checkCompletion(scores gateway.ConfidenceScores) bool {
 }
 
 func (m DashboardModel) Init() tea.Cmd {
+	logger.LogEvent("TUI", fmt.Sprintf("Dashboard initialized for project: %s", m.Session.ProjectName))
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.spinner.Tick)
 
@@ -774,6 +776,7 @@ func (m DashboardModel) handleContextPruneResult(msg contextPruneResultMsg) (tea
 // Background commands
 // queryOracleCmd submits requirement definitions asynchronously to the LLM Oracle model.
 func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
+	logger.LogEvent("TUI", fmt.Sprintf("Querying Oracle with latestInput (length: %d)", len(latestInput)))
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()

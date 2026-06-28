@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/logger"
 )
 
 // GeneratedFileState represents the status and compliance audit of a generated file
@@ -52,38 +53,47 @@ func GetSessionPath(projectName string) string {
 
 // Save persists the session state to disk
 func (s *Session) Save() error {
+	logger.LogEvent("STATE", fmt.Sprintf("Saving session for project '%s'", s.ProjectName))
 	s.UpdatedAt = time.Now()
 	dir := GetSessionDir(s.ProjectName)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		logger.LogEvent("STATE", fmt.Sprintf("Error creating directory for project '%s': %v", s.ProjectName, err))
 		return fmt.Errorf("failed to create project directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
+		logger.LogEvent("STATE", fmt.Sprintf("Error marshaling session for project '%s': %v", s.ProjectName, err))
 		return fmt.Errorf("failed to serialize session: %w", err)
 	}
 
 	path := GetSessionPath(s.ProjectName)
 	if err := os.WriteFile(path, data, 0644); err != nil {
+		logger.LogEvent("STATE", fmt.Sprintf("Error writing session file for project '%s': %v", s.ProjectName, err))
 		return fmt.Errorf("failed to write session file: %w", err)
 	}
 
+	logger.LogEvent("STATE", fmt.Sprintf("Successfully saved session to '%s'", path))
 	return nil
 }
 
 // LoadSession reads a session state from disk
 func LoadSession(projectName string) (*Session, error) {
 	path := GetSessionPath(projectName)
+	logger.LogEvent("STATE", fmt.Sprintf("Loading session from '%s'", path))
 	data, err := os.ReadFile(path)
 	if err != nil {
+		logger.LogEvent("STATE", fmt.Sprintf("Error reading session file '%s': %v", path, err))
 		return nil, fmt.Errorf("failed to read session file: %w", err)
 	}
 
 	var s Session
 	if err := json.Unmarshal(data, &s); err != nil {
+		logger.LogEvent("STATE", fmt.Sprintf("Error parsing session file '%s': %v", path, err))
 		return nil, fmt.Errorf("failed to parse session file: %w", err)
 	}
 
+	logger.LogEvent("STATE", fmt.Sprintf("Successfully loaded session for project '%s'", s.ProjectName))
 	return &s, nil
 }
 
@@ -170,6 +180,8 @@ func (s *Session) AddTurn(userMsg, assistantMsg string, tokensPrompt, tokensComp
 	s.TotalTokensUsed = tokensPrompt + tokensCompletion
 }
 
+const errorLogFile = "errors.log"
+
 // LogError writes an error message with a timestamp to the project's error log file.
 // If projectName is empty, it writes to the global "synthspec/errors.log" file.
 func LogError(projectName string, err error) {
@@ -186,12 +198,12 @@ func LogError(projectName string, err error) {
 	if projectName != "" {
 		projDir := GetSessionDir(projectName)
 		if errMk := os.MkdirAll(projDir, 0755); errMk == nil {
-			logPath = filepath.Join(projDir, "errors.log")
+			logPath = filepath.Join(projDir, errorLogFile)
 		} else {
-			logPath = filepath.Join("synthspec", "errors.log")
+			logPath = filepath.Join("synthspec", errorLogFile)
 		}
 	} else {
-		logPath = filepath.Join("synthspec", "errors.log")
+		logPath = filepath.Join("synthspec", errorLogFile)
 	}
 
 	f, errOpen := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

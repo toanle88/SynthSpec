@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/logger"
 )
 
 const (
@@ -175,25 +176,35 @@ Guidelines for evaluation:
 	req.Header.Set(authApiKeyHeader, a.apiKey)
 	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
+	startTime := time.Now()
 	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
+	duration := time.Since(startTime)
 	if err != nil {
+		logger.LogAPI(config.ProviderAnthropic, a.model, duration, 0, 0, err)
 		return nil, err
 	}
 
 	var anthropicResp anthropicResponse
 	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
+		logger.LogAPI(config.ProviderAnthropic, a.model, duration, 0, 0, err)
 		return nil, fmt.Errorf(errParseAnthropicResponse, err)
 	}
 
 	if len(anthropicResp.Content) == 0 {
-		return nil, fmt.Errorf(errEmptyContentAnthropic)
+		errEmpty := fmt.Errorf(errEmptyContentAnthropic)
+		logger.LogAPI(config.ProviderAnthropic, a.model, duration, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, errEmpty)
+		return nil, errEmpty
 	}
 
 	var oracleResp OracleResponse
 	contentStr := anthropicResp.Content[0].Text
 	if err := json.Unmarshal([]byte(contentStr), &oracleResp); err != nil {
-		return nil, fmt.Errorf("Anthropic returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
+		errInvalidJSON := fmt.Errorf("Anthropic returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
+		logger.LogAPI(config.ProviderAnthropic, a.model, duration, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, errInvalidJSON)
+		return nil, errInvalidJSON
 	}
+
+	logger.LogAPI(config.ProviderAnthropic, a.model, duration, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, nil)
 
 	oracleResp.TokensPrompt = anthropicResp.Usage.InputTokens
 	oracleResp.TokensCompletion = anthropicResp.Usage.OutputTokens

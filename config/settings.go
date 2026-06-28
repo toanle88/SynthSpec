@@ -11,6 +11,7 @@ type Settings struct {
 	TimeoutSeconds      int    `json:"timeout_seconds"`
 	MaxRetries          int    `json:"max_retries"`
 	DefaultOutputFolder string `json:"default_output_folder"`
+	Debug               bool   `json:"debug"`
 }
 
 const (
@@ -40,6 +41,7 @@ func LoadSettings() (*Settings, error) {
 		TimeoutSeconds:      DefaultTimeoutSeconds,
 		MaxRetries:          DefaultMaxRetries,
 		DefaultOutputFolder: DefaultOutputFolderValue,
+		Debug:               false,
 	}
 
 	// 1. Try to load from global settings
@@ -72,6 +74,14 @@ func mergeSettingsFromFile(s *Settings, path string) {
 	}
 	if loaded.DefaultOutputFolder != "" {
 		s.DefaultOutputFolder = loaded.DefaultOutputFolder
+	}
+	
+	// Only override debug if it is explicitly present in JSON
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if _, ok := raw["debug"]; ok {
+			s.Debug = loaded.Debug
+		}
 	}
 }
 

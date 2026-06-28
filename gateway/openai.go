@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/logger"
 )
 
 const (
@@ -160,29 +161,41 @@ Guidelines for evaluation:
 	req.Header.Set(contentTypeHeader, applicationJSON)
 	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
+	startTime := time.Now()
 	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
+	duration := time.Since(startTime)
 	if err != nil {
+		logger.LogAPI(config.ProviderOpenAI, o.model, duration, 0, 0, err)
 		return nil, err
 	}
 
 	var chatResp openAIChatResponse
 	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
+		logger.LogAPI(config.ProviderOpenAI, o.model, duration, 0, 0, err)
 		return nil, fmt.Errorf(errParseOpenAIResponse, err)
 	}
 
 	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf(errEmptyChoiceOpenAI)
+		errEmpty := fmt.Errorf(errEmptyChoiceOpenAI)
+		logger.LogAPI(config.ProviderOpenAI, o.model, duration, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, errEmpty)
+		return nil, errEmpty
 	}
 
 	var oracleResp OracleResponse
 	contentStr := strings.TrimSpace(chatResp.Choices[0].Message.Content)
 	if contentStr == "" {
-		return nil, fmt.Errorf("LLM returned an empty response. This can happen with reasoning models or transient provider errors. Please try submitting again.")
+		errEmpty := fmt.Errorf("LLM returned an empty response. This can happen with reasoning models or transient provider errors. Please try submitting again.")
+		logger.LogAPI(config.ProviderOpenAI, o.model, duration, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, errEmpty)
+		return nil, errEmpty
 	}
 	contentStr = sanitizeJSON(contentStr)
 	if err := json.Unmarshal([]byte(contentStr), &oracleResp); err != nil {
-		return nil, fmt.Errorf("LLM returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
+		errInvalidJSON := fmt.Errorf("LLM returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
+		logger.LogAPI(config.ProviderOpenAI, o.model, duration, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, errInvalidJSON)
+		return nil, errInvalidJSON
 	}
+
+	logger.LogAPI(config.ProviderOpenAI, o.model, duration, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, nil)
 
 	oracleResp.TokensPrompt = chatResp.Usage.PromptTokens
 	oracleResp.TokensCompletion = chatResp.Usage.CompletionTokens

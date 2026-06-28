@@ -35,7 +35,7 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] **Industry-Specific Blueprints**: Introduce starting templates (e.g., `fintech-saas`, `internal-crud`) during project initialization to pre-load context and accelerate the interrogation loop.
 - [x] **Action Routing & Global Settings**: Provide global menu routes including "Create New Project", "Resume Existing", "View Assets", **"Audit Workspace (Drift Detection)"**, and a "Settings" configuration pane. 
 - [x] **Configurable Application Parameters**: Allow users via the Settings pane to customize network constraints (API timeout limits and max retries) and set a default output folder for generated specifications.
-- [ ] **Ephemeral Debug Logging**: Add an opt-in `--debug` flag to write sanitized execution traces to `.synthspec/crash.log` for troubleshooting without violating the zero-data retention policy.
+- [x] **Ephemeral Debug Logging**: Add an opt-in `--debug` flag to write sanitized execution traces to `.synthspec/crash.log` for troubleshooting without violating the zero-data retention policy.
 - [ ] **Fuzzy Project Finder**: Build a dynamic directory scanner that populates a searchable, fuzzy-filtered list of existing projects.
 
 ### Milestone 6: In-App Document Viewer & UX Hardening (v0.6.0) ── [ ] Planned

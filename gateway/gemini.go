@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/logger"
 )
 
 const (
@@ -182,25 +183,35 @@ Guidelines for evaluation:
 	}
 	req.Header.Set(contentTypeHeader, applicationJSON)
 
+	startTime := time.Now()
 	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
+	duration := time.Since(startTime)
 	if err != nil {
+		logger.LogAPI(config.ProviderGemini, g.model, duration, 0, 0, err)
 		return nil, err
 	}
 
 	var geminiResp geminiResponse
 	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		logger.LogAPI(config.ProviderGemini, g.model, duration, 0, 0, err)
 		return nil, fmt.Errorf(errParseGeminiResponse, err)
 	}
 
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf(errEmptyCandidateGemini)
+		errEmpty := fmt.Errorf(errEmptyCandidateGemini)
+		logger.LogAPI(config.ProviderGemini, g.model, duration, geminiResp.UsageMetadata.PromptTokenCount, geminiResp.UsageMetadata.CandidatesTokenCount, errEmpty)
+		return nil, errEmpty
 	}
 
 	var oracleResp OracleResponse
 	contentStr := geminiResp.Candidates[0].Content.Parts[0].Text
 	if err := json.Unmarshal([]byte(contentStr), &oracleResp); err != nil {
-		return nil, fmt.Errorf("Gemini returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
+		errInvalidJSON := fmt.Errorf("Gemini returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
+		logger.LogAPI(config.ProviderGemini, g.model, duration, geminiResp.UsageMetadata.PromptTokenCount, geminiResp.UsageMetadata.CandidatesTokenCount, errInvalidJSON)
+		return nil, errInvalidJSON
 	}
+
+	logger.LogAPI(config.ProviderGemini, g.model, duration, geminiResp.UsageMetadata.PromptTokenCount, geminiResp.UsageMetadata.CandidatesTokenCount, nil)
 
 	oracleResp.TokensPrompt = geminiResp.UsageMetadata.PromptTokenCount
 	oracleResp.TokensCompletion = geminiResp.UsageMetadata.CandidatesTokenCount

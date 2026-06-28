@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/tui"
 )
 
@@ -13,6 +16,7 @@ var (
 	modelFlag    string
 	mockFlag     bool
 	outputFlag   string
+	debugFlag    bool
 
 	runTUI = func(m tui.DashboardModel) error {
 		p := tea.NewProgram(m, tea.WithAltScreen())
@@ -25,6 +29,20 @@ var rootCmd = &cobra.Command{
 	Use:   "synthspec",
 	Short: "SynthSpec: Open-Source BYOK AI Solution Architect CLI",
 	Long:  `SynthSpec is a privacy-first, open-source command-line utility that transforms vague application ideas into production-ready, enterprise-grade engineering specifications.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		s, _ := config.LoadSettings()
+		settingsDebug := false
+		if s != nil {
+			settingsDebug = s.Debug
+		}
+		if err := logger.Init(debugFlag, settingsDebug); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize logger: %v\n", err)
+		}
+		return nil
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		logger.Close()
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		m := tui.NewWelcomeModel()
 		p := tea.NewProgram(m)
@@ -61,4 +79,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&modelFlag, "model", "m", "", "Explicitly override LLM model")
 	rootCmd.PersistentFlags().BoolVar(&mockFlag, "mock", false, "Use mock LLM provider for local testing and development")
 	rootCmd.PersistentFlags().StringVarP(&outputFlag, "output", "o", "", "Override output directory for generated assets")
+	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Write sanitized execution traces to .synthspec/crash.log")
 }
