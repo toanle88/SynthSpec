@@ -39,7 +39,7 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] **Fuzzy Project Finder**: Build a dynamic directory scanner that populates a searchable, fuzzy-filtered list of existing projects.
 
 ### Milestone 6: In-App Document Viewer & UX Hardening (v0.6.0) ── [ ] Planned
-- [ ] Upgrade the "Document Synthesis Status" panel to support interactive file selection using keyboard arrows.
+- [x] Upgrade the "Document Synthesis Status" panel to support interactive file selection using keyboard arrows.
 - [ ] Implement an integrated split-pane or full-screen markdown viewer with ANSI syntax highlighting.
 - [ ] **Vim & Accessibility Keybindings**: Add a configuration toggle for Vim-style (hjkl) navigation and ensure TUI interactions support standard accessible key maps.
 - [ ] **Streaming Token Visualization**: Upgrade the static TUI spinner to a "Streaming Thought Box" that exposes raw reasoning tokens in a dimmed secondary panel to confirm responsiveness during long queries.

@@ -283,6 +283,10 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyUp()
 	case tea.KeyDown, tea.KeyPgDown:
 		return m.handleKeyDown()
+	case tea.KeyLeft:
+		return m.handleKeyLeft()
+	case tea.KeyRight:
+		return m.handleKeyRight()
 	case tea.KeyEsc:
 		return m.handleKeyEsc()
 	case tea.KeyRunes:
@@ -407,13 +411,7 @@ func (m DashboardModel) handleKeyUp() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.isCompleted {
-		if len(m.genFiles) > 0 {
-			m.selectedFileIdx--
-			if m.selectedFileIdx < 0 {
-				m.selectedFileIdx = len(m.genFiles) - 1
-			}
-		}
-		return m, nil
+		return m.navigateFilesUp()
 	}
 	if !m.showTextInput {
 		choices := m.getChoicesList()
@@ -431,13 +429,7 @@ func (m DashboardModel) handleKeyDown() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.isCompleted {
-		if len(m.genFiles) > 0 {
-			m.selectedFileIdx++
-			if m.selectedFileIdx >= len(m.genFiles) {
-				m.selectedFileIdx = 0
-			}
-		}
-		return m, nil
+		return m.navigateFilesDown()
 	}
 	if !m.showTextInput {
 		choices := m.getChoicesList()
@@ -445,6 +437,28 @@ func (m DashboardModel) handleKeyDown() (tea.Model, tea.Cmd) {
 		if m.selectedChoiceIdx >= len(choices) {
 			m.selectedChoiceIdx = 0
 		}
+	}
+	return m, nil
+}
+
+// handleKeyLeft navigates leftwards in the file selection layout.
+func (m DashboardModel) handleKeyLeft() (tea.Model, tea.Cmd) {
+	if m.showUpdatePrompt {
+		return m, nil
+	}
+	if m.isCompleted {
+		return m.navigateFilesLeft()
+	}
+	return m, nil
+}
+
+// handleKeyRight navigates rightwards in the file selection layout.
+func (m DashboardModel) handleKeyRight() (tea.Model, tea.Cmd) {
+	if m.showUpdatePrompt {
+		return m, nil
+	}
+	if m.isCompleted {
+		return m.navigateFilesRight()
 	}
 	return m, nil
 }
@@ -499,6 +513,10 @@ func (m DashboardModel) handleKeyRunesCompleted(msg tea.KeyMsg) (tea.Model, tea.
 		return m.navigateFilesUp()
 	case "j":
 		return m.navigateFilesDown()
+	case "h":
+		return m.navigateFilesLeft()
+	case "l":
+		return m.navigateFilesRight()
 	case "q":
 		return m, tea.Quit
 	}
@@ -544,12 +562,75 @@ func (m DashboardModel) activateUpdatePrompt() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// getFileGridPositions returns the 2D grid mapping of indices in m.genFiles.
+func (m DashboardModel) getFileGridPositions() (int, [][]int) {
+	sourceIdx := -1
+	var downstream []int
+	for idx, file := range m.genFiles {
+		if file == "01_domain_model_use_cases.md" {
+			sourceIdx = idx
+		} else {
+			downstream = append(downstream, idx)
+		}
+	}
+
+	if len(downstream) == 0 {
+		return sourceIdx, nil
+	}
+
+	half := (len(downstream) + 1) / 2
+	var grid [][]int
+	for i := 0; i < half; i++ {
+		row := []int{downstream[i]}
+		if half+i < len(downstream) {
+			row = append(row, downstream[half+i])
+		}
+		grid = append(grid, row)
+	}
+	return sourceIdx, grid
+}
+
+// getGridPos determines whether the selected index is the source file or is in the downstream grid.
+func (m DashboardModel) getGridPos(selected int, sourceIdx int, grid [][]int) (bool, int, int) {
+	if selected == sourceIdx {
+		return true, 0, 0
+	}
+	for r, rowFiles := range grid {
+		for c, idx := range rowFiles {
+			if idx == selected {
+				return false, r, c
+			}
+		}
+	}
+	return true, 0, 0
+}
+
 // navigateFilesUp moves selectedFileIdx upwards in the completed file list.
 func (m DashboardModel) navigateFilesUp() (tea.Model, tea.Cmd) {
-	if len(m.genFiles) > 0 {
-		m.selectedFileIdx--
-		if m.selectedFileIdx < 0 {
-			m.selectedFileIdx = len(m.genFiles) - 1
+	if len(m.genFiles) == 0 {
+		return m, nil
+	}
+	sourceIdx, grid := m.getFileGridPositions()
+	if len(grid) == 0 {
+		m.selectedFileIdx = 0
+		return m, nil
+	}
+	isSource, row, col := m.getGridPos(m.selectedFileIdx, sourceIdx, grid)
+	if isSource {
+		m.selectedFileIdx = grid[len(grid)-1][0]
+	} else {
+		if row > 0 {
+			if col < len(grid[row-1]) {
+				m.selectedFileIdx = grid[row-1][col]
+			} else {
+				m.selectedFileIdx = grid[row-1][0]
+			}
+		} else {
+			if sourceIdx != -1 {
+				m.selectedFileIdx = sourceIdx
+			} else {
+				m.selectedFileIdx = grid[len(grid)-1][0]
+			}
 		}
 	}
 	return m, nil
@@ -557,11 +638,75 @@ func (m DashboardModel) navigateFilesUp() (tea.Model, tea.Cmd) {
 
 // navigateFilesDown moves selectedFileIdx downwards in the completed file list.
 func (m DashboardModel) navigateFilesDown() (tea.Model, tea.Cmd) {
-	if len(m.genFiles) > 0 {
-		m.selectedFileIdx++
-		if m.selectedFileIdx >= len(m.genFiles) {
-			m.selectedFileIdx = 0
+	if len(m.genFiles) == 0 {
+		return m, nil
+	}
+	sourceIdx, grid := m.getFileGridPositions()
+	if len(grid) == 0 {
+		m.selectedFileIdx = 0
+		return m, nil
+	}
+	isSource, row, col := m.getGridPos(m.selectedFileIdx, sourceIdx, grid)
+	if isSource {
+		m.selectedFileIdx = grid[0][0]
+	} else {
+		if row < len(grid)-1 {
+			if col < len(grid[row+1]) {
+				m.selectedFileIdx = grid[row+1][col]
+			} else {
+				m.selectedFileIdx = grid[row+1][0]
+			}
+		} else {
+			if sourceIdx != -1 {
+				m.selectedFileIdx = sourceIdx
+			} else {
+				m.selectedFileIdx = grid[0][col]
+			}
 		}
+	}
+	return m, nil
+}
+
+// navigateFilesLeft moves selectedFileIdx left in the grid.
+func (m DashboardModel) navigateFilesLeft() (tea.Model, tea.Cmd) {
+	if len(m.genFiles) == 0 {
+		return m, nil
+	}
+	sourceIdx, grid := m.getFileGridPositions()
+	if len(grid) == 0 {
+		m.selectedFileIdx = 0
+		return m, nil
+	}
+	isSource, row, col := m.getGridPos(m.selectedFileIdx, sourceIdx, grid)
+	if isSource {
+		return m, nil
+	}
+	if col > 0 {
+		m.selectedFileIdx = grid[row][col-1]
+	} else {
+		m.selectedFileIdx = grid[row][len(grid[row])-1]
+	}
+	return m, nil
+}
+
+// navigateFilesRight moves selectedFileIdx right in the grid.
+func (m DashboardModel) navigateFilesRight() (tea.Model, tea.Cmd) {
+	if len(m.genFiles) == 0 {
+		return m, nil
+	}
+	sourceIdx, grid := m.getFileGridPositions()
+	if len(grid) == 0 {
+		m.selectedFileIdx = 0
+		return m, nil
+	}
+	isSource, row, col := m.getGridPos(m.selectedFileIdx, sourceIdx, grid)
+	if isSource {
+		return m, nil
+	}
+	if col < len(grid[row])-1 {
+		m.selectedFileIdx = grid[row][col+1]
+	} else {
+		m.selectedFileIdx = grid[row][0]
 	}
 	return m, nil
 }
