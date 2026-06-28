@@ -34,19 +34,28 @@ func (m DashboardModel) View() string {
 		bodyHeight = 10
 	}
 
-	// Apply styles and dimensions
-	styledSidebar := SidebarStyle.
-		Width(sidebarWidth).
-		Height(bodyHeight).
-		Render(sidebar)
+	var body string
+	if m.showViewer && m.isFullScreenViewer {
+		styledChat := MainPanelStyle.
+			Width(m.width - 6).
+			Height(bodyHeight).
+			Render(mainChat)
+		body = styledChat
+	} else {
+		// Apply styles and dimensions
+		styledSidebar := SidebarStyle.
+			Width(sidebarWidth).
+			Height(bodyHeight).
+			Render(sidebar)
 
-	styledChat := MainPanelStyle.
-		Width(chatWidth).
-		Height(bodyHeight).
-		Render(mainChat)
+		styledChat := MainPanelStyle.
+			Width(chatWidth).
+			Height(bodyHeight).
+			Render(mainChat)
 
-	// Combine body horizontally
-	body := lipgloss.JoinHorizontal(lipgloss.Top, styledSidebar, styledChat)
+		// Combine body horizontally
+		body = lipgloss.JoinHorizontal(lipgloss.Top, styledSidebar, styledChat)
+	}
 
 	// Combine everything vertically
 	fullView := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
@@ -228,7 +237,11 @@ func (m DashboardModel) renderViewer() string {
 		BorderForeground(ColorMuted).
 		Padding(0, 1)
 
-	header := headerStyle.Render("📖 Viewing: " + selectedFile)
+	modeStr := "Split-Pane"
+	if m.isFullScreenViewer {
+		modeStr = "Full-Screen"
+	}
+	header := headerStyle.Render(fmt.Sprintf("📖 Viewing: %s (%s)", selectedFile, modeStr))
 
 	footerStyle := lipgloss.NewStyle().
 		Foreground(ColorMuted).
@@ -243,7 +256,7 @@ func (m DashboardModel) renderViewer() string {
 		scrollPercent = "Top"
 	}
 
-	footer := footerStyle.Render(fmt.Sprintf("Progress: %s  |  [Esc / q] Back  |  [j / k] Scroll", scrollPercent))
+	footer := footerStyle.Render(fmt.Sprintf("Progress: %s  |  [Esc / q] Back  |  [f] Toggle Layout  |  [j / k] Scroll", scrollPercent))
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,

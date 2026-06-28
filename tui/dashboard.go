@@ -89,6 +89,7 @@ type DashboardModel struct {
 	viewport         viewport.Model
 	showViewer       bool
 	selectedFileIdx  int
+	isFullScreenViewer bool
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -261,17 +262,36 @@ func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = sizeMsg.Width
 		m.height = sizeMsg.Height
-		m.viewport.Width = sizeMsg.Width - 4
-		m.viewport.Height = sizeMsg.Height - 6
+		m.updateViewportSize()
 	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.Type == tea.KeyEsc || keyMsg.String() == "q" {
 			m.showViewer = false
 			return m, nil
 		}
+		if keyMsg.String() == "f" || keyMsg.String() == "F" {
+			m.isFullScreenViewer = !m.isFullScreenViewer
+			m.updateViewportSize()
+			return m, nil
+		}
 	}
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+// updateViewportSize computes the width and height of the viewer viewport depending on layout mode.
+func (m *DashboardModel) updateViewportSize() {
+	width := m.width - 4
+	if !m.isFullScreenViewer {
+		sidebarWidth := 34
+		chatWidth := m.width - sidebarWidth - 8
+		if chatWidth < 40 {
+			chatWidth = 40
+		}
+		width = chatWidth - 4
+	}
+	m.viewport.Width = width
+	m.viewport.Height = m.height - 6
 }
 
 // handleKeyMsg routes key presses to specific action handlers based on key type.
@@ -397,9 +417,10 @@ func (m DashboardModel) openFileViewer() (tea.Model, tea.Cmd) {
 		m.setError(fmt.Errorf("failed to read file %s: %w", selectedFile, err))
 		return m, nil
 	}
-	content := string(contentBytes)
+	content := HighlightMarkdown(string(contentBytes))
 
-	m.viewport = viewport.New(m.width-4, m.height-6)
+	m.viewport = viewport.New(0, 0)
+	m.updateViewportSize()
 	m.viewport.SetContent(content)
 	m.showViewer = true
 	return m, nil
