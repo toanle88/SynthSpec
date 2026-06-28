@@ -258,7 +258,7 @@ func (m DashboardModel) renderMainChat() string {
 	if m.isCompleted {
 		return m.renderCompletedState()
 	}
-	return m.renderInterrogationState()
+	return m.chatViewport.View()
 }
 
 // renderViewer draws the scrollable Markdown document viewer with a border, header, and footer.
@@ -342,9 +342,9 @@ func (m DashboardModel) renderFooter() string {
 	} else if m.isCompleted {
 		keys = append(keys, "v/Enter: View file", "g: Regenerate", "u: Modify", "e: Editor")
 	} else if m.showTextInput {
-		keys = append(keys, "Enter: Send", "Ctrl+K: I Don't Know", ":edit: Open full editor", "Esc: Cancel")
+		keys = append(keys, "Enter: Send", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", ":edit: Open full editor", "Esc: Cancel")
 	} else {
-		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "Ctrl+K: I Don't Know", "g: Regenerate", "u: Modify", "e: Editor")
+		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", "g: Regenerate", "u: Modify", "e: Editor")
 	}
 	elements = append(elements, strings.Join(keys, "  |  "))
 
@@ -618,4 +618,31 @@ func renderParallelProgressGrid(lines []string) string {
 		"    ",
 		rightBlock,
 	)
+}
+
+// updateChatViewport updates the dimensions and content of the interrogation chat viewport.
+func (m *DashboardModel) updateChatViewport() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+
+	header := m.renderHeader()
+	footer := m.renderFooter()
+
+	headerHeight := lipgloss.Height(header)
+	footerHeight := lipgloss.Height(footer)
+	bodyHeight := m.height - headerHeight - footerHeight - 4
+	if bodyHeight < 10 {
+		bodyHeight = 10
+	}
+
+	sidebarWidth := 34
+	chatWidth := m.width - sidebarWidth - 8
+	if chatWidth < 40 {
+		chatWidth = 40
+	}
+
+	m.chatViewport.Width = chatWidth - 4
+	m.chatViewport.Height = bodyHeight - 2
+	m.chatViewport.SetContent(m.renderInterrogationState())
 }

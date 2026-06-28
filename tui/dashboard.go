@@ -96,6 +96,7 @@ type DashboardModel struct {
 	updateInput      textinput.Model
 	isCLIUpdateMode  bool
 	viewport         viewport.Model
+	chatViewport     viewport.Model
 	showViewer       bool
 	selectedFileIdx  int
 	isFullScreenViewer bool
@@ -201,6 +202,7 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		loading:           !completed && len(sess.History) == 0 && sess.LastQuestion == "",
 		thoughtChan:       make(chan string, 100),
 		streamingTokens:   "",
+		chatViewport:      viewport.New(0, 0),
 	}
 }
 
@@ -260,6 +262,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.updateChatViewport()
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -298,31 +301,29 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case thoughtTokenMsg:
 		m.streamingTokens += string(msg)
+		m.updateChatViewport()
+		m.chatViewport.GotoBottom()
 		return m, m.recvThoughtCmd()
 
 	case streamDoneMsg:
 		m.isStreaming = false
+		m.updateChatViewport()
+		m.chatViewport.GotoBottom()
 
 	case tea.MouseMsg:
 		if msg.Button == tea.MouseButtonWheelUp {
 			if m.isCompleted || m.isGenerating {
 				m.selectedFileIdx = maxInt(0, m.selectedFileIdx-1)
-			} else if !m.showTextInput && !m.loading {
-				choices := m.getChoicesList()
-				if len(choices) > 0 {
-					m.selectedChoiceIdx = maxInt(0, m.selectedChoiceIdx-1)
-				}
+			} else if !m.loading {
+				m.chatViewport.LineUp(3)
 			}
 			return m, nil
 		}
 		if msg.Button == tea.MouseButtonWheelDown {
 			if m.isCompleted || m.isGenerating {
 				m.selectedFileIdx = minInt(len(m.genFiles)-1, m.selectedFileIdx+1)
-			} else if !m.showTextInput && !m.loading {
-				choices := m.getChoicesList()
-				if len(choices) > 0 {
-					m.selectedChoiceIdx = minInt(len(choices)-1, m.selectedChoiceIdx+1)
-				}
+			} else if !m.loading {
+				m.chatViewport.LineDown(3)
 			}
 			return m, nil
 		}
@@ -401,6 +402,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	m.updateChatViewport()
 	return m, tea.Batch(cmds...)
 }
 
@@ -544,10 +546,22 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyEnter:
 		return m.handleKeyEnter()
-	case tea.KeyUp, tea.KeyPgUp:
+	case tea.KeyUp:
 		return m.handleKeyUp()
-	case tea.KeyDown, tea.KeyPgDown:
+	case tea.KeyDown:
 		return m.handleKeyDown()
+	case tea.KeyPgUp:
+		m.chatViewport.HalfPageUp()
+		return m, nil
+	case tea.KeyPgDown:
+		m.chatViewport.HalfPageDown()
+		return m, nil
+	case tea.KeyCtrlU:
+		m.chatViewport.HalfPageUp()
+		return m, nil
+	case tea.KeyCtrlD:
+		m.chatViewport.HalfPageDown()
+		return m, nil
 	case tea.KeyLeft:
 		return m.handleKeyLeft()
 	case tea.KeyRight:
