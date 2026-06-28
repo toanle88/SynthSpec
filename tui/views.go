@@ -113,9 +113,10 @@ func (m DashboardModel) renderSidebar() string {
 func (m DashboardModel) renderGeneratingState() string {
 	var content []string
 	content = append(content, TitleStyle.Render("✨ Final Asset Synthesis in Progress"))
-	if m.genPhase == "source" {
+	switch m.genPhase {
+	case "source":
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Phase: Source document lock-in"))
-	} else if m.genPhase == "parallel" {
+	case "parallel":
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Phase: Parallel downstream generation"))
 		if len(m.genFiles) > 1 {
 			content = append(content, lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("Fan-out active: %d downstream documents running in parallel.", len(m.genFiles)-1)))
