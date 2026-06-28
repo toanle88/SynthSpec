@@ -166,6 +166,84 @@ func PerformStaticValidation(fileName string, content string) error {
 	if err := validateCodeBlocks(content); err != nil {
 		return err
 	}
+	if err := validateMermaidBlocks(content); err != nil {
+		return err
+	}
+	return nil
+}
+
+var mermaidRegex = regexp.MustCompile("(?s)```mermaid\n(.*?)\n```")
+var arrowRegex = regexp.MustCompile(`--?>>?|--?x`)
+
+// validateMermaidBlocks checks for syntax errors in embedded Mermaid sequence diagrams and Gantt charts.
+func validateMermaidBlocks(content string) error {
+	matches := mermaidRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		block := match[1]
+
+		// Check for unbalanced double quotes
+		if strings.Count(block, `"`)%2 != 0 {
+			return fmt.Errorf("invalid Mermaid diagram: unbalanced double quotes")
+		}
+
+		lines := strings.Split(block, "\n")
+		var isSequence bool
+		var isGantt bool
+
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "%%") {
+				continue
+			}
+
+			if !isSequence && !isGantt {
+				if strings.HasPrefix(trimmed, "sequenceDiagram") {
+					isSequence = true
+					continue
+				}
+				if strings.HasPrefix(trimmed, "gantt") {
+					isGantt = true
+					continue
+				}
+			}
+
+			if isSequence {
+				if loc := arrowRegex.FindStringIndex(trimmed); loc != nil {
+					left := strings.TrimSpace(trimmed[:loc[0]])
+					rightPart := trimmed[loc[1]:]
+					colonIdx := strings.Index(rightPart, ":")
+					var right string
+					if colonIdx != -1 {
+						right = strings.TrimSpace(rightPart[:colonIdx])
+					} else {
+						right = strings.TrimSpace(rightPart)
+					}
+
+					if strings.Contains(left, " ") && !(strings.HasPrefix(left, `"`) && strings.HasSuffix(left, `"`)) {
+						return fmt.Errorf("invalid sequence diagram: unquoted participant name with spaces: %q. Use double quotes around names with spaces", left)
+					}
+					if strings.Contains(right, " ") && !(strings.HasPrefix(right, `"`) && strings.HasSuffix(right, `"`)) {
+						return fmt.Errorf("invalid sequence diagram: unquoted participant name with spaces: %q. Use double quotes around names with spaces", right)
+					}
+				}
+			}
+
+			if isGantt {
+				words := strings.Fields(trimmed)
+				if len(words) > 0 {
+					first := words[0]
+					if first != "gantt" && first != "title" && first != "dateFormat" && first != "axisFormat" && first != "section" && first != "excludes" {
+						if !strings.Contains(trimmed, ":") {
+							return fmt.Errorf("invalid Gantt chart: task line %q must contain a colon ':' to separate the task name and its tags/duration", trimmed)
+						}
+					}
+				}
+			}
+		}
+	}
 	return nil
 }
 

@@ -83,6 +83,72 @@ paths:
 			t.Error("expected syntax error on malformed YAML block, got nil")
 		}
 	})
+
+	t.Run("Valid Mermaid diagrams", func(t *testing.T) {
+		content := `
+# Sequence
+` + "```mermaid" + `
+sequenceDiagram
+  participant Alice
+  participant "Audit Log" as AL
+  Alice->>AL: Log event
+` + "```" + `
+
+# Gantt
+` + "```mermaid" + `
+gantt
+  title Project Timeline
+  section Setup
+  API setup with database : active, m3_3, 2026-06-28, 30d
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err != nil {
+			t.Errorf("expected valid Mermaid diagram to pass, got error: %v", err)
+		}
+	})
+
+	t.Run("Sequence Diagram with unquoted spaces", func(t *testing.T) {
+		content := `
+# Invalid Sequence
+` + "```mermaid" + `
+sequenceDiagram
+  Alice->>Audit Log: Log event
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err == nil {
+			t.Error("expected syntax error for unquoted participant name with spaces, got nil")
+		}
+	})
+
+	t.Run("Gantt Chart with missing colon", func(t *testing.T) {
+		content := `
+# Invalid Gantt
+` + "```mermaid" + `
+gantt
+  API setup with database active, m3_3, 30d
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err == nil {
+			t.Error("expected syntax error for missing colon on Gantt task line, got nil")
+		}
+	})
+
+	t.Run("Unbalanced quotes in Mermaid", func(t *testing.T) {
+		content := `
+# Unbalanced
+` + "```mermaid" + `
+sequenceDiagram
+  participant "Alice
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err == nil {
+			t.Error("expected syntax error for unbalanced quotes in Mermaid block, got nil")
+		}
+	})
 }
 
 func TestGenerateComplianceReport(t *testing.T) {
