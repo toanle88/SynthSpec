@@ -152,7 +152,7 @@ func writeConsistencyCheck(sb *strings.Builder, consistencyReport *gateway.Consi
 	sb.WriteString("\n")
 }
 
-var codeBlockRegex = regexp.MustCompile("(?s)```(json|yaml|yml)\n(.*?)\n```")
+var codeBlockRegex = regexp.MustCompile("(?s)```(json|yaml|yml)\n(.*?)(?:\n)?```")
 
 // PerformStaticValidation checks file syntax correctness
 func PerformStaticValidation(fileName string, content string) error {
@@ -172,7 +172,7 @@ func PerformStaticValidation(fileName string, content string) error {
 	return nil
 }
 
-var mermaidRegex = regexp.MustCompile("(?s)```mermaid\n(.*?)\n```")
+var mermaidRegex = regexp.MustCompile("(?s)```mermaid\n(.*?)(?:\n)?```")
 var arrowRegex = regexp.MustCompile(`--?>>?|--?x`)
 
 // validateMermaidBlocks checks for syntax errors in embedded Mermaid sequence diagrams and Gantt charts.
@@ -259,8 +259,7 @@ func validateCodeBlocks(content string) error {
 
 		switch lang {
 		case "json":
-			var temp interface{}
-			if err := json.Unmarshal([]byte(code), &temp); err != nil {
+			if err := validateJSONCodeBlock(code); err != nil {
 				return fmt.Errorf("invalid json code block: %w", err)
 			}
 		case "yaml", "yml":
@@ -270,5 +269,26 @@ func validateCodeBlocks(content string) error {
 			}
 		}
 	}
+	return nil
+}
+
+// validateJSONCodeBlock attempts to validate JSON content, with a fallback
+// for handling trailing content after the top-level JSON value (e.g., when the
+// closing code fence lacks a preceding newline and the regex captures extra content).
+func validateJSONCodeBlock(code string) error {
+	// Primary attempt: standard strict JSON parsing
+	var temp interface{}
+	if err := json.Unmarshal([]byte(code), &temp); err == nil {
+		return nil
+	}
+
+	// Fallback: if there's trailing content after the top-level JSON value,
+	// use json.Decoder to parse just the first JSON value.
+	decoder := json.NewDecoder(strings.NewReader(code))
+	if err := decoder.Decode(&temp); err != nil {
+		return fmt.Errorf("invalid JSON syntax: %w", err)
+	}
+
+	// Successfully decoded the first JSON value; any remaining content is ignored.
 	return nil
 }
