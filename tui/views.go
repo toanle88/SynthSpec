@@ -184,6 +184,7 @@ func (m DashboardModel) renderInterrogationState() string {
 
 	if m.loading {
 		content = append(content, fmt.Sprintf("\n%s Architectural Reasoning in progress. Calling AI API...", m.spinner.View()))
+		content = append(content, "\n"+m.renderThoughtBox())
 	} else if m.showTextInput {
 		content = append(content, "\n"+m.textInput.View())
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Esc to return to choices)"))
@@ -200,6 +201,30 @@ func (m DashboardModel) renderInterrogationState() string {
 		}
 	}
 	return strings.Join(content, "\n")
+}
+
+func (m DashboardModel) renderThoughtBox() string {
+	boxWidth := m.width - 45
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+
+	title := ThoughtTitleStyle.Render("💭 Streaming Thought Box (Reasoning Tokens)")
+
+	tokens := m.streamingTokens
+	if tokens == "" {
+		tokens = "Awaiting first token chunk..."
+	}
+
+	wrappedTokens := wrapText(tokens, boxWidth-4)
+
+	lines := strings.Split(wrappedTokens, "\n")
+	if len(lines) > 8 {
+		lines = lines[len(lines)-8:]
+	}
+	bodyContent := strings.Join(lines, "\n")
+
+	return ThoughtBoxStyle.Width(boxWidth).Render(title + "\n\n" + bodyContent)
 }
 
 func (m DashboardModel) renderMainChat() string {

@@ -210,6 +210,16 @@ Guidelines for evaluation:
 	return &oracleResp, nil
 }
 
+func (o *OpenRouterGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error) {
+	res, err := o.QueryOracle(ctx, facts, history, latestInput)
+	if err != nil {
+		close(tokenChan)
+		return nil, err
+	}
+	StreamOracleResponse(ctx, res, tokenChan)
+	return res, nil
+}
+
 func (o *OpenRouterGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	messages := []openRouterChatMessage{
 		{Role: "system", Content: "You are a senior solutions architect. Write detailed, enterprise-grade specification files based on the facts provided. Return the exact file content and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."},

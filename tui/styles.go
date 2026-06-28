@@ -57,6 +57,17 @@ var (
 	SpinnerStyle = lipgloss.NewStyle().
 			Foreground(ColorInfo).
 			Bold(true)
+
+	ThoughtBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorMuted).
+			Foreground(ColorMuted).
+			Padding(0, 1).
+			Italic(true)
+
+	ThoughtTitleStyle = lipgloss.NewStyle().
+			Foreground(ColorMuted).
+			Bold(true)
 )
 
 // Specific UI Text Styles

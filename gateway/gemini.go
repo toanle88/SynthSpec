@@ -220,6 +220,16 @@ Guidelines for evaluation:
 	return &oracleResp, nil
 }
 
+func (g *GeminiGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error) {
+	res, err := g.QueryOracle(ctx, facts, history, latestInput)
+	if err != nil {
+		close(tokenChan)
+		return nil, err
+	}
+	StreamOracleResponse(ctx, res, tokenChan)
+	return res, nil
+}
+
 func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	contents := []geminiContent{
 		{

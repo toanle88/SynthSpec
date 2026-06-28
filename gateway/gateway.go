@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/toanle/synthspec/config"
 )
@@ -95,6 +96,9 @@ type Gateway interface {
 	// to get the next interrogation state from the Oracle.
 	QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error)
 
+	// QueryOracleStream does the same as QueryOracle but streams the raw tokens/chunks back via tokenChan.
+	QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error)
+
 	// GenerateSpecFile generates the contents of a specific output asset based on the compiled facts.
 	GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error)
 
@@ -175,5 +179,29 @@ func sanitizeJSON(content string) string {
 		content = strings.TrimSpace(content)
 	}
 	return content
+}
+
+// StreamOracleResponse takes a response, marshals it, and streams it to tokenChan.
+func StreamOracleResponse(ctx context.Context, res *OracleResponse, tokenChan chan<- string) {
+	data, _ := json.MarshalIndent(res, "", "  ")
+	strData := string(data)
+
+	go func() {
+		defer close(tokenChan)
+		runes := []rune(strData)
+		chunkSize := 8
+		for i := 0; i < len(runes); i += chunkSize {
+			end := i + chunkSize
+			if end > len(runes) {
+				end = len(runes)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case tokenChan <- string(runes[i:end]):
+				time.Sleep(2 * time.Millisecond)
+			}
+		}
+	}()
 }
 

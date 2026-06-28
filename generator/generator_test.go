@@ -160,6 +160,16 @@ func (tg *TestGateway) QueryOracle(ctx context.Context, facts gateway.Facts, his
 	return tg.queryResult, tg.queryErr
 }
 
+func (tg *TestGateway) QueryOracleStream(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string, tokenChan chan<- string) (*gateway.OracleResponse, error) {
+	res, err := tg.QueryOracle(ctx, facts, history, latestInput)
+	if err != nil {
+		close(tokenChan)
+		return nil, err
+	}
+	gateway.StreamOracleResponse(ctx, res, tokenChan)
+	return res, nil
+}
+
 func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts, fileName string, promptTemplate string) (string, error) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()

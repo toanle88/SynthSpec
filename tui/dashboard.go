@@ -42,6 +42,8 @@ type contextPruneResultMsg struct {
 	err    error
 }
 
+type thoughtTokenMsg string
+
 // DashboardModel represents the TUI state
 type DashboardModel struct {
 	Session   *state.Session
@@ -91,6 +93,10 @@ type DashboardModel struct {
 	showViewer       bool
 	selectedFileIdx  int
 	isFullScreenViewer bool
+
+	// Thought stream state
+	thoughtChan     chan string
+	streamingTokens string
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -179,6 +185,9 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		genFiles:          genFiles,
 		genFileStatuses:   genFileStatuses,
 		genFileDetails:    genFileDetails,
+		loading:           !completed && len(sess.History) == 0 && sess.LastQuestion == "",
+		thoughtChan:       make(chan string, 100),
+		streamingTokens:   "",
 	}
 }
 
@@ -202,7 +211,7 @@ func (m DashboardModel) Init() tea.Cmd {
 
 	// Bootstrapping: If history is empty and last question is empty, query Oracle first
 	if len(m.Session.History) == 0 && m.Session.LastQuestion == "" {
-		cmds = append(cmds, m.queryOracleCmd(""))
+		cmds = append(cmds, m.queryOracleCmd(""), m.recvThoughtCmd())
 	}
 
 	return tea.Batch(cmds...)
@@ -254,6 +263,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case contextPruneResultMsg:
 		return m.handleContextPruneResult(msg)
+
+	case thoughtTokenMsg:
+		m.streamingTokens += string(msg)
+		return m, m.recvThoughtCmd()
 	}
 
 	if !m.isCompleted && !m.loading && m.showTextInput {
@@ -406,9 +419,7 @@ func (m DashboardModel) handleKeyEnterUpdatePrompt() (tea.Model, tea.Cmd) {
 	m.updateInput.SetValue("")
 	m.showUpdatePrompt = false
 	m.isCompleted = false
-	m.loading = true
-	m.err = nil
-	return m, m.queryOracleCmd("I have a new requirement/change: " + val)
+	return m.startOracleQuery("I have a new requirement/change: " + val)
 }
 
 // handleKeyEnterCompleted processes Enter key presses on the completion screen, opening the document viewer.
@@ -443,9 +454,7 @@ func (m DashboardModel) handleKeyEnterTextInput() (tea.Model, tea.Cmd) {
 		})
 	}
 
-	m.loading = true
-	m.err = nil
-	return m, m.queryOracleCmd(val)
+	return m.startOracleQuery(val)
 }
 
 // handleKeyEnterChoiceSelection processes Enter key presses when selecting choices in the list.
@@ -467,9 +476,7 @@ func (m DashboardModel) handleKeyEnterChoiceSelection() (tea.Model, tea.Cmd) {
 		val = m.Session.LastChoices[m.selectedChoiceIdx]
 	}
 
-	m.loading = true
-	m.err = nil
-	return m, m.queryOracleCmd(val)
+	return m.startOracleQuery(val)
 }
 
 // openFileViewer opens the full screen Markdown document viewer viewport overlay.
@@ -911,9 +918,7 @@ func (m DashboardModel) handleEditorFinished(msg editorFinishedMsg) (tea.Model, 
 	m.Session.GeneratedFiles = nil
 	m.Session.Save()
 
-	m.loading = true
-	m.err = nil
-	return m, m.queryOracleCmd(manualUpdateMsg)
+	return m.startOracleQuery(manualUpdateMsg)
 }
 
 // handleGenProgress processes incoming specification file generation progress notifications.
@@ -1019,6 +1024,23 @@ func (m DashboardModel) handleContextPruneResult(msg contextPruneResultMsg) (tea
 	return m, nil
 }
 
+func (m DashboardModel) startOracleQuery(val string) (tea.Model, tea.Cmd) {
+	m.loading = true
+	m.err = nil
+	m.streamingTokens = ""
+	return m, tea.Batch(m.queryOracleCmd(val), m.recvThoughtCmd())
+}
+
+func (m DashboardModel) recvThoughtCmd() tea.Cmd {
+	return func() tea.Msg {
+		token, ok := <-m.thoughtChan
+		if !ok {
+			return nil
+		}
+		return thoughtTokenMsg(token)
+	}
+}
+
 // Background commands
 // queryOracleCmd submits requirement definitions asynchronously to the LLM Oracle model.
 func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
@@ -1032,7 +1054,7 @@ func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 			m.Session.AddTurn(latestInput, m.Session.LastQuestion, m.Session.TotalTokensUsed, m.Session.TotalTokensUsed)
 		}
 
-		resp, err := m.Gateway.QueryOracle(ctx, m.Session.Facts, m.Session.History, latestInput)
+		resp, err := m.Gateway.QueryOracleStream(ctx, m.Session.Facts, m.Session.History, latestInput, m.thoughtChan)
 		if err != nil {
 			return oracleResultMsg{err: err}
 		}

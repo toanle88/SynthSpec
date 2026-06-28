@@ -213,6 +213,16 @@ Guidelines for evaluation:
 	return &oracleResp, nil
 }
 
+func (a *AnthropicGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error) {
+	res, err := a.QueryOracle(ctx, facts, history, latestInput)
+	if err != nil {
+		close(tokenChan)
+		return nil, err
+	}
+	StreamOracleResponse(ctx, res, tokenChan)
+	return res, nil
+}
+
 func (a *AnthropicGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	messages := []anthropicMessage{
 		{
