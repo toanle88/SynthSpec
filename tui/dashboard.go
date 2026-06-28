@@ -570,7 +570,15 @@ func (m DashboardModel) handleKeyRunesIncomplete(msg tea.KeyMsg) (tea.Model, tea
 		return m, nil
 	}
 	key := string(msg.Runes)
-	switch key {
+	switch strings.ToLower(key) {
+	case "g":
+		return m.triggerRegeneration()
+	case "e":
+		return m.launchExternalEditor()
+	case "u":
+		return m.activateUpdatePrompt()
+	case "q":
+		return m, tea.Quit
 	case "k":
 		choices := m.getChoicesList()
 		m.selectedChoiceIdx--
