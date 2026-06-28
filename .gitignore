@@ -10,3 +10,4 @@ synthspec-output/
 usage.log
 *.log
 synthspec.exe~
+.gocache/

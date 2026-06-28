@@ -10,6 +10,7 @@ The TUI provides visual feedback indicators instead of standard linear scrolling
 2. **Categorical Completion Meters**: Shows live status bar updates for internal specification dimensions (Functional, Structural, Security, Compliance).
 3. **Current Question Panel**: Displays the single question being asked by the AI Oracle.
 4. **User Prompt Input Field**: Accepts interactive input from the user. Includes command processing for inline actions.
+5. **Asset Generation Pane**: When synthesis begins, the UI separates the locked source document from the parallel downstream fan-out and shows a phase label for each stage.
 
 ## User Interactions & Keybindings
 
@@ -20,3 +21,5 @@ The TUI provides visual feedback indicators instead of standard linear scrolling
 ## Latency Indicators
 
 Because deep architectural reasoning requires extended LLM execution times, the TUI must display a dynamic, non-blocking loading spinner to confirm system responsiveness during API round-trips. This spinner runs on a separate rendering thread to prevent blocking user key inputs or freezing the UI.
+
+During synthesis, the progress view groups `01_domain_model_use_cases.md` as the source section and renders the remaining documents as a parallel batch so the fan-out is easy to scan.

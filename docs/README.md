@@ -15,7 +15,7 @@ Detailed breakdowns of the CLI's internal event-driven architecture, models, and
 ### 2. [Functional Specifications](spec/README.md)
 Detailed product requirements and workflows mapped out.
 - **[The Oracle Interrogation Loop](spec/interrogation_loop.md)**: The interactive single-question loop, confidence scores, and verification gates.
-- **[Asset Generation (The Draftsman)](spec/asset_generation.md)**: Output workspaces, schemas, metadata representation, and formats.
+- **[Asset Generation (Source-First Synthesis)](spec/asset_generation.md)**: Source-doc-first generation, parallel downstream fan-out, output workspaces, and schemas.
 
 ### 3. [Standards & Reference](standard/glossary.md)
 - **[TUI Design Standards](standard/tui-design.md)**: Spacing guidelines, color usage, spinner designs, and CLI layouts.

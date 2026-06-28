@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/state"
 )
+
+const sourceModelFileName = "01_domain_model_use_cases.md"
 
 // TelemetryMetadata represents the .synthspec-meta.json structure
 type TelemetryMetadata struct {
@@ -35,6 +38,7 @@ type CompletionMetrics struct {
 type ProgressEvent struct {
 	File    string `json:"file,omitempty"`
 	Status  string `json:"status,omitempty"` // pending, skipped, synthesizing, correcting, auditing, refining, done, failed, started, completed, compiling_report, compiling_metadata
+	Phase   string `json:"phase,omitempty"`
 	Details string `json:"details,omitempty"`
 	Message string `json:"message,omitempty"`
 	ValLogs string `json:"val_logs,omitempty"`
@@ -146,6 +150,7 @@ type fileGenerator struct {
 	sess      *state.Session
 	outputDir string
 	progress  chan<- string
+	sessionMu sync.Mutex
 }
 
 // Generate runs sequential spec generation for all files
@@ -177,7 +182,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		files = append(files, t.FileName)
 	}
 
-	sendProgress(progress, ProgressEvent{Status: "started", Details: strings.Join(files, ","), Message: "Starting spec generation..."})
+	sendProgress(progress, ProgressEvent{Status: "started", Phase: "source", Details: strings.Join(files, ","), Message: "Starting spec generation..."})
 
 	fg := &fileGenerator{
 		ctx:       ctx,
@@ -187,34 +192,128 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		progress:  progress,
 	}
 
-	var fileCompliances []FileCompliance
+	fileCompliances := make([]FileCompliance, len(templates))
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	fg.ctx = runCtx
 
-	for _, t := range templates {
-		compliance, err := fg.processFile(t.FileName, t.Prompt, standards)
-		if err != nil {
-			return err
+	sourceTemplateIndex := -1
+	for idx, template := range templates {
+		if template.FileName == sourceModelFileName {
+			sourceTemplateIndex = idx
+			break
 		}
-		fileCompliances = append(fileCompliances, compliance)
+	}
+	if sourceTemplateIndex == -1 {
+		return fmt.Errorf("source model template %q not found", sourceModelFileName)
+	}
+
+	sourceTemplate := templates[sourceTemplateIndex]
+	sendProgress(progress, ProgressEvent{
+		Status:  "started",
+		Phase:   "source",
+		File:    sourceTemplate.FileName,
+		Message: fmt.Sprintf("Generating source document %s...", sourceTemplate.FileName),
+	})
+	sourceCompliance, err := fg.processFile(sourceTemplate.FileName, sourceTemplate.Prompt, standards, "")
+	if err != nil {
+		cancel()
+		return err
+	}
+	fileCompliances[sourceTemplateIndex] = sourceCompliance
+
+	sourceDocPath := filepath.Join(outputDir, sourceTemplate.FileName)
+	sourceDocBytes, err := os.ReadFile(sourceDocPath)
+	if err != nil {
+		return fmt.Errorf("failed to read source model document %s: %w", sourceTemplate.FileName, err)
+	}
+	sourceDoc := strings.TrimSpace(string(sourceDocBytes))
+	if sourceDoc == "" {
+		return fmt.Errorf("source model document %s is empty", sourceTemplate.FileName)
+	}
+
+	sendProgress(progress, ProgressEvent{
+		Status:  "started",
+		Phase:   "parallel",
+		Details: strings.Join(files, ","),
+		Message: fmt.Sprintf("Source document locked. Starting parallel generation for %d downstream documents...", len(templates)-1),
+	})
+
+	type generationResult struct {
+		index      int
+		compliance FileCompliance
+		err        error
+	}
+
+	type downstreamTemplate struct {
+		index    int
+		template config.Template
+	}
+
+	downstreamTemplates := make([]downstreamTemplate, 0, len(templates)-1)
+	for idx, template := range templates {
+		if template.FileName == sourceModelFileName {
+			continue
+		}
+		downstreamTemplates = append(downstreamTemplates, downstreamTemplate{index: idx, template: template})
+	}
+
+	results := make(chan generationResult, len(downstreamTemplates))
+	var wg sync.WaitGroup
+	for _, item := range downstreamTemplates {
+		wg.Add(1)
+		go func(index int, template config.Template) {
+			defer wg.Done()
+
+			compliance, err := fg.processFile(template.FileName, template.Prompt, standards, sourceDoc)
+			results <- generationResult{index: index, compliance: compliance, err: err}
+			if err != nil {
+				cancel()
+			}
+		}(item.index, item.template)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var firstErr error
+	for result := range results {
+		if result.err != nil {
+			if firstErr == nil {
+				firstErr = result.err
+			}
+			continue
+		}
+		fileCompliances[result.index] = result.compliance
+	}
+
+	if firstErr != nil {
+		return firstErr
 	}
 
 	return fg.finishGeneration(fileCompliances, standards)
 }
 
-func getCachedIndex(sess *state.Session, fileName string) int {
-	for idx, gf := range sess.GeneratedFiles {
+func (fg *fileGenerator) getCachedFileState(fileName string) (state.GeneratedFileState, bool) {
+	fg.sessionMu.Lock()
+	defer fg.sessionMu.Unlock()
+
+	for _, gf := range fg.sess.GeneratedFiles {
 		if gf.FileName == fileName {
-			return idx
+			return gf, true
 		}
 	}
-	return -1
+	return state.GeneratedFileState{}, false
 }
 
-func (fg *fileGenerator) processFile(fileName string, promptTemplate string, standards []config.Standard) (FileCompliance, error) {
-	cachedIdx := getCachedIndex(fg.sess, fileName)
+func (fg *fileGenerator) processFile(fileName string, promptTemplate string, standards []config.Standard, referenceDoc string) (FileCompliance, error) {
+	cachedState, cached := fg.getCachedFileState(fileName)
 	filePath := filepath.Join(fg.outputDir, fileName)
 	_, statErr := os.Stat(filePath)
 
-	if cachedIdx != -1 && statErr == nil && !fg.sess.GeneratedFiles[cachedIdx].HasError {
+	if cached && statErr == nil && !cachedState.HasError {
 		sendProgress(fg.progress, ProgressEvent{
 			File:    fileName,
 			Status:  "skipped",
@@ -223,17 +322,17 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 		})
 		return FileCompliance{
 			FileName: fileName,
-			Results:  fg.sess.GeneratedFiles[cachedIdx].Results,
+			Results:  cachedState.Results,
 			Err:      nil,
 		}, nil
 	}
 
-	content, startAttempt, err := fg.getInitialContentOrResume(fileName, promptTemplate)
+	content, startAttempt, err := fg.getInitialContentOrResume(fileName, promptTemplate, referenceDoc)
 	if err != nil {
 		return FileCompliance{}, err
 	}
 
-	content, complianceResults, checkErr, err := fg.runSelfCorrection(fileName, content, startAttempt, standards)
+	content, complianceResults, checkErr, err := fg.runSelfCorrection(fileName, content, startAttempt, standards, referenceDoc)
 	if err != nil {
 		return FileCompliance{}, err
 	}
@@ -248,7 +347,7 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 		return FileCompliance{}, fmt.Errorf("failed to write %s output file: %w", fileName, err)
 	}
 
-	if err := updateSessionProgress(fg.sess, fileName, complianceResults, checkErr); err != nil {
+	if err := fg.updateSessionProgress(fileName, complianceResults, checkErr); err != nil {
 		return FileCompliance{}, err
 	}
 
@@ -266,13 +365,13 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 	}, nil
 }
 
-func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTemplate string) (string, int, error) {
-	cachedIdx := getCachedIndex(fg.sess, fileName)
+func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTemplate string, referenceDoc string) (string, int, error) {
+	cachedState, cached := fg.getCachedFileState(fileName)
 	maxRetries := 3
 
-	if cachedIdx != -1 && fg.sess.GeneratedFiles[cachedIdx].InProgressText != "" {
-		content := fg.sess.GeneratedFiles[cachedIdx].InProgressText
-		startAttempt := fg.sess.GeneratedFiles[cachedIdx].CurrentAttempt
+	if cached && cachedState.InProgressText != "" {
+		content := cachedState.InProgressText
+		startAttempt := cachedState.CurrentAttempt
 		if startAttempt < 1 {
 			startAttempt = 1
 		}
@@ -295,7 +394,11 @@ func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTempla
 	var content string
 	var err error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.sess.Facts, fileName, promptTemplate)
+		fullPrompt, buildErr := buildGenerationPrompt(promptTemplate, fg.sess.Facts, referenceDoc)
+		if buildErr != nil {
+			return "", 0, buildErr
+		}
+		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.sess.Facts, fileName, fullPrompt)
 		if err == nil {
 			break
 		}
@@ -317,11 +420,31 @@ func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTempla
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	_ = updateInProgressState(fg.sess, fileName, content, 1)
+	_ = fg.updateInProgressState(fileName, content, 1)
 	return content, 1, nil
 }
 
-func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, error) {
+func buildGenerationPrompt(promptTemplate string, facts gateway.Facts, referenceDoc string) (string, error) {
+	factsJSON, err := json.MarshalIndent(facts, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal facts for prompt: %w", err)
+	}
+
+	var builder strings.Builder
+	builder.WriteString(strings.TrimSpace(promptTemplate))
+	builder.WriteString("\n")
+	builder.WriteString(string(factsJSON))
+
+	if trimmedReference := strings.TrimSpace(referenceDoc); trimmedReference != "" {
+		builder.WriteString("\n\n")
+		builder.WriteString("Reference source document:\n")
+		builder.WriteString(trimmedReference)
+	}
+
+	return builder.String(), nil
+}
+
+func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard, referenceDoc string) (string, []gateway.ComplianceResult, error, error) {
 	maxRetries := 3
 	var complianceResults []gateway.ComplianceResult
 	var checkErr error
@@ -331,14 +454,14 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 	for attempt := startAttempt; attempt < maxRetries; attempt++ {
 		checkErr = PerformStaticValidation(fileName, content)
 		if checkErr != nil {
-			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr)
+			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr, referenceDoc)
 			continue
 		}
 
 		if len(applicableStds) > 0 {
 			var passed bool
 			var err error
-			content, complianceResults, checkErr, passed, err = fg.handleComplianceEvaluation(fileName, content, attempt, standards)
+			content, complianceResults, checkErr, passed, err = fg.handleComplianceEvaluation(fileName, content, attempt, standards, referenceDoc)
 			if err != nil {
 				return content, nil, nil, err
 			}
@@ -377,7 +500,7 @@ func getApplicableStandards(standards []config.Standard, fileName string) []conf
 	return applicableStds
 }
 
-func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error) (string, error) {
+func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error, referenceDoc string) (string, error) {
 	maxRetries := 3
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
@@ -386,10 +509,10 @@ func (fg *fileGenerator) handleSyntaxError(fileName string, content string, atte
 		Message: fmt.Sprintf("⚠️ Syntax error in %s: %v. Correcting (attempt %d/%d)...", fileName, checkErr, attempt+1, maxRetries),
 	})
 	feedback := fmt.Sprintf("Static syntax validation failed: %v. Please rewrite the file to output syntactically valid contents.", checkErr)
-	refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedback, nil)
+	refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedback, nil, referenceDoc)
 	if refineErr == nil {
 		content = refined
-		_ = updateInProgressState(fg.sess, fileName, content, attempt+1)
+		_ = fg.updateInProgressState(fileName, content, attempt+1)
 	}
 	time.Sleep(100 * time.Millisecond)
 	return content, checkErr
@@ -519,7 +642,7 @@ func collectFailedStandards(evalResults []gateway.ComplianceResult, standards []
 	return failedStds, feedbackLines
 }
 
-func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, bool, error) {
+func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard, referenceDoc string) (string, []gateway.ComplianceResult, error, bool, error) {
 	maxRetries := 3
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
@@ -560,10 +683,10 @@ func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content str
 			Details: fmt.Sprintf("%d standards failed (attempt %d/%d)", len(failedStds), attempt+1, maxRetries),
 			Message: fmt.Sprintf("🔄 Standards check failed for %s. Refining (attempt %d/%d)...", fileName, attempt+1, maxRetries),
 		})
-		refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedbackText, failedStds)
+		refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedbackText, failedStds, referenceDoc)
 		if refineErr == nil {
 			content = refined
-			_ = updateInProgressState(fg.sess, fileName, content, attempt+1)
+			_ = fg.updateInProgressState(fileName, content, attempt+1)
 		}
 		time.Sleep(100 * time.Millisecond)
 		return content, evalResults, nil, false, nil
@@ -572,7 +695,7 @@ func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content str
 	return content, evalResults, nil, true, nil
 }
 
-func updateSessionProgress(sess *state.Session, fileName string, complianceResults []gateway.ComplianceResult, checkErr error) error {
+func (fg *fileGenerator) updateSessionProgress(fileName string, complianceResults []gateway.ComplianceResult, checkErr error) error {
 	newGenState := state.GeneratedFileState{
 		FileName: fileName,
 		Results:  complianceResults,
@@ -582,19 +705,22 @@ func updateSessionProgress(sess *state.Session, fileName string, complianceResul
 		newGenState.ErrorStr = checkErr.Error()
 	}
 
+	fg.sessionMu.Lock()
+	defer fg.sessionMu.Unlock()
+
 	found := false
-	for idx, gf := range sess.GeneratedFiles {
+	for idx, gf := range fg.sess.GeneratedFiles {
 		if gf.FileName == fileName {
-			sess.GeneratedFiles[idx] = newGenState
+			fg.sess.GeneratedFiles[idx] = newGenState
 			found = true
 			break
 		}
 	}
 	if !found {
-		sess.GeneratedFiles = append(sess.GeneratedFiles, newGenState)
+		fg.sess.GeneratedFiles = append(fg.sess.GeneratedFiles, newGenState)
 	}
 
-	if err := sess.Save(); err != nil {
+	if err := fg.sess.Save(); err != nil {
 		return fmt.Errorf("failed to save session state after generating %s: %w", fileName, err)
 	}
 	return nil
@@ -653,25 +779,28 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 	return nil
 }
 
-func updateInProgressState(sess *state.Session, fileName, content string, attempt int) error {
+func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt int) error {
 	newGenState := state.GeneratedFileState{
 		FileName:       fileName,
 		InProgressText: content,
 		CurrentAttempt: attempt,
 		HasError:       true,
 	}
+	fg.sessionMu.Lock()
+	defer fg.sessionMu.Unlock()
+
 	found := false
-	for idx, gf := range sess.GeneratedFiles {
+	for idx, gf := range fg.sess.GeneratedFiles {
 		if gf.FileName == fileName {
 			newGenState.Results = gf.Results
 			newGenState.ErrorStr = gf.ErrorStr
-			sess.GeneratedFiles[idx] = newGenState
+			fg.sess.GeneratedFiles[idx] = newGenState
 			found = true
 			break
 		}
 	}
 	if !found {
-		sess.GeneratedFiles = append(sess.GeneratedFiles, newGenState)
+		fg.sess.GeneratedFiles = append(fg.sess.GeneratedFiles, newGenState)
 	}
-	return sess.Save()
+	return fg.sess.Save()
 }

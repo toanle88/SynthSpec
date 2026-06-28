@@ -20,9 +20,8 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] Link `:edit` command to fork host editor (`$EDITOR`) to edit transient context.
 - [x] Background thread for Context Pruning & summarization when exceeding 75% context limit.
 
-### Milestone 4: Asset Generation (The Draftsman) (v0.4.0) ── [x] Completed
+### Milestone 4: Asset Generation (Source-First Synthesis) (v0.4.0) ── [x] Completed
 - [x] Enable the asset generator gate to unlock at 100% confidence.
 - [x] Build metadata `.synthspec-meta.json` schema compiler.
-- [x] Export system diagrams, OpenAPI specifications (`04_openapi_contract.yaml`), and backlogs (`05_engineering_backlog.json`).
-- [x] Validate generated backlogs against target schemas.
-
+- [x] Generate `01_domain_model_use_cases.md` first and fan out downstream documents in parallel.
+- [x] Produce the compliance audit report and validate generated outputs against target standards.

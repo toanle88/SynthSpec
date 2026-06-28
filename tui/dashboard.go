@@ -40,30 +40,31 @@ type contextPruneResultMsg struct {
 
 // DashboardModel represents the TUI state
 type DashboardModel struct {
-	Session         *state.Session
-	Gateway         gateway.Gateway
-	OutputDir       string
-	
-	textInput       textinput.Model
-	spinner         spinner.Model
-	loading         bool
-	err             error
-	
+	Session   *state.Session
+	Gateway   gateway.Gateway
+	OutputDir string
+
+	textInput textinput.Model
+	spinner   spinner.Model
+	loading   bool
+	err       error
+
 	// Layout sizes
-	width           int
-	height          int
-	
+	width  int
+	height int
+
 	// Editor state
-	editorTempPath  string
-	
+	editorTempPath string
+
 	// Generation state
-	isCompleted       bool
-	isGenerating      bool
-	genStatus         string
-	genChan           chan string
-	genFiles          []string
-	genFileStatuses   map[string]string
-	genFileDetails    map[string]string
+	isCompleted     bool
+	isGenerating    bool
+	genStatus       string
+	genPhase        string
+	genChan         chan string
+	genFiles        []string
+	genFileStatuses map[string]string
+	genFileDetails  map[string]string
 
 	// Compliance scorecard state
 	standards        []config.Standard
@@ -75,12 +76,12 @@ type DashboardModel struct {
 	showTextInput     bool
 
 	// External validator logs
-	validatorLogs     []string
+	validatorLogs []string
 
 	// Update requirement state
-	showUpdatePrompt  bool
-	updateInput       textinput.Model
-	isCLIUpdateMode   bool
+	showUpdatePrompt bool
+	updateInput      textinput.Model
+	isCLIUpdateMode  bool
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -310,6 +311,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Trigger Specs Generation
 					m.isGenerating = true
 					m.genStatus = "Starting spec generation..."
+					m.genPhase = "source"
 					m.genChan = make(chan string, 10)
 					m.genFileStatuses = make(map[string]string)
 					m.genFileDetails = make(map[string]string)
@@ -383,7 +385,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Session.GeneratedFiles = nil
 		m.selectedChoiceIdx = 0
 		m.showTextInput = len(m.Session.LastChoices) == 0
-		
+
 		// If user entered answer, record history (except boot queries)
 		if len(m.Session.History) > 0 || m.textInput.Value() != "" {
 			// We track in Update before user clears it, but we cleared it already.
@@ -399,6 +401,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.isCompleted && !wasCompleted {
 			m.isGenerating = true
 			m.genStatus = "Starting spec generation..."
+			m.genPhase = "source"
 			m.genChan = make(chan string, 10)
 			m.genFileStatuses = make(map[string]string)
 			m.genFileDetails = make(map[string]string)
@@ -440,6 +443,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var ev generator.ProgressEvent
 		if err := json.Unmarshal([]byte(msg), &ev); err == nil {
 			if ev.Status == "started" {
+				if ev.Phase != "" {
+					m.genPhase = ev.Phase
+				}
 				m.genFiles = strings.Split(ev.Details, ",")
 				m.genFileStatuses = make(map[string]string)
 				m.genFileDetails = make(map[string]string)

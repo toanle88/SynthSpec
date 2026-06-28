@@ -32,8 +32,8 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	}
 
 	res := &OracleResponse{
-		Facts: updatedFacts,
-		TokensPrompt: 120,
+		Facts:            updatedFacts,
+		TokensPrompt:     120,
 		TokensCompletion: 350,
 	}
 
@@ -99,7 +99,23 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 
 func (m *MockGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	switch fileName {
-	case "01_prd_functional.md":
+	case "01_domain_model_use_cases.md":
+		return `# Domain Model & Use Cases
+
+* **Status**: 🟢 Approved
+
+## 🗺️ Bounded Context Map
+Account Management Context, Spec Synthesis Context.
+
+## 🧱 Core Domain Entities & Value Objects
+Entities: Project, Requirement, Standard.
+Value Objects: Score, Rationale.
+
+## 🚀 Scenario Walkthroughs
+Primary use case scenario details.
+`, nil
+
+	case "02_prd_functional.md":
 		return fmt.Sprintf(`# Functional Requirements Document (PRD)
 
 * **Status**: 🟢 Approved
@@ -117,7 +133,7 @@ This specification outlines the functional features compiled during the interrog
 3. **Audit Trails**: Capture details of user operations.
 `, facts.Functional), nil
 
-	case "02_system_architecture.md":
+	case "03_system_architecture.md":
 		return fmt.Sprintf(`# System Architecture Specification
 
 * **Status**: 🟢 Approved
@@ -131,21 +147,6 @@ Three-tier architecture with load balancer.
 ## 🔀 API Routing Logic
 REST endpoints map to specific service controllers.
 `, facts.Structural), nil
-
-	case "03_security_threat_model.md":
-		return fmt.Sprintf(`# Security & Threat Model
-
-* **Status**: 🟢 Approved
-
-## 🛡️ STRIDE Threat Assessment
-| Category | Vulnerability | Mitigation Strategy |
-|----------|---------------|---------------------|
-| **Spoofing** | Unauthorized API access | Cryptographic JWT claims and signature validation. |
-| **Information Disclosure** | Leakage of tenant data | Query-level row separation and parameter validation. |
-
-## 🔒 Compiled Security Facts
-%s
-`, facts.Security), nil
 
 	case "04_api_architecture_integration.md":
 		return `# API Architecture & Integration Guide
@@ -183,21 +184,20 @@ Integration testing with mock interfaces. 80% code coverage gate.
 Configured strict rules.
 `, nil
 
-	case "06_domain_model_use_cases.md":
-		return `# Domain Model & Use Cases
+	case "06_security_threat_model.md":
+		return fmt.Sprintf(`# Security & Threat Model
 
 * **Status**: 🟢 Approved
 
-## 🗺️ Bounded Context Map
-Account Management Context, Spec Synthesis Context.
+## 🛡️ STRIDE Threat Assessment
+| Category | Vulnerability | Mitigation Strategy |
+|----------|---------------|---------------------|
+| **Spoofing** | Unauthorized API access | Cryptographic JWT claims and signature validation. |
+| **Information Disclosure** | Leakage of tenant data | Query-level row separation and parameter validation. |
 
-## 🧱 Core Domain Entities & Value Objects
-Entities: Project, Requirement, Standard.
-Value Objects: Score, Rationale.
-
-## 🚀 Scenario Walkthroughs
-Primary use case scenario details.
-`, nil
+## 🔒 Compiled Security Facts
+%s
+`, facts.Security), nil
 
 	case "07_engineering_roadmap.md":
 		return `# Engineering Roadmap
@@ -283,13 +283,15 @@ func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, f
 	return results, nil
 }
 
-func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error) {
 	var ids []string
 	for _, std := range failedStandards {
 		ids = append(ids, std.ID)
 	}
 	fixMsg := fmt.Sprintf("refined Fix: compliant with %s", strings.Join(ids, ", "))
 
+	if strings.TrimSpace(referenceDoc) != "" {
+		return fmt.Sprintf("%s\n\n<!-- %s -->\n<!-- Reference source document preserved -->\n", fileContent, fixMsg), nil
+	}
 	return fmt.Sprintf("%s\n\n<!-- %s -->\n", fileContent, fixMsg), nil
 }
-

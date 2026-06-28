@@ -20,16 +20,16 @@ Running `synthspec init <project_name>` sets up an isolated directory configurat
 #### 2. The Interactive Interrogation Loop (The Oracle)
 The system shifts into an interactive TUI (Terminal User Interface).
 
-The AI agent functions under a strict "Single Question Constraint"—it is prohibited from dumping multiple distinct questions in a single conversational turn.
+The AI agent functions under a strict "Single Question Constraint"—it is prohibited from dumping multiple distinct questions in a single conversational turn. Each question turn uses a fresh prompt with only the current facts and latest answer context.
 
 The AI evaluates user input against four internal specification dimensions: Functional, Structural, Security, and Compliance.
 
 A localized state scoring algorithm calculates a real-time completion confidence percentage (0% to 100%).
 
-#### 3. Spec Approval and Asset Generation (The Draftsman)
+#### 3. Spec Approval and Asset Generation (Source-First Synthesis)
 The generation phase remains locked behind a strict compliance gate until all tracked confidence vectors hit 100%.
 
-Upon hitting full confidence, the interface exposes an action prompt allowing the user to inspect the state, manually adjust raw parameters in an editor (e.g., VS Code, Vim), or trigger final artifact synthesis.
+Upon hitting full confidence, the interface exposes an action prompt allowing the user to inspect the state, manually adjust raw parameters in an editor (e.g., VS Code, Vim), or trigger final artifact synthesis. The generator produces `01_domain_model_use_cases.md` first, then fans out the remaining documents in parallel using that file as the source of truth.
 
 ### Functional Requirements Matrix
 
@@ -107,12 +107,15 @@ Upon completion of the integration loop, SynthSpec generates a clean, standardiz
 ### Output Workspace Structure
 ```plaintext
 synthspec-output/
+├── 00_compliance_report.md
 ├── .synthspec-meta.json
-├── 01_prd_functional.md
-├── 02_system_architecture.md
-├── 03_security_threat_model.md
-├── 04_openapi_contract.yaml
-└── 05_engineering_backlog.json
+├── 01_domain_model_use_cases.md
+├── 02_prd_functional.md
+├── 03_system_architecture.md
+├── 04_api_architecture_integration.md
+├── 05_coding_standards_guidelines.md
+├── 06_security_threat_model.md
+└── 07_engineering_roadmap.md
 ```
 
 ### Component Schemas
@@ -143,44 +146,5 @@ Tracks internal execution details, project definitions, and foundational verific
 }
 ```
 
-#### Engineering Backlog Schema (`05_engineering_backlog.json`)
-Structures functional units into a clean task schema suitable for direct script-based ingestion into tools like Jira, Linear, or GitHub issues.
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "EngineeringBacklog",
-  "type": "object",
-  "properties": {
-    "epics": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "description": { "type": "string" },
-          "tasks": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": { "type": "string" },
-                "summary": { "type": "string" },
-                "details": { "type": "string" },
-                "acceptance_criteria": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                }
-              },
-              "required": ["id", "summary", "details", "acceptance_criteria"]
-            }
-          }
-        },
-        "required": ["id", "title", "description", "tasks"]
-      }
-    }
-  },
-  "required": ["epics"]
-}
-```
+#### Roadmap Deliverable (`07_engineering_roadmap.md`)
+Provides a human-readable delivery plan with at least three phases, clear milestones, and a Mermaid Gantt chart that reflects the current source-first synthesis flow.

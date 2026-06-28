@@ -24,6 +24,8 @@ Key responsibilities:
 - Bootstrap environment configuration (e.g., parsing API keys).
 - Route control flow to either the TUI dashboard engine or the batch generator.
 
+The batch generator now runs the domain source document first, then fans out the downstream documents in parallel using that locked source doc as the shared reference baseline.
+
 ### 2. State Controller
 Maintains runtime synchronization. It tracks the dynamic conversation history matrix, evaluates completion scores across four dimensions (Functional, Structural, Security, Compliance), and serializes transient application states back to the local file system.
 

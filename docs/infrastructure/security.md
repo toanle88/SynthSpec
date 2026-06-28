@@ -6,6 +6,7 @@ SynthSpec is designed with a privacy-first local-first paradigm. It contains no 
 
 - **Zero-Data Retention Policy**: Under no circumstances may user instructions, keys, or synthesized specifications be transmitted to an external service other than the explicit endpoints maintained by the user's chosen API provider.
 - **Key Isolation**: API tokens are held entirely within volatile application memory space. The system must never write keys to log outputs, state caches, or error diagnostics files.
+ - **Fresh Prompt Retries**: Generation and refinement retries are rebuilt from scratch using only the current artifact, the locked source document, and validator feedback. Prior retry transcripts are not reused.
 
 ## STRIDE Threat Modeling Analysis
 

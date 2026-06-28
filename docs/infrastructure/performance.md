@@ -11,7 +11,9 @@ Since SynthSpec executes locally as a CLI tool, performance guidelines focus on 
 - The UI main loop must listen to user inputs concurrently with active background processes (e.g. running a progress spinner on a separate thread).
 
 ## 3. Summarization Threshold (Context Pruning)
-- To prevent slow LLM completions or context overflow:
+- To prevent slow Oracle completions or context overflow:
   - Track conversation history token count.
   - Trigger a background summarization cycle once history exceeds **75%** of the model's token limit.
 - Keep the condensed summary under **1000 tokens** to leave maximum workspace capacity for subsequent interrogation prompts.
+
+Generation retries and downstream synthesis retries do not reuse accumulated retry history; they are rebuilt from fresh prompts to reduce attention dilution.

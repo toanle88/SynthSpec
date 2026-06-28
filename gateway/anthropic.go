@@ -193,14 +193,11 @@ Guidelines for evaluation:
 }
 
 func (a *AnthropicGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
-	factsJSON, _ := json.MarshalIndent(facts, "", "  ")
-	fullPrompt := promptTemplate + string(factsJSON)
-
 	messages := []anthropicMessage{
 		{
 			Role: "user",
 			Content: []anthropicContentPart{
-				{Type: "text", Text: fullPrompt},
+				{Type: "text", Text: promptTemplate},
 			},
 		},
 	}
@@ -345,7 +342,7 @@ Output only the raw JSON string. Do NOT output any markdown formatting backticks
 	return envelope.Results, nil
 }
 
-func (a *AnthropicGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+func (a *AnthropicGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error) {
 	systemPrompt := "You are a senior solutions architect. Your job is to modify an existing specification file to fix quality standards violations. Return only the updated file contents and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."
 
 	var criteriaLines []string
@@ -361,13 +358,16 @@ Here is the feedback on why it failed:
 Please update the file content to address the feedback and satisfy the following standards:
 %s
 
+Reference source document:
+%s
+
 Original File Content:
 %s
 
 CRITICAL: When rewriting this file to fix the audit failures, do not abbreviate, truncate, or omit any existing sections that are already passing. You must maintain or improve the detail level of the entire document.
 
 Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks like `+"```"+` or include any conversational filler.`,
-		fileName, feedback, criteriaText, fileContent)
+		fileName, feedback, criteriaText, strings.TrimSpace(referenceDoc), fileContent)
 
 	messages := []anthropicMessage{
 		{

@@ -16,7 +16,7 @@ The directory layout follows standard Go CLI patterns:
 - `gateway/`: Abstract LLM provider logic. Isolates vendor payload models and endpoints.
 - `state/`: Session management, configuration schemas, and file I/O.
 - `tui/`: Asynchronous dashboard view model, keyboard event handlers, and styles.
-- `generator/`: Markdown output builder and backlog schema compilers.
+- `generator/`: Source-first markdown output builder, parallel fan-out scheduler, and compliance report generation.
 
 ## Error Handling
 - Never ignore errors. Handle them explicitly or return them wrapped.

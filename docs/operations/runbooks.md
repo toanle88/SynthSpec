@@ -32,6 +32,8 @@ If a user reports that a session is stuck or failing to resume via `synthspec re
    - Make a backup of the file.
    - Run the state formatter tool `synthspec repair` (if implemented) or manually fix missing closing brackets or fields in their default text editor.
 
+If a user reports repeated generation failures or inconsistent refinement results, confirm that they are on the current source-first synthesis flow. Each retry should use the locked `01_domain_model_use_cases.md` source doc and a fresh prompt rather than replaying prior retry transcripts.
+
 ## Upstream API Failures
 
 If upstream LLM endpoints throw HTTP 500s or 503s:

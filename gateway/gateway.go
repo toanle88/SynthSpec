@@ -75,7 +75,7 @@ type Gateway interface {
 	EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error)
 
 	// RefineSpecFile attempts to fix a generated file to comply with standards based on feedback
-	RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error)
+	RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error)
 }
 
 // SanitizeNextQuestion enforces the strict single question constraint on LLM output.

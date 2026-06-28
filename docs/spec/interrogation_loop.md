@@ -1,6 +1,6 @@
 # The Oracle Interrogation Loop
 
-The Interactive Interrogation Loop (code-named "The Oracle") guides users from vague, high-level project summaries to a complete, formal specification structure.
+The Interactive Interrogation Loop (code-named "The Oracle") guides users from vague, high-level project summaries to a complete, formal specification structure. Each question turn is treated as a fresh prompt, with the current facts and the latest answer forming the only live context.
 
 ## Core Mechanics
 

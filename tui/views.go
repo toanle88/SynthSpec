@@ -56,7 +56,7 @@ func (m DashboardModel) View() string {
 
 func (m DashboardModel) renderHeader() string {
 	title := " 🛠️  SynthSpec Solution Architect Dashboard "
-	
+
 	// Average Score Calculation
 	avgScore := (m.Session.Scores.Functional +
 		m.Session.Scores.Structural +
@@ -88,14 +88,14 @@ func (m DashboardModel) renderSidebar() string {
 	}{
 		{"Functional", m.Session.Scores.Functional, m.Session.Rationales.Functional},
 		{"Structural", m.Session.Scores.Structural, m.Session.Rationales.Structural},
-		{"Security",   m.Session.Scores.Security,   m.Session.Rationales.Security},
+		{"Security", m.Session.Scores.Security, m.Session.Rationales.Security},
 		{"Compliance", m.Session.Scores.Compliance, m.Session.Rationales.Compliance},
 	}
 
 	for _, d := range dimensions {
 		prog := RenderProgressBar(18, d.Score)
 		label := MetricLabelStyle.Render(d.Name)
-		
+
 		// Wrap rationale text
 		rationale := d.Rationale
 		if rationale == "" {
@@ -113,6 +113,14 @@ func (m DashboardModel) renderSidebar() string {
 func (m DashboardModel) renderGeneratingState() string {
 	var content []string
 	content = append(content, TitleStyle.Render("✨ Final Asset Synthesis in Progress"))
+	if m.genPhase == "source" {
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Phase: Source document lock-in"))
+	} else if m.genPhase == "parallel" {
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Phase: Parallel downstream generation"))
+		if len(m.genFiles) > 1 {
+			content = append(content, lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("Fan-out active: %d downstream documents running in parallel.", len(m.genFiles)-1)))
+		}
+	}
 	content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
 	content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Progress:"))
 	content = append(content, m.renderFileProgressList())
@@ -136,6 +144,9 @@ func (m DashboardModel) renderGeneratingState() string {
 func (m DashboardModel) renderCompletedState() string {
 	var content []string
 	content = append(content, TitleStyle.Render("🎉 Specification Complete!"))
+	if m.genPhase == "parallel" {
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Last phase: Parallel downstream generation"))
+	}
 	content = append(content, "\nAll requirement vectors have achieved 100% confidence and files have been generated.")
 	content = append(content, "You can still edit raw facts to regenerate, or quit:\n")
 	content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate files"))
@@ -347,11 +358,13 @@ func (m DashboardModel) getStandardStatus(std config.Standard) (string, lipgloss
 	}
 
 	files := []string{
-		"01_prd_functional.md",
-		"02_system_architecture.md",
-		"03_security_threat_model.md",
+		"01_domain_model_use_cases.md",
+		"02_prd_functional.md",
+		"03_system_architecture.md",
 		"04_api_architecture_integration.md",
 		"05_coding_standards_guidelines.md",
+		"06_security_threat_model.md",
+		"07_engineering_roadmap.md",
 	}
 
 	currentFileIdx := -1
@@ -411,7 +424,9 @@ func (m DashboardModel) renderStandardsGrid() string {
 }
 
 func (m DashboardModel) renderFileProgressList() string {
-	var lines []string
+	var sourceLines []string
+	var downstreamLines []string
+
 	for _, file := range m.genFiles {
 		status := m.genFileStatuses[file]
 		details := m.genFileDetails[file]
@@ -453,8 +468,46 @@ func (m DashboardModel) renderFileProgressList() string {
 		} else {
 			line = fmt.Sprintf("  %s %s", styledIcon, styledFile)
 		}
-		lines = append(lines, line)
+
+		if file == "01_domain_model_use_cases.md" {
+			sourceLines = append(sourceLines, line)
+		} else {
+			downstreamLines = append(downstreamLines, line)
+		}
 	}
-	return strings.Join(lines, "\n")
+
+	var sections []string
+	if len(sourceLines) > 0 {
+		sections = append(sections, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Source"))
+		sections = append(sections, sourceLines...)
+	}
+	if len(downstreamLines) > 0 {
+		sections = append(sections, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("Parallel downstream"))
+		sections = append(sections, renderParallelProgressGrid(downstreamLines))
+	}
+
+	return strings.Join(sections, "\n")
 }
 
+func renderParallelProgressGrid(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+
+	half := (len(lines) + 1) / 2
+	leftLines := lines[:half]
+	rightLines := lines[half:]
+
+	leftBlock := strings.Join(leftLines, "\n")
+	rightBlock := strings.Join(rightLines, "\n")
+
+	if rightBlock == "" {
+		return leftBlock
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		leftBlock,
+		"    ",
+		rightBlock,
+	)
+}

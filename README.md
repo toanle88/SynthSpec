@@ -13,7 +13,7 @@ flowchart TD
     Init[1. synthspec init] --> Interrogate[2. The Oracle Interrogation Loop]
     Interrogate --> |TUI Dashboard | Confidence{All Categories 100%?}
     Confidence -->|No| Interrogate
-    Confidence -->|Yes| Generate[3. The Draftsman Synthesis]
+    Confidence -->|Yes| Generate[3. Source-First Asset Synthesis]
     Generate --> Output[Generated Workspace: synthspec-output/]
 ```
 
@@ -24,7 +24,7 @@ synthspec init <project_name>
 ```
 This sets up an isolated directory configuration under `.synthspec/` containing state preservation files. If your session is interrupted, resume it anytime with:
 ```bash
-synthspec resume
+synthspec resume <project_name>
 ```
 
 ### 2. The Interactive Interrogation Loop (The Oracle)
@@ -41,13 +41,16 @@ The generation phase remains locked behind a compliance gate until all confidenc
 *💡 Pro-Tip: Type `:edit` inside the input box at any time to open the session state directly in your system default editor ($EDITOR).*
 
 ### 3. Spec Approval and Asset Generation (The Draftsman)
-Once all vectors hit 100% confidence, the "Draftsman" engine unlocks to synthesize standard engineering deliverables:
+Once all vectors hit 100% confidence, the asset synthesis engine unlocks. It generates `01_domain_model_use_cases.md` first, then fans out the remaining documents in parallel using the locked source doc as the reference baseline:
+- **`00_compliance_report.md`**: Summarized standards evaluation report.
 - **`.synthspec-meta.json`**: Session statistics and engine metadata.
-- **`01_prd_functional.md`**: Formal Product Requirements Document.
-- **`02_system_architecture.md`**: Decoupled component design & schema layout.
-- **`03_security_threat_model.md`**: Comprehensive STRIDE threat modeling & mitigations.
-- **`04_openapi_contract.yaml`**: Synthesized REST/gRPC API definitions.
-- **`05_engineering_backlog.json`**: Tasks structured as Epics & User Stories for Jira/GitHub ingestion.
+- **`01_domain_model_use_cases.md`**: Domain source of truth and scenario foundation.
+- **`02_prd_functional.md`**: Formal Product Requirements Document.
+- **`03_system_architecture.md`**: Decoupled component design & schema layout.
+- **`04_api_architecture_integration.md`**: API integration contract and transport rules.
+- **`05_coding_standards_guidelines.md`**: Development standards and CI/CD guidance.
+- **`06_security_threat_model.md`**: Comprehensive STRIDE threat modeling & mitigations.
+- **`07_engineering_roadmap.md`**: Delivery phases and timeline planning.
 
 ---
 
@@ -95,7 +98,7 @@ $env:OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
 ### Run with Live LLM Provider (Default)
-To run with a live upstream model, make sure you have set the appropriate API key environment variables (as detailed in the "Setup API Keys" section above), then initialize or resume the session without the `--mock` flag:
+To run with a live upstream model, make sure you have set the appropriate API key environment variables (as detailed in the "Setup API Keys" section above), then initialize or resume the session without the `--mock` flag. Each retry uses a fresh prompt so the model does not carry over stale retry context:
 
 **On Linux / macOS:**
 ```bash
@@ -122,7 +125,7 @@ You can optionally override the default provider or model by passing the `--prov
 ```
 
 ### Run with Mock Provider (Local Offline Testing)
-To run and evaluate the interactive TUI flow offline without requiring a live LLM API key, initialize or resume the session using the `--mock` flag:
+To run and evaluate the interactive TUI flow offline without requiring a live LLM API key, initialize or resume the session using the `--mock` flag. Mock generation also follows the same source-first, fresh-prompt retry flow:
 
 **On Linux / macOS:**
 ```bash

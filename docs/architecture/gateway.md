@@ -18,13 +18,15 @@ Routing is determined dynamically via CLI flags (e.g., `--model gemini-1.5-pro` 
 
 ## Token Optimization & Context Pruning
 
-To keep API costs low and prevent context overflow, the CLI tracks conversation history tokens. 
+To keep API costs low and prevent context overflow, the CLI tracks conversation history tokens during the interrogation loop.
 
 Before hitting **75% of the target LLM model’s context limit**, the gateway triggers a background summarization cycle. This:
 1. Condenses answered requirements into a concise fact-based summary.
 2. Flushes intermediate chat logs from the active LLM context.
 3. Appends the condensed summary as the new conversation baseline.
 4. Preserves engineering facts while freeing up context for continued interrogation.
+
+Generation retries do not reuse prior chat history. Each asset synthesis or refinement attempt is built from a fresh prompt containing only the current file content, the current feedback, and the locked source document context.
 
 ## Rate Limiting & Backoff
 

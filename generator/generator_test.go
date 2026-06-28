@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
@@ -26,13 +28,13 @@ func TestSanitizeJSONOutput(t *testing.T) {
 			expected: `{"epics": []}`,
 		},
 		{
-			name: "With json language backticks",
-			input: "```json\n{\"epics\": []}\n```",
+			name:     "With json language backticks",
+			input:    "```json\n{\"epics\": []}\n```",
 			expected: `{"epics": []}`,
 		},
 		{
-			name: "With plain backticks",
-			input: "```\n{\"epics\": []}\n```",
+			name:     "With plain backticks",
+			input:    "```\n{\"epics\": []}\n```",
 			expected: `{"epics": []}`,
 		},
 		{
@@ -148,23 +150,28 @@ type TestGateway struct {
 	queryCount  int
 	queryErr    error
 	queryResult *gateway.OracleResponse
+	mu          sync.Mutex
 }
 
 func (tg *TestGateway) QueryOracle(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string) (*gateway.OracleResponse, error) {
+	tg.mu.Lock()
 	tg.queryCount++
+	tg.mu.Unlock()
 	return tg.queryResult, tg.queryErr
 }
 
 func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts, fileName string, promptTemplate string) (string, error) {
+	tg.mu.Lock()
 	tg.callCounts[fileName]++
 	resps, ok := tg.responses[fileName]
+	tg.mu.Unlock()
 	if !ok || len(resps) == 0 {
 		if fileName == "04_openapi_contract.yaml" {
 			return "openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}", nil
 		}
 		return "Mock generic content", nil
 	}
-	
+
 	count := tg.callCounts[fileName]
 	var resp string
 	if count > len(resps) {
@@ -201,9 +208,11 @@ func (tg *TestGateway) EvaluateCompliance(ctx context.Context, fileName string, 
 	return results, nil
 }
 
-func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard) (string, error) {
+func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error) {
+	tg.mu.Lock()
 	tg.callCounts[fileName]++
 	resps, ok := tg.responses[fileName]
+	tg.mu.Unlock()
 	if !ok || len(resps) == 0 {
 		return fileContent, nil
 	}
@@ -221,6 +230,20 @@ func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, file
 	return resp, nil
 }
 
+type blockingGateway struct {
+	*TestGateway
+	started chan string
+	release <-chan struct{}
+	blocked map[string]bool
+}
+
+func (bg *blockingGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts, fileName string, promptTemplate string) (string, error) {
+	if bg.blocked[fileName] {
+		bg.started <- fileName
+		<-bg.release
+	}
+	return bg.TestGateway.GenerateSpecFile(ctx, facts, fileName, promptTemplate)
+}
 
 func TestGenerate_AllSuccess(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
@@ -256,11 +279,13 @@ func TestGenerate_AllSuccess(t *testing.T) {
 
 	// Verify files exist
 	files := []string{
-		"01_prd_functional.md",
-		"02_system_architecture.md",
-		"03_security_threat_model.md",
+		"01_domain_model_use_cases.md",
+		"02_prd_functional.md",
+		"03_system_architecture.md",
 		"04_api_architecture_integration.md",
 		"05_coding_standards_guidelines.md",
+		"06_security_threat_model.md",
+		"07_engineering_roadmap.md",
 		".synthspec-meta.json",
 	}
 	for _, f := range files {
@@ -272,6 +297,75 @@ func TestGenerate_AllSuccess(t *testing.T) {
 
 	if tg.callCounts["05_coding_standards_guidelines.md"] != 1 {
 		t.Errorf("expected 1 call, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	}
+}
+
+func TestGenerate_DownstreamFilesRunInParallel(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-parallel-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-project",
+		Provider:    "test-provider",
+	}
+
+	release := make(chan struct{})
+	started := make(chan string, 2)
+	gateway := &blockingGateway{
+		TestGateway: &TestGateway{
+			responses: map[string][]string{
+				"01_domain_model_use_cases.md":       {"Domain content"},
+				"02_prd_functional.md":               {"PRD content"},
+				"03_system_architecture.md":          {"Architecture content"},
+				"04_api_architecture_integration.md": {"API content"},
+				"05_coding_standards_guidelines.md":  {"Coding content"},
+				"06_security_threat_model.md":        {"Security content"},
+				"07_engineering_roadmap.md":          {"Roadmap content"},
+			},
+			callCounts: make(map[string]int),
+		},
+		started: started,
+		release: release,
+		blocked: map[string]bool{
+			"02_prd_functional.md":      true,
+			"03_system_architecture.md": true,
+		},
+	}
+
+	progress := make(chan string, 50)
+	go func() {
+		for range progress {
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Generate(context.Background(), gateway, sess, tempDir, progress)
+	}()
+
+	seen := make(map[string]bool)
+	deadline := time.After(5 * time.Second)
+	for len(seen) < 2 {
+		select {
+		case fileName := <-started:
+			seen[fileName] = true
+		case <-deadline:
+			t.Fatalf("expected two downstream files to start in parallel, saw: %v", seen)
+		}
+	}
+
+	close(release)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("parallel generation failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("parallel generation did not finish")
 	}
 }
 
@@ -385,8 +479,8 @@ func TestGenerate_PersistentFailure(t *testing.T) {
 		t.Fatal("expected failure, got success")
 	}
 
-	if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
-		t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	if tg.callCounts["05_coding_standards_guidelines.md"] != 3 {
+		t.Errorf("expected 3 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
 	}
 }
 
@@ -402,12 +496,12 @@ func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
 		Provider:    "test-provider",
 	}
 
-	// 1. Simulate a failure on the third file ("03_security_threat_model.md")
+	// 1. Simulate a failure on the third file ("03_system_architecture.md")
 	tg1 := &TestGateway{
 		responses: map[string][]string{
-			"01_prd_functional.md":        {"PRD content"},
-			"02_system_architecture.md":   {"Arch content"},
-			"03_security_threat_model.md": {"ERROR:mocked_api_failure"},
+			"01_domain_model_use_cases.md": {"Domain content"},
+			"02_prd_functional.md":         {"PRD content"},
+			"03_system_architecture.md":    {"ERROR:mocked_api_failure"},
 		},
 		callCounts: make(map[string]int),
 	}
@@ -420,23 +514,32 @@ func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
 	}()
 	err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
 	if err1 == nil {
-		t.Fatal("expected failure on 03_security_threat_model.md, got success")
+		t.Fatal("expected failure on 03_system_architecture.md, got success")
 	}
 
-	// Verify first two files were generated and written, but not the third
-	if len(sess.GeneratedFiles) != 2 {
-		t.Errorf("expected 2 files in GeneratedFiles cache, got %d", len(sess.GeneratedFiles))
+	// Verify the failed file was not cached, while the completed siblings were preserved.
+	if len(sess.GeneratedFiles) != 6 {
+		t.Errorf("expected 6 cached files after a downstream failure, got %d", len(sess.GeneratedFiles))
 	}
-	if sess.GeneratedFiles[0].FileName != "01_prd_functional.md" || sess.GeneratedFiles[1].FileName != "02_system_architecture.md" {
-		t.Errorf("unexpected cached files list: %+v", sess.GeneratedFiles)
+	cachedFiles := make(map[string]bool)
+	for _, gf := range sess.GeneratedFiles {
+		cachedFiles[gf.FileName] = true
+	}
+	if !cachedFiles["01_domain_model_use_cases.md"] || !cachedFiles["02_prd_functional.md"] {
+		t.Errorf("expected the source doc and PRD to remain cached, got: %+v", sess.GeneratedFiles)
+	}
+	if cachedFiles["03_system_architecture.md"] {
+		t.Errorf("expected failed file 03_system_architecture.md to remain uncached, got: %+v", sess.GeneratedFiles)
 	}
 
 	// 2. Resume with a healthy gateway
 	tg2 := &TestGateway{
 		responses: map[string][]string{
-			"03_security_threat_model.md":       {"Threat model content"},
+			"03_system_architecture.md":          {"Arch content"},
 			"04_api_architecture_integration.md": {"# API Integration Guide"},
 			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
+			"06_security_threat_model.md":        {"Threat model content"},
+			"07_engineering_roadmap.md":          {"Roadmap content"},
 		},
 		callCounts: make(map[string]int),
 	}
@@ -452,16 +555,28 @@ func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
 		t.Fatalf("expected resumption success, got err: %v", err2)
 	}
 
-	// Verify skipping occurred: tg2 call count for first two files must be 0
-	if tg2.callCounts["01_prd_functional.md"] != 0 {
-		t.Errorf("expected 0 calls for 01_prd_functional.md on resume, got %d", tg2.callCounts["01_prd_functional.md"])
+	// Verify skipping occurred for the completed files.
+	if tg2.callCounts["01_domain_model_use_cases.md"] != 0 {
+		t.Errorf("expected 0 calls for 01_domain_model_use_cases.md on resume, got %d", tg2.callCounts["01_domain_model_use_cases.md"])
 	}
-	if tg2.callCounts["02_system_architecture.md"] != 0 {
-		t.Errorf("expected 0 calls for 02_system_architecture.md on resume, got %d", tg2.callCounts["02_system_architecture.md"])
+	if tg2.callCounts["02_prd_functional.md"] != 0 {
+		t.Errorf("expected 0 calls for 02_prd_functional.md on resume, got %d", tg2.callCounts["02_prd_functional.md"])
 	}
-	// Remaining files must have been generated
-	if tg2.callCounts["03_security_threat_model.md"] != 1 {
-		t.Errorf("expected 1 call for 03_security_threat_model.md, got %d", tg2.callCounts["03_security_threat_model.md"])
+	if tg2.callCounts["04_api_architecture_integration.md"] != 0 {
+		t.Errorf("expected 0 calls for 04_api_architecture_integration.md on resume, got %d", tg2.callCounts["04_api_architecture_integration.md"])
+	}
+	if tg2.callCounts["05_coding_standards_guidelines.md"] != 0 {
+		t.Errorf("expected 0 calls for 05_coding_standards_guidelines.md on resume, got %d", tg2.callCounts["05_coding_standards_guidelines.md"])
+	}
+	if tg2.callCounts["06_security_threat_model.md"] != 0 {
+		t.Errorf("expected 0 calls for 06_security_threat_model.md on resume, got %d", tg2.callCounts["06_security_threat_model.md"])
+	}
+	if tg2.callCounts["07_engineering_roadmap.md"] != 0 {
+		t.Errorf("expected 0 calls for 07_engineering_roadmap.md on resume, got %d", tg2.callCounts["07_engineering_roadmap.md"])
+	}
+	// The failed file must be regenerated on resume.
+	if tg2.callCounts["03_system_architecture.md"] != 1 {
+		t.Errorf("expected 1 call for 03_system_architecture.md, got %d", tg2.callCounts["03_system_architecture.md"])
 	}
 }
 
@@ -477,7 +592,7 @@ func TestResumableMidLoop(t *testing.T) {
 		Provider:    "test-provider",
 		GeneratedFiles: []state.GeneratedFileState{
 			{
-				FileName:       "01_prd_functional.md",
+				FileName:       "01_domain_model_use_cases.md",
 				InProgressText: "In-progress draft of PRD",
 				CurrentAttempt: 5,
 				HasError:       true,
@@ -487,11 +602,13 @@ func TestResumableMidLoop(t *testing.T) {
 
 	tg := &TestGateway{
 		responses: map[string][]string{
-			"01_prd_functional.md":              {"PRD content refined"},
-			"02_system_architecture.md":         {"Arch content"},
-			"03_security_threat_model.md":       {"Threat model content"},
+			"01_domain_model_use_cases.md":       {"Domain content refined"},
+			"02_prd_functional.md":               {"PRD content"},
+			"03_system_architecture.md":          {"Arch content"},
 			"04_api_architecture_integration.md": {"# API Integration Guide"},
 			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
+			"06_security_threat_model.md":        {"Threat model content"},
+			"07_engineering_roadmap.md":          {"Roadmap content"},
 		},
 		callCounts: make(map[string]int),
 	}
@@ -507,9 +624,9 @@ func TestResumableMidLoop(t *testing.T) {
 		t.Fatalf("expected success, got err: %v", err)
 	}
 
-	// Verify that GenerateSpecFile was NOT called for 01_prd_functional.md because we resumed (it goes straight to refinement/validation)
-	if tg.callCounts["01_prd_functional.md"] != 0 {
-		t.Errorf("expected 0 calls to GenerateSpecFile/RefineSpecFile for resumed file, got %d", tg.callCounts["01_prd_functional.md"])
+	// Verify that GenerateSpecFile was NOT called for 01_domain_model_use_cases.md because we resumed (it goes straight to refinement/validation)
+	if tg.callCounts["01_domain_model_use_cases.md"] != 0 {
+		t.Errorf("expected 0 calls to GenerateSpecFile/RefineSpecFile for resumed file, got %d", tg.callCounts["01_domain_model_use_cases.md"])
 	}
 }
 
@@ -548,4 +665,30 @@ func TestRunExternalValidator(t *testing.T) {
 	}
 }
 
+func TestBuildGenerationPromptIncludesReferenceDocument(t *testing.T) {
+	facts := gateway.Facts{
+		Functional: "Functional facts",
+		Structural: "Structural facts",
+	}
 
+	prompt, err := buildGenerationPrompt("Write the file.\n\nUse these facts:", facts, "Domain model reference")
+	if err != nil {
+		t.Fatalf("failed to build generation prompt: %v", err)
+	}
+
+	if !strings.Contains(prompt, "\"functional\": \"Functional facts\"") {
+		t.Fatalf("expected prompt to include serialized facts, got: %s", prompt)
+	}
+
+	if !strings.Contains(prompt, "Reference source document:") {
+		t.Fatalf("expected prompt to include reference document marker, got: %s", prompt)
+	}
+
+	if !strings.Contains(prompt, "Domain model reference") {
+		t.Fatalf("expected prompt to include reference document content, got: %s", prompt)
+	}
+
+	if strings.Index(prompt, "Reference source document:") < strings.Index(prompt, "\"functional\": \"Functional facts\"") {
+		t.Fatalf("expected reference document to appear after facts, got: %s", prompt)
+	}
+}

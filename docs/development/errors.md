@@ -12,6 +12,7 @@ SynthSpec requires robust error handling to prevent TUI crashes, local file corr
 ### 2. File I/O & Session Failures
 - If state saving to `.synthspec/session.json` fails, warn the user inside the TUI viewport and retry writing to a backup path (e.g., `session.json.bak`).
 - Never panic on deserialization errors; fallback to a safe state restore and report validation failures cleanly.
+- For generation or refinement failures, restart the attempt from a fresh prompt using the current artifact and source doc rather than reusing prior retry history.
 
 ### 3. TUI Crash Recovery
 - Run the TUI loop within a recovery block (`recover()` in Go) to ensure that if a panic occurs, the terminal screen configuration is restored to standard scrolling mode before printing the stack trace. This prevents terminal corruption for the user.
