@@ -255,7 +255,7 @@ func validateCodeBlocks(content string) error {
 			continue
 		}
 		lang := match[1]
-		code := strings.TrimSpace(match[2])
+		code := dedent(strings.TrimSpace(match[2]))
 
 		switch lang {
 		case "json":
@@ -270,6 +270,46 @@ func validateCodeBlocks(content string) error {
 		}
 	}
 	return nil
+}
+
+// dedent removes common leading indentation from all lines of a multiline string.
+func dedent(s string) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) == 0 {
+		return s
+	}
+
+	// Find the minimum common leading whitespace (spaces/tabs) across all non-empty lines
+	minIndent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		indent := 0
+		for _, r := range line {
+			if r == ' ' || r == '\t' {
+				indent++
+			} else {
+				break
+			}
+		}
+		if minIndent == -1 || indent < minIndent {
+			minIndent = indent
+		}
+	}
+
+	if minIndent <= 0 {
+		return s
+	}
+
+	// Strip the common prefix from each line
+	for i, line := range lines {
+		if len(line) >= minIndent {
+			lines[i] = line[minIndent:]
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // validateJSONCodeBlock attempts to validate JSON content, with a fallback

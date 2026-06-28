@@ -249,6 +249,17 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	// Always handle spinner ticks to prevent the animation tick loop from breaking
+	if _, ok := msg.(spinner.TickMsg); ok {
+		m.spinner, cmd = m.spinner.Update(msg)
+		if m.showViewer {
+			m.viewport, _ = m.viewport.Update(msg)
+			return m, cmd
+		}
+		m.updateChatViewport()
+		return m, cmd
+	}
+
 	if m.showViewer {
 		return m.handleViewerUpdate(msg)
 	}
@@ -267,11 +278,6 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.updateChatViewport()
-
-	case spinner.TickMsg:
-		m.spinner, cmd = m.spinner.Update(msg)
-		m.updateChatViewport()
-		return m, cmd
 
 	case oracleResultMsg:
 		return m.handleOracleResult(msg)
