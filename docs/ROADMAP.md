@@ -47,7 +47,7 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] **The Domain Approval Gate**: Enforce a hard pause after generating `01_domain_model_use_cases.md`, presenting it in the viewer for explicit user sign-off (and editing) before unlocking the parallel generation of downstream documents.
 - [x] **Static Site Generator (SSG) Export**: Add a compilation pipeline to build the generated Markdown workspace into a standalone, searchable static HTML site (e.g. via Docusaurus or MkDocs templates) for presentation to non-technical stakeholders.
 - [x] Extend HTTP client timeouts and implement robust retry/error handling to resolve `context deadline exceeded` errors.
-- [ ] Enable full mouse interaction in the TUI (clicking panels, scrolling lists) using the underlying terminal framework.
+- [x] Enable full mouse interaction in the TUI (clicking panels, scrolling lists) using the underlying terminal framework.
 
 ### Milestone 7: The Agentic Guardrail Compiler (v0.7.0) ── [ ] Planned
 - [ ] **Context Injection Engine**: Synthesize lightweight pointer files (`.cursor/rules/*.mdc`, `CLAUDE.md`, or `AGENTS.md`) that explicitly link down to the generated markdown specifications.

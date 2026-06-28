@@ -19,7 +19,7 @@ var (
 	debugFlag    bool
 
 	runTUI = func(m tui.DashboardModel) error {
-		p := tea.NewProgram(m, tea.WithAltScreen())
+		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		_, err := p.Run()
 		return err
 	}
@@ -45,7 +45,7 @@ var rootCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		m := tui.NewWelcomeModel()
-		p := tea.NewProgram(m)
+		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		resModel, err := p.Run()
 		if err != nil {
 			return fmt.Errorf("welcome menu execution failed: %w", err)

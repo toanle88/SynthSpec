@@ -288,6 +288,93 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case thoughtTokenMsg:
 		m.streamingTokens += string(msg)
 		return m, m.recvThoughtCmd()
+
+	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonWheelUp {
+			if m.isCompleted || m.isGenerating {
+				m.selectedFileIdx = maxInt(0, m.selectedFileIdx-1)
+			} else if !m.showTextInput && !m.loading {
+				choices := m.getChoicesList()
+				if len(choices) > 0 {
+					m.selectedChoiceIdx = maxInt(0, m.selectedChoiceIdx-1)
+				}
+			}
+			return m, nil
+		}
+		if msg.Button == tea.MouseButtonWheelDown {
+			if m.isCompleted || m.isGenerating {
+				m.selectedFileIdx = minInt(len(m.genFiles)-1, m.selectedFileIdx+1)
+			} else if !m.showTextInput && !m.loading {
+				choices := m.getChoicesList()
+				if len(choices) > 0 {
+					m.selectedChoiceIdx = minInt(len(choices)-1, m.selectedChoiceIdx+1)
+				}
+			}
+			return m, nil
+		}
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			rendered := stripANSI(m.View())
+			lines := strings.Split(rendered, "\n")
+			if msg.Y >= 0 && msg.Y < len(lines) {
+				line := lines[msg.Y]
+				if m.isCompleted || m.isGenerating {
+					for i, file := range m.genFiles {
+						if strings.Contains(line, file) {
+							m.selectedFileIdx = i
+							return m.openFileViewer()
+						}
+					}
+					if m.isCompleted {
+						if strings.Contains(line, "Regenerate files") {
+							return m.triggerRegeneration()
+						}
+						if strings.Contains(line, "Add new requirements") {
+							return m.activateUpdatePrompt()
+						}
+						if strings.Contains(line, "launch Editor") {
+							return m.launchExternalEditor()
+						}
+						if strings.Contains(line, "Save & Exit CLI") {
+							return m, tea.Quit
+						}
+					} else if m.isWaitingApproval {
+						if strings.Contains(line, "View 01_domain_model_use_cases.md") {
+							m.selectedFileIdx = 0
+							return m.openFileViewer()
+						}
+						if strings.Contains(line, "Edit 01_domain_model_use_cases.md") {
+							return m.launchFileEditor("01_domain_model_use_cases.md")
+						}
+						if strings.Contains(line, "Approve and Resume") {
+							if m.approvalChan != nil {
+								close(m.approvalChan)
+								m.approvalChan = nil
+							}
+							m.isWaitingApproval = false
+							m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
+							return m, nil
+						}
+					}
+				}
+				if !m.isCompleted && !m.loading && !m.showTextInput {
+					choices := m.getChoicesList()
+					for i, choice := range choices {
+						if strings.Contains(line, choice) {
+							m.selectedChoiceIdx = i
+							return m.handleKeyEnterChoiceSelection()
+						}
+					}
+				}
+				if m.showTextInput && strings.Contains(line, "> ") {
+					m.textInput.Focus()
+					return m, nil
+				}
+				if m.showUpdatePrompt && strings.Contains(line, "> ") {
+					m.updateInput.Focus()
+					return m, nil
+				}
+			}
+		}
 	}
 
 	if !m.isCompleted && !m.loading && m.showTextInput {
@@ -310,6 +397,49 @@ func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = sizeMsg.Width
 		m.height = sizeMsg.Height
 		m.updateViewportSize()
+	}
+	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+		if mouseMsg.Button == tea.MouseButtonWheelUp || mouseMsg.Button == tea.MouseButtonWheelDown {
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
+		}
+		if mouseMsg.Action == tea.MouseActionPress && mouseMsg.Button == tea.MouseButtonLeft {
+			rendered := stripANSI(m.View())
+			lines := strings.Split(rendered, "\n")
+			if mouseMsg.Y >= 0 && mouseMsg.Y < len(lines) {
+				line := lines[mouseMsg.Y]
+				for i, file := range m.genFiles {
+					if strings.Contains(line, file) {
+						m.selectedFileIdx = i
+						return m.openFileViewer()
+					}
+				}
+				if strings.Contains(line, "Back") {
+					m.showViewer = false
+					return m, nil
+				}
+				if strings.Contains(line, "Toggle Layout") {
+					m.isFullScreenViewer = !m.isFullScreenViewer
+					m.updateViewportSize()
+					return m.openFileViewer()
+				}
+				if m.isWaitingApproval {
+					if strings.Contains(line, "Approve") {
+						m.showViewer = false
+						if m.approvalChan != nil {
+							close(m.approvalChan)
+							m.approvalChan = nil
+						}
+						m.isWaitingApproval = false
+						m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
+						return m, nil
+					}
+					if strings.Contains(line, "Edit") {
+						return m.launchFileEditor("01_domain_model_use_cases.md")
+					}
+				}
+			}
+		}
 	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.Type == tea.KeyEsc || keyMsg.String() == "q" {

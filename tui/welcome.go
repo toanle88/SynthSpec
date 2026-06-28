@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -160,6 +161,143 @@ func (m WelcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m.handleKeyMsg(msg)
+
+	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonWheelUp {
+			switch m.Phase {
+			case PhaseMenu:
+				m.SelectedOption = maxInt(0, m.SelectedOption-1)
+			case PhaseBlueprintSelect:
+				m.SelectedBPIdx = maxInt(0, m.SelectedBPIdx-1)
+			case PhaseResumeSelect:
+				m.SelectedProject = maxInt(0, m.SelectedProject-1)
+			case PhaseExportSelect:
+				m.SelectedProject = maxInt(0, m.SelectedProject-1)
+			case PhaseSettings:
+				// Blur current setting input
+				if m.SelectedSettingIdx < len(m.settingInputs) {
+					m.settingInputs[m.SelectedSettingIdx].Blur()
+				}
+				m.SelectedSettingIdx = maxInt(0, m.SelectedSettingIdx-1)
+				// Focus new setting input if it's a text input
+				if m.SelectedSettingIdx < len(m.settingInputs) {
+					m.settingInputs[m.SelectedSettingIdx].Focus()
+				}
+			}
+			return m, nil
+		}
+		if msg.Button == tea.MouseButtonWheelDown {
+			switch m.Phase {
+			case PhaseMenu:
+				m.SelectedOption = minInt(len(m.Options)-1, m.SelectedOption+1)
+			case PhaseBlueprintSelect:
+				m.SelectedBPIdx = minInt(len(m.Blueprints), m.SelectedBPIdx+1)
+			case PhaseResumeSelect:
+				m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+			case PhaseExportSelect:
+				m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+			case PhaseSettings:
+				// Blur current setting input
+				if m.SelectedSettingIdx < len(m.settingInputs) {
+					m.settingInputs[m.SelectedSettingIdx].Blur()
+				}
+				m.SelectedSettingIdx = minInt(4, m.SelectedSettingIdx+1)
+				// Focus new setting input if it's a text input
+				if m.SelectedSettingIdx < len(m.settingInputs) {
+					m.settingInputs[m.SelectedSettingIdx].Focus()
+				}
+			}
+			return m, nil
+		}
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			rendered := stripANSI(m.View())
+			lines := strings.Split(rendered, "\n")
+			if msg.Y >= 0 && msg.Y < len(lines) {
+				line := lines[msg.Y]
+				switch m.Phase {
+				case PhaseMenu:
+					for i, opt := range m.Options {
+						if strings.Contains(line, opt) {
+							m.SelectedOption = i
+							m.handleMenuSelection()
+							return m, nil
+						}
+					}
+				case PhaseBlueprintSelect:
+					if strings.Contains(line, "None (Start from scratch)") || strings.Contains(line, "Start with an empty specification session") {
+						m.SelectedBPIdx = 0
+						m.SelectedBlueprint = ""
+						m.Action = ActionCreate
+						return m, tea.Quit
+					}
+					for i, bp := range m.Blueprints {
+						if strings.Contains(line, bp.Name) || (bp.Description != "" && strings.Contains(line, bp.Description)) {
+							m.SelectedBPIdx = i + 1
+							m.SelectedBlueprint = bp.ID
+							m.Action = ActionCreate
+							return m, tea.Quit
+						}
+					}
+				case PhaseResumeSelect:
+					if strings.Contains(line, "Search:") {
+						m.filterInput.Focus()
+						return m, nil
+					}
+					for i, proj := range m.FilteredProjects {
+						if strings.Contains(line, proj) {
+							m.SelectedProject = i
+							m.ProjectName = proj
+							m.Action = ActionResume
+							return m, tea.Quit
+						}
+					}
+				case PhaseExportSelect:
+					if strings.Contains(line, "Search:") {
+						m.filterInput.Focus()
+						return m, nil
+					}
+					for i, proj := range m.FilteredProjects {
+						if strings.Contains(line, proj) {
+							m.SelectedProject = i
+							m.ProjectName = proj
+							m.Action = ActionExport
+							return m, tea.Quit
+						}
+					}
+				case PhaseSettings:
+					settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Debug Logging (opt-in)", "Vim Keybindings (hjkl)"}
+					for i, field := range settingFields {
+						if strings.Contains(line, field) {
+							// Blur current setting input
+							if m.SelectedSettingIdx < len(m.settingInputs) {
+								m.settingInputs[m.SelectedSettingIdx].Blur()
+							}
+							m.SelectedSettingIdx = i
+							// Focus new setting input if it's a text input
+							if i < len(m.settingInputs) {
+								m.settingInputs[i].Focus()
+							}
+							if i == 3 {
+								m.Settings.Debug = !m.Settings.Debug
+								logger.LogEvent("TUI", fmt.Sprintf("Debug logging toggled via click: %t", m.Settings.Debug))
+							} else if i == 4 {
+								m.Settings.VimMode = !m.Settings.VimMode
+								logger.LogEvent("TUI", fmt.Sprintf("Vim mode toggled via click: %t", m.Settings.VimMode))
+							}
+							return m, nil
+						}
+					}
+					if strings.Contains(line, "[ Save Settings ]") {
+						m.saveSettingsFromInputs()
+						return m, nil
+					}
+					if strings.Contains(line, "[ Cancel ]") {
+						m.Phase = PhaseMenu
+						return m, nil
+					}
+				}
+			}
+		}
 	}
 
 	return m, nil
@@ -691,7 +829,14 @@ func (m WelcomeModel) viewSettings() string {
 		}
 		lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, labelStyle.Render(field), valView))
 	}
-	lines = append(lines, "", lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Up/Down to navigate, Enter to Save settings, Esc to cancel"))
+	lines = append(lines, "",
+		fmt.Sprintf("  %s    %s",
+			lipgloss.NewStyle().Background(ColorSuccess).Foreground(ColorBg).Padding(0, 1).Bold(true).Render("[ Save Settings ]"),
+			lipgloss.NewStyle().Background(ColorBorder).Foreground(ColorText).Padding(0, 1).Render("[ Cancel ]"),
+		),
+		"",
+		lipgloss.NewStyle().Foreground(ColorMuted).Render("Or use keyboard: Enter to Save, Esc to cancel"),
+	)
 	return strings.Join(lines, "\n")
 }
 
@@ -739,4 +884,10 @@ func fuzzyMatch(s, query string) bool {
 		}
 	}
 	return true
+}
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
 }
