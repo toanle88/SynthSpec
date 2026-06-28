@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/config"
@@ -66,6 +67,10 @@ var resumeCmd = &cobra.Command{
 		outDir := outputFlag
 		if outDir == "" && settings != nil {
 			outDir = settings.DefaultOutputFolder
+		}
+		// Default to project-specific output directory if not explicitly set
+		if outDir == "" || outDir == "./output" || outDir == config.DefaultOutputFolderValue {
+			outDir = filepath.Join(state.GetSessionDir(projectName), "output")
 		}
 
 		fmt.Printf("Resuming project '%s' using %s (%s)...\n", projectName, sess.Provider, sess.Model)

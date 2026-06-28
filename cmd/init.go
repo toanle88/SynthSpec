@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -93,6 +94,10 @@ var initCmd = &cobra.Command{
 		if outDir == "" && settings != nil {
 			outDir = settings.DefaultOutputFolder
 		}
+		// Default to project-specific output directory if not explicitly set via flag
+		if outputFlag == "" {
+			outDir = filepath.Join(state.GetSessionDir(projectName), "output")
+		}
 
 		fmt.Printf("Initializing project '%s' using %s (%s)...\n", projectName, cfg.Provider, cfg.Model)
 		m := tui.NewDashboardModel(&sess, gw, outDir)
@@ -110,7 +115,6 @@ func init() {
 	initCmd.Flags().StringVarP(&blueprintFlag, "blueprint", "b", "", "Starting template/blueprint for project context (e.g. fintech-saas, internal-crud)")
 	rootCmd.AddCommand(initCmd)
 }
-
 
 // Helper to initialize gateway based on session state
 func getGatewayForSession(sess *state.Session, forceMock bool) (gateway.Gateway, error) {
