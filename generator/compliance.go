@@ -17,68 +17,88 @@ type FileCompliance struct {
 }
 
 // GenerateComplianceReport compiles all results into a markdown format audit document
-func GenerateComplianceReport(projectName string, fileAudits []FileCompliance, standards []config.Standard) string {
+// GenerateComplianceReport compiles all results into a markdown format audit document
+func GenerateComplianceReport(projectName string, fileAudits []FileCompliance, standards []config.Standard, consistencyReport *gateway.ConsistencyReport) string {
 	var sb strings.Builder
 
+	writeReportHeader(&sb, projectName)
+	writeExecutiveScorecard(&sb, fileAudits, standards)
+	writeDetailedBreakdown(&sb, fileAudits, standards)
+	writeConsistencyCheck(&sb, consistencyReport)
+
+	return sb.String()
+}
+
+func writeReportHeader(sb *strings.Builder, projectName string) {
 	sb.WriteString("# 📋 Standards Compliance Audit Report\n\n")
 	sb.WriteString(fmt.Sprintf("- **Project**: %s\n", projectName))
 	sb.WriteString(fmt.Sprintf("- **Timestamp**: %s\n\n", time.Now().Format(time.RFC1123)))
+}
 
-	// Let's create an overview table of all 20 standards
+func findResult(fileAudits []FileCompliance, id string) (gateway.ComplianceResult, bool) {
+	for _, fa := range fileAudits {
+		for _, res := range fa.Results {
+			if res.StandardID == id {
+				return res, true
+			}
+		}
+	}
+	return gateway.ComplianceResult{}, false
+}
+
+func getFailedFileError(fileAudits []FileCompliance, targetFiles []string) (string, string, string, bool) {
+	for _, fa := range fileAudits {
+		for _, tf := range targetFiles {
+			if tf == fa.FileName && fa.Err != nil {
+				return "❌ File Error", "N/A", "❌ Error", true
+			}
+		}
+	}
+	return "", "", "", false
+}
+
+func getStandardComplianceMetrics(std config.Standard, fileAudits []FileCompliance) (string, string, string) {
+	res, found := findResult(fileAudits, std.ID)
+	if !found {
+		if status, scoreStr, complianceBar, hasErr := getFailedFileError(fileAudits, std.TargetFiles); hasErr {
+			return status, scoreStr, complianceBar
+		}
+		return "🔴 Absent", "0%", "🔴 0%"
+	}
+
+	scoreStr := fmt.Sprintf("%d%%", res.Score)
+	if res.Compliant {
+		return "🟢 Compliant", scoreStr, fmt.Sprintf("🟢 %d%%", res.Score)
+	}
+	if res.Score > 0 {
+		return "🟡 Partial", scoreStr, fmt.Sprintf("🟡 %d%%", res.Score)
+	}
+	return "🔴 Non-Compliant", scoreStr, fmt.Sprintf("🔴 %d%%", res.Score)
+}
+
+func writeExecutiveScorecard(sb *strings.Builder, fileAudits []FileCompliance, standards []config.Standard) {
 	sb.WriteString("## Executive Scorecard\n\n")
 	sb.WriteString("| Standard | Target File | Status | Score | Compliance |\n")
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
 
-	// Helper to find a result by standard ID
-	findResult := func(id string) (gateway.ComplianceResult, bool) {
-		for _, fa := range fileAudits {
-			for _, res := range fa.Results {
-				if res.StandardID == id {
-					return res, true
-				}
-			}
-		}
-		return gateway.ComplianceResult{}, false
-	}
-
 	for _, std := range standards {
 		fileLabel := strings.Join(std.TargetFiles, ", ")
-		res, found := findResult(std.ID)
-
-		status := "🔴 Absent"
-		scoreStr := "0%"
-		complianceBar := "🔴 0%"
-
-		if found {
-			scoreStr = fmt.Sprintf("%d%%", res.Score)
-			if res.Compliant {
-				status = "🟢 Compliant"
-				complianceBar = fmt.Sprintf("🟢 %d%%", res.Score)
-			} else if res.Score > 0 {
-				status = "🟡 Partial"
-				complianceBar = fmt.Sprintf("🟡 %d%%", res.Score)
-			} else {
-				status = "🔴 Non-Compliant"
-				complianceBar = fmt.Sprintf("🔴 %d%%", res.Score)
-			}
-		} else {
-			// If not targeted, check if it's because the target file failed syntax checking
-			for _, fa := range fileAudits {
-				for _, tf := range std.TargetFiles {
-					if tf == fa.FileName && fa.Err != nil {
-						status = "❌ File Error"
-						scoreStr = "N/A"
-						complianceBar = "❌ Error"
-					}
-				}
-			}
-		}
-
+		status, scoreStr, complianceBar := getStandardComplianceMetrics(std, fileAudits)
 		sb.WriteString(fmt.Sprintf("| **%s** | %s | %s | %s | %s |\n", std.Name, fileLabel, status, scoreStr, complianceBar))
 	}
 	sb.WriteString("\n---\n\n")
+}
 
-	// Detailed breakdown per file
+func findStandardDef(standards []config.Standard, standardID string) (config.Standard, bool) {
+	for _, std := range standards {
+		if std.ID == standardID {
+			return std, true
+		}
+	}
+	return config.Standard{}, false
+}
+
+func writeDetailedBreakdown(sb *strings.Builder, fileAudits []FileCompliance, standards []config.Standard) {
 	sb.WriteString("## Detailed Audit Breakdown\n\n")
 	for _, fa := range fileAudits {
 		sb.WriteString(fmt.Sprintf("### 📁 %s\n\n", fa.FileName))
@@ -96,15 +116,7 @@ func GenerateComplianceReport(projectName string, fileAudits []FileCompliance, s
 		sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
 
 		for _, res := range fa.Results {
-			// Get standard definition
-			var stdDef config.Standard
-			for _, std := range standards {
-				if std.ID == res.StandardID {
-					stdDef = std
-					break
-				}
-			}
-
+			stdDef, _ := findStandardDef(standards, res.StandardID)
 			status := "🔴 Non-Compliant"
 			if res.Compliant {
 				status = "🟢 Compliant"
@@ -117,8 +129,24 @@ func GenerateComplianceReport(projectName string, fileAudits []FileCompliance, s
 		}
 		sb.WriteString("\n")
 	}
+}
 
-	return sb.String()
+func writeConsistencyCheck(sb *strings.Builder, consistencyReport *gateway.ConsistencyReport) {
+	sb.WriteString("## 🔄 Cross-Document Consistency Check\n\n")
+	if consistencyReport == nil {
+		sb.WriteString("⚠️ **Skipped**: No consistency report was generated.\n\n")
+		return
+	}
+
+	if consistencyReport.Consistent {
+		sb.WriteString("🟢 **Passed**: All generated documents are logically and structurally consistent with one another.\n")
+	} else {
+		sb.WriteString("🔴 **Failed**: Semantic discrepancies were detected between the generated files:\n\n")
+		for file, feedback := range consistencyReport.Feedback {
+			sb.WriteString(fmt.Sprintf("- **%s**: %s\n", file, feedback))
+		}
+	}
+	sb.WriteString("\n")
 }
 
 // PerformStaticValidation checks file syntax correctness

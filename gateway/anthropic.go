@@ -414,3 +414,81 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	return anthropicResp.Content[0].Text, nil
 }
+
+func (a *AnthropicGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error) {
+	systemPrompt := `You are an expert software engineering auditor. Your job is to verify that all generated specification files are logically consistent with one another.
+Compare functional requirements, API endpoints, data models, compliance specifications, and system architectures.
+Analyze the provided documents and output:
+1. "consistent": a boolean indicating whether all files are fully consistent with zero contradictions.
+2. "feedback": a map of filename key to string value detailing the discrepancy/correction instructions. Only include files in this map that have errors/inconsistencies. If consistent is true, this map must be empty.
+
+Your response MUST be a JSON object, like this:
+{
+  "consistent": false,
+  "feedback": {
+    "04_api_architecture_integration.md": "Rename the /users endpoint to /accounts to match the system architecture document."
+  }
+}
+Do NOT return markdown code block backticks. Output only the raw JSON string.`
+
+	type consistencyPayload struct {
+		Files map[string]string `json:"files"`
+	}
+
+	payloadStruct := consistencyPayload{Files: files}
+	payloadBytes, _ := json.Marshal(payloadStruct)
+
+	messages := []anthropicMessage{
+		{
+			Role: "user",
+			Content: []anthropicContentPart{
+				{Type: "text", Text: string(payloadBytes)},
+			},
+		},
+	}
+
+	reqBody := anthropicRequest{
+		Model:     a.model,
+		System:    systemPrompt,
+		Messages:  messages,
+		MaxTokens: 4000,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set(authApiKeyHeader, a.apiKey)
+	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
+
+	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	if err != nil {
+		return nil, err
+	}
+
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
+		return nil, fmt.Errorf(errParseAnthropicResponse, err)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		return nil, fmt.Errorf(errEmptyContentAnthropic)
+	}
+
+	contentStr := anthropicResp.Content[0].Text
+	contentStr = sanitizeJSON(contentStr)
+
+	var report ConsistencyReport
+	if err := json.Unmarshal([]byte(contentStr), &report); err != nil {
+		return nil, fmt.Errorf("failed to parse consistency report JSON: %w (Raw content: %s)", err, contentStr)
+	}
+
+	return &report, nil
+}
+

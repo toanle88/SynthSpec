@@ -376,3 +376,77 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	return chatResp.Choices[0].Message.Content, nil
 }
+
+func (o *OpenAIGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error) {
+	systemPrompt := `You are an expert software engineering auditor. Your job is to verify that all generated specification files are logically consistent with one another.
+Compare functional requirements, API endpoints, data models, compliance specifications, and system architectures.
+Analyze the provided documents and output:
+1. "consistent": a boolean indicating whether all files are fully consistent with zero contradictions.
+2. "feedback": a map of filename key to string value detailing the discrepancy/correction instructions. Only include files in this map that have errors/inconsistencies. If consistent is true, this map must be empty.
+
+Your response MUST be a JSON object, like this:
+{
+  "consistent": false,
+  "feedback": {
+    "04_api_architecture_integration.md": "Rename the /users endpoint to /accounts to match the system architecture document."
+  }
+}
+Do NOT return markdown code block backticks. Output only the raw JSON string.`
+
+	type consistencyPayload struct {
+		Files map[string]string `json:"files"`
+	}
+
+	payloadStruct := consistencyPayload{Files: files}
+	payloadBytes, _ := json.Marshal(payloadStruct)
+
+	messages := []openAIChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: string(payloadBytes)},
+	}
+
+	reqBody := openAIChatRequest{
+		Model:    o.model,
+		Messages: messages,
+		ResponseFormat: &responseFormat{
+			Type: "json_object",
+		},
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", openaiChatURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
+
+	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	if err != nil {
+		return nil, err
+	}
+
+	var chatResp openAIChatResponse
+	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
+		return nil, fmt.Errorf(errParseOpenAIResponse, err)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf(errEmptyChoiceOpenAI)
+	}
+
+	contentStr := chatResp.Choices[0].Message.Content
+	contentStr = sanitizeJSON(contentStr)
+
+	var report ConsistencyReport
+	if err := json.Unmarshal([]byte(contentStr), &report); err != nil {
+		return nil, fmt.Errorf("failed to parse consistency report JSON: %w (Raw content: %s)", err, contentStr)
+	}
+
+	return &report, nil
+}
+

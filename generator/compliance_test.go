@@ -52,7 +52,7 @@ func TestGenerateComplianceReport(t *testing.T) {
 		},
 	}
 
-	report := GenerateComplianceReport("TestProject", audits, stds)
+	report := GenerateComplianceReport("TestProject", audits, stds, nil)
 	if !strings.Contains(report, "Clean Architecture") {
 		t.Errorf("expected report to contain 'Clean Architecture'")
 	}

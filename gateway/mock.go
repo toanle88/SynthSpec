@@ -295,3 +295,24 @@ func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileC
 	}
 	return fmt.Sprintf("%s\n\n<!-- %s -->\n", fileContent, fixMsg), nil
 }
+
+func (m *MockGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error) {
+	// By default, mock gateway reports that all files are logically consistent.
+	// If a specific test trigger is present in the file content, mock an inconsistency.
+	for fileName, content := range files {
+		if strings.Contains(content, "TRIGGER_INCONSISTENCY") {
+			return &ConsistencyReport{
+				Consistent: false,
+				Feedback: map[string]string{
+					fileName: "Mock inconsistency detected: Please align definitions with standard schema.",
+				},
+			}, nil
+		}
+	}
+
+	return &ConsistencyReport{
+		Consistent: true,
+		Feedback:   make(map[string]string),
+	}, nil
+}
+

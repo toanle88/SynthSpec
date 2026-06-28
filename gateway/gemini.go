@@ -417,3 +417,81 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 
 	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
 }
+
+func (g *GeminiGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error) {
+	systemPrompt := `You are an expert software engineering auditor. Your job is to verify that all generated specification files are logically consistent with one another.
+Compare functional requirements, API endpoints, data models, compliance specifications, and system architectures.
+Analyze the provided documents and output:
+1. "consistent": a boolean indicating whether all files are fully consistent with zero contradictions.
+2. "feedback": a map of filename key to string value detailing the discrepancy/correction instructions. Only include files in this map that have errors/inconsistencies. If consistent is true, this map must be empty.
+
+Your response MUST be a JSON object, like this:
+{
+  "consistent": false,
+  "feedback": {
+    "04_api_architecture_integration.md": "Rename the /users endpoint to /accounts to match the system architecture document."
+  }
+}
+Do NOT return markdown code block backticks. Output only the raw JSON string.`
+
+	type consistencyPayload struct {
+		Files map[string]string `json:"files"`
+	}
+
+	payloadStruct := consistencyPayload{Files: files}
+	payloadBytes, _ := json.Marshal(payloadStruct)
+
+	contents := []geminiContent{
+		{
+			Role:  "user",
+			Parts: []geminiPart{{Text: string(payloadBytes)}},
+		},
+	}
+
+	reqBody := geminiRequest{
+		SystemInstruction: &geminiInstruction{
+			Parts: []geminiPart{{Text: systemPrompt}},
+		},
+		Contents: contents,
+		GenerationConfig: &geminiConfig{
+			ResponseMimeType: applicationJSON,
+		},
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(contentTypeHeader, applicationJSON)
+
+	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	if err != nil {
+		return nil, err
+	}
+
+	var geminiResp geminiResponse
+	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		return nil, fmt.Errorf(errParseGeminiResponse, err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf(errEmptyCandidateGemini)
+	}
+
+	contentStr := geminiResp.Candidates[0].Content.Parts[0].Text
+	contentStr = sanitizeJSON(contentStr)
+
+	var report ConsistencyReport
+	if err := json.Unmarshal([]byte(contentStr), &report); err != nil {
+		return nil, fmt.Errorf("failed to parse consistency report JSON: %w (Raw content: %s)", err, contentStr)
+	}
+
+	return &report, nil
+}
+

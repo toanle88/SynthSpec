@@ -230,6 +230,24 @@ func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, file
 	return resp, nil
 }
 
+func (tg *TestGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*gateway.ConsistencyReport, error) {
+	// If a custom mock response for consistency is desired, we can add it, but default to consistent=true
+	for fileName, content := range files {
+		if strings.Contains(content, "TRIGGER_INCONSISTENCY") {
+			return &gateway.ConsistencyReport{
+				Consistent: false,
+				Feedback: map[string]string{
+					fileName: "Consistency check failed feedback.",
+				},
+			}, nil
+		}
+	}
+	return &gateway.ConsistencyReport{
+		Consistent: true,
+		Feedback:   make(map[string]string),
+	}, nil
+}
+
 type blockingGateway struct {
 	*TestGateway
 	started chan string
@@ -338,6 +356,8 @@ func TestGenerate_DownstreamFilesRunInParallel(t *testing.T) {
 	progress := make(chan string, 50)
 	go func() {
 		for range progress {
+			// Drain progress notifications
+			continue
 		}
 	}()
 
@@ -503,88 +523,85 @@ func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
 		Provider:    "test-provider",
 	}
 
-	// 1. Simulate a failure on the third file ("03_system_architecture.md")
-	tg1 := &TestGateway{
-		responses: map[string][]string{
-			"01_domain_model_use_cases.md": {"Domain content"},
-			"02_prd_functional.md":         {"PRD content"},
-			"03_system_architecture.md":    {"ERROR:mocked_api_failure"},
-		},
-		callCounts: make(map[string]int),
-	}
-
-	progress1 := make(chan string, 20)
-	go func() {
-		for range progress1 {
-			continue
+	t.Run("SimulateFailure", func(t *testing.T) {
+		tg1 := &TestGateway{
+			responses: map[string][]string{
+				"01_domain_model_use_cases.md": {"Domain content"},
+				"02_prd_functional.md":         {"PRD content"},
+				"03_system_architecture.md":    {"ERROR:mocked_api_failure"},
+			},
+			callCounts: make(map[string]int),
 		}
-	}()
-	err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
-	if err1 == nil {
-		t.Fatal("expected failure on 03_system_architecture.md, got success")
-	}
 
-	// Verify the failed file was not cached, while the completed siblings were preserved.
-	if len(sess.GeneratedFiles) != 6 {
-		t.Errorf("expected 6 cached files after a downstream failure, got %d", len(sess.GeneratedFiles))
-	}
-	cachedFiles := make(map[string]bool)
-	for _, gf := range sess.GeneratedFiles {
-		cachedFiles[gf.FileName] = true
-	}
-	if !cachedFiles["01_domain_model_use_cases.md"] || !cachedFiles["02_prd_functional.md"] {
-		t.Errorf("expected the source doc and PRD to remain cached, got: %+v", sess.GeneratedFiles)
-	}
-	if cachedFiles["03_system_architecture.md"] {
-		t.Errorf("expected failed file 03_system_architecture.md to remain uncached, got: %+v", sess.GeneratedFiles)
-	}
-
-	// 2. Resume with a healthy gateway
-	tg2 := &TestGateway{
-		responses: map[string][]string{
-			"03_system_architecture.md":          {"Arch content"},
-			"04_api_architecture_integration.md": {"# API Integration Guide"},
-			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
-			"06_security_threat_model.md":        {"Threat model content"},
-			"07_engineering_roadmap.md":          {"Roadmap content"},
-		},
-		callCounts: make(map[string]int),
-	}
-
-	progress2 := make(chan string, 20)
-	go func() {
-		for range progress2 {
-			continue
+		progress1 := make(chan string, 20)
+		go func() {
+			for range progress1 {
+				continue
+			}
+		}()
+		err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
+		if err1 == nil {
+			t.Fatal("expected failure on 03_system_architecture.md, got success")
 		}
-	}()
-	err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
-	if err2 != nil {
-		t.Fatalf("expected resumption success, got err: %v", err2)
-	}
 
-	// Verify skipping occurred for the completed files.
-	if tg2.callCounts["01_domain_model_use_cases.md"] != 0 {
-		t.Errorf("expected 0 calls for 01_domain_model_use_cases.md on resume, got %d", tg2.callCounts["01_domain_model_use_cases.md"])
-	}
-	if tg2.callCounts["02_prd_functional.md"] != 0 {
-		t.Errorf("expected 0 calls for 02_prd_functional.md on resume, got %d", tg2.callCounts["02_prd_functional.md"])
-	}
-	if tg2.callCounts["04_api_architecture_integration.md"] != 0 {
-		t.Errorf("expected 0 calls for 04_api_architecture_integration.md on resume, got %d", tg2.callCounts["04_api_architecture_integration.md"])
-	}
-	if tg2.callCounts["05_coding_standards_guidelines.md"] != 0 {
-		t.Errorf("expected 0 calls for 05_coding_standards_guidelines.md on resume, got %d", tg2.callCounts["05_coding_standards_guidelines.md"])
-	}
-	if tg2.callCounts["06_security_threat_model.md"] != 0 {
-		t.Errorf("expected 0 calls for 06_security_threat_model.md on resume, got %d", tg2.callCounts["06_security_threat_model.md"])
-	}
-	if tg2.callCounts["07_engineering_roadmap.md"] != 0 {
-		t.Errorf("expected 0 calls for 07_engineering_roadmap.md on resume, got %d", tg2.callCounts["07_engineering_roadmap.md"])
-	}
-	// The failed file must be regenerated on resume.
-	if tg2.callCounts["03_system_architecture.md"] != 1 {
-		t.Errorf("expected 1 call for 03_system_architecture.md, got %d", tg2.callCounts["03_system_architecture.md"])
-	}
+		// Verify the failed file was not cached, while the completed siblings were preserved.
+		if len(sess.GeneratedFiles) != 6 {
+			t.Errorf("expected 6 cached files after a downstream failure, got %d", len(sess.GeneratedFiles))
+		}
+		cachedFiles := make(map[string]bool)
+		for _, gf := range sess.GeneratedFiles {
+			cachedFiles[gf.FileName] = true
+		}
+		if !cachedFiles["01_domain_model_use_cases.md"] || !cachedFiles["02_prd_functional.md"] {
+			t.Errorf("expected the source doc and PRD to remain cached, got: %+v", sess.GeneratedFiles)
+		}
+		if cachedFiles["03_system_architecture.md"] {
+			t.Errorf("expected failed file 03_system_architecture.md to remain uncached, got: %+v", sess.GeneratedFiles)
+		}
+	})
+
+	t.Run("ResumeHealthy", func(t *testing.T) {
+		tg2 := &TestGateway{
+			responses: map[string][]string{
+				"03_system_architecture.md":          {"Arch content"},
+				"04_api_architecture_integration.md": {"# API Integration Guide"},
+				"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
+				"06_security_threat_model.md":        {"Threat model content"},
+				"07_engineering_roadmap.md":          {"Roadmap content"},
+			},
+			callCounts: make(map[string]int),
+		}
+
+		progress2 := make(chan string, 20)
+		go func() {
+			for range progress2 {
+				continue
+			}
+		}()
+		err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
+		if err2 != nil {
+			t.Fatalf("expected resumption success, got err: %v", err2)
+		}
+
+		// Verify skipping occurred for the completed files.
+		skippedFiles := []string{
+			"01_domain_model_use_cases.md",
+			"02_prd_functional.md",
+			"04_api_architecture_integration.md",
+			"05_coding_standards_guidelines.md",
+			"06_security_threat_model.md",
+			"07_engineering_roadmap.md",
+		}
+		for _, file := range skippedFiles {
+			if tg2.callCounts[file] != 0 {
+				t.Errorf("expected 0 calls for %s on resume, got %d", file, tg2.callCounts[file])
+			}
+		}
+		// The failed file must be regenerated on resume.
+		if tg2.callCounts["03_system_architecture.md"] != 1 {
+			t.Errorf("expected 1 call for 03_system_architecture.md, got %d", tg2.callCounts["03_system_architecture.md"])
+		}
+	})
 }
 
 func TestResumableMidLoop(t *testing.T) {
@@ -699,3 +716,46 @@ func TestBuildGenerationPromptIncludesReferenceDocument(t *testing.T) {
 		t.Fatalf("expected reference document to appear after facts, got: %s", prompt)
 	}
 }
+
+func TestGenerate_ConsistencyCheckAndSelfCorrection(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-gen-consistency-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-consistency-project",
+		Provider:    "test-provider",
+	}
+
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"02_prd_functional.md": {
+				"Functional Requirements - TRIGGER_INCONSISTENCY",
+				"Functional Requirements - refined Fix: compliant",
+			},
+		},
+		callCounts: make(map[string]int),
+	}
+
+	progress := make(chan string, 20)
+	go func() {
+		for range progress {
+			continue
+		}
+	}()
+
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err != nil {
+		t.Fatalf("expected generation success after consistency refinement, got: %v", err)
+	}
+
+	// RefineSpecFile should have been called for 02_prd_functional.md to fix the TRIGGER_INCONSISTENCY.
+	// Since tg.callCounts tracks calls in RefineSpecFile and GenerateSpecFile:
+	// 1 GenerateSpecFile call + 1 RefineSpecFile call = 2 calls.
+	if tg.callCounts["02_prd_functional.md"] != 2 {
+		t.Errorf("expected 2 calls for 02_prd_functional.md, got %d", tg.callCounts["02_prd_functional.md"])
+	}
+}
+

@@ -62,6 +62,12 @@ type ComplianceResult struct {
 	Feedback   string `json:"feedback"`
 }
 
+// ConsistencyReport represents the evaluation of cross-document logical consistency
+type ConsistencyReport struct {
+	Consistent bool              `json:"consistent"`
+	Feedback   map[string]string `json:"feedback"` // fileName -> correction instructions if inconsistent
+}
+
 // Gateway defines the uniform interface for communicating with upstream LLMs
 type Gateway interface {
 	// QueryOracle sends the current facts, conversation history, and latest input
@@ -76,6 +82,9 @@ type Gateway interface {
 
 	// RefineSpecFile attempts to fix a generated file to comply with standards based on feedback
 	RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error)
+
+	// VerifyConsistency checks consistency across all generated documents
+	VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error)
 }
 
 // SanitizeNextQuestion enforces the strict single question constraint on LLM output.
@@ -133,3 +142,17 @@ func FilterApplicableStandards(standards []config.Standard, fileName string) []c
 	}
 	return applicable
 }
+
+// sanitizeJSON strips markdown code block fences if they exist
+func sanitizeJSON(content string) string {
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "```") {
+		if idx := strings.Index(content, "\n"); idx != -1 {
+			content = content[idx+1:]
+		}
+		content = strings.TrimSuffix(content, "```")
+		content = strings.TrimSpace(content)
+	}
+	return content
+}
+

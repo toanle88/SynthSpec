@@ -155,6 +155,7 @@ type fileGenerator struct {
 }
 
 // Generate runs sequential spec generation for all files
+// Generate runs sequential spec generation for all files
 func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outputDir string, progress chan<- string) error {
 	defer close(progress)
 
@@ -198,40 +199,16 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 	defer cancel()
 	fg.ctx = runCtx
 
-	sourceTemplateIndex := -1
-	for idx, template := range templates {
-		if template.FileName == sourceModelFileName {
-			sourceTemplateIndex = idx
-			break
-		}
-	}
-	if sourceTemplateIndex == -1 {
-		return fmt.Errorf("source model template %q not found", sourceModelFileName)
-	}
-
-	sourceTemplate := templates[sourceTemplateIndex]
-	sendProgress(progress, ProgressEvent{
-		Status:  "started",
-		Phase:   "source",
-		File:    sourceTemplate.FileName,
-		Message: fmt.Sprintf("Generating source document %s...", sourceTemplate.FileName),
-	})
-	sourceCompliance, err := fg.processFile(sourceTemplate.FileName, sourceTemplate.Prompt, standards, "")
+	sourceIdx, err := findSourceTemplate(templates)
 	if err != nil {
-		cancel()
 		return err
 	}
-	fileCompliances[sourceTemplateIndex] = sourceCompliance
 
-	sourceDocPath := filepath.Join(outputDir, sourceTemplate.FileName)
-	sourceDocBytes, err := os.ReadFile(sourceDocPath)
+	sourceCompliance, sourceDoc, err := fg.generateSourceDocument(templates[sourceIdx], standards)
 	if err != nil {
-		return fmt.Errorf("failed to read source model document %s: %w", sourceTemplate.FileName, err)
+		return err
 	}
-	sourceDoc := strings.TrimSpace(string(sourceDocBytes))
-	if sourceDoc == "" {
-		return fmt.Errorf("source model document %s is empty", sourceTemplate.FileName)
-	}
+	fileCompliances[sourceIdx] = sourceCompliance
 
 	sendProgress(progress, ProgressEvent{
 		Status:  "started",
@@ -240,61 +217,183 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 		Message: fmt.Sprintf("Source document locked. Starting parallel generation for %d downstream documents...", len(templates)-1),
 	})
 
-	type generationResult struct {
-		index      int
-		compliance FileCompliance
-		err        error
+	if err := fg.generateDownstreamParallel(templates, sourceDoc, standards, fileCompliances); err != nil {
+		return err
 	}
 
-	type downstreamTemplate struct {
-		index    int
-		template config.Template
+	return fg.runConsistencyVerification(templates, standards, fileCompliances)
+}
+
+func findSourceTemplate(templates []config.Template) (int, error) {
+	for idx, template := range templates {
+		if template.FileName == sourceModelFileName {
+			return idx, nil
+		}
+	}
+	return -1, fmt.Errorf("source model template %q not found", sourceModelFileName)
+}
+
+func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, standards []config.Standard) (FileCompliance, string, error) {
+	sendProgress(fg.progress, ProgressEvent{
+		Status:  "started",
+		Phase:   "source",
+		File:    sourceTemplate.FileName,
+		Message: fmt.Sprintf("Generating source document %s...", sourceTemplate.FileName),
+	})
+	sourceCompliance, err := fg.processFile(sourceTemplate.FileName, sourceTemplate.Prompt, standards, "")
+	if err != nil {
+		return FileCompliance{}, "", err
 	}
 
-	downstreamTemplates := make([]downstreamTemplate, 0, len(templates)-1)
+	sourceDocPath := filepath.Join(fg.outputDir, sourceTemplate.FileName)
+	sourceDocBytes, err := os.ReadFile(sourceDocPath)
+	if err != nil {
+		return FileCompliance{}, "", fmt.Errorf("failed to read source model document %s: %w", sourceTemplate.FileName, err)
+	}
+
+	sourceDoc := strings.TrimSpace(string(sourceDocBytes))
+	if sourceDoc == "" {
+		return FileCompliance{}, "", fmt.Errorf("source model document %s is empty", sourceTemplate.FileName)
+	}
+
+	return sourceCompliance, sourceDoc, nil
+}
+
+type generationResult struct {
+	index      int
+	compliance FileCompliance
+	err        error
+}
+
+func (fg *fileGenerator) generateDownstreamParallel(templates []config.Template, sourceDoc string, standards []config.Standard, fileCompliances []FileCompliance) error {
+	results := make(chan generationResult, len(templates))
+	var wg sync.WaitGroup
+
 	for idx, template := range templates {
 		if template.FileName == sourceModelFileName {
 			continue
 		}
-		downstreamTemplates = append(downstreamTemplates, downstreamTemplate{index: idx, template: template})
-	}
-
-	results := make(chan generationResult, len(downstreamTemplates))
-	var wg sync.WaitGroup
-	for _, item := range downstreamTemplates {
 		wg.Add(1)
-		go func(index int, template config.Template) {
+		go func(index int, t config.Template) {
 			defer wg.Done()
-
-			compliance, err := fg.processFile(template.FileName, template.Prompt, standards, sourceDoc)
+			compliance, err := fg.processFile(t.FileName, t.Prompt, standards, sourceDoc)
 			results <- generationResult{index: index, compliance: compliance, err: err}
-			if err != nil {
-				cancel()
-			}
-		}(item.index, item.template)
+		}(idx, template)
 	}
 
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
+	wg.Wait()
+	close(results)
 
-	var firstErr error
 	for result := range results {
 		if result.err != nil {
-			if firstErr == nil {
-				firstErr = result.err
-			}
-			continue
+			return result.err
 		}
 		fileCompliances[result.index] = result.compliance
 	}
+	return nil
+}
 
-	if firstErr != nil {
-		return firstErr
+func (fg *fileGenerator) runConsistencyVerification(templates []config.Template, standards []config.Standard, fileCompliances []FileCompliance) error {
+	sendProgress(fg.progress, ProgressEvent{
+		Status:  "auditing",
+		Message: "Verifying cross-document logical consistency...",
+	})
+
+	filesContent := make(map[string]string)
+	for _, template := range templates {
+		filePath := filepath.Join(fg.outputDir, template.FileName)
+		contentBytes, readErr := os.ReadFile(filePath)
+		if readErr == nil {
+			filesContent[template.FileName] = string(contentBytes)
+		}
 	}
 
-	return fg.finishGeneration(fileCompliances, standards)
+	var consistencyReport *gateway.ConsistencyReport
+	for cAttempt := 1; cAttempt <= 3; cAttempt++ {
+		report, err := fg.gw.VerifyConsistency(fg.ctx, filesContent)
+		if err != nil {
+			return fmt.Errorf("cross-document consistency verification failed: %w", err)
+		}
+		consistencyReport = report
+
+		if report.Consistent {
+			break
+		}
+
+		if cAttempt == 3 {
+			break
+		}
+
+		sendProgress(fg.progress, ProgressEvent{
+			Status:  "correcting",
+			Details: fmt.Sprintf("consistency loop %d/3", cAttempt),
+			Message: fmt.Sprintf("Logical inconsistencies detected. Refining files (attempt %d/3)...", cAttempt),
+		})
+
+		for fileName, feedback := range report.Feedback {
+			if err := fg.refineSingleInconsistentFile(fileName, feedback, filesContent, fileCompliances, standards); err != nil {
+				return err
+			}
+		}
+	}
+
+	if consistencyReport != nil && !consistencyReport.Consistent {
+		return fmt.Errorf("failed to achieve cross-document consistency after 3 refinement attempts")
+	}
+
+	return fg.finishGeneration(fileCompliances, standards, consistencyReport)
+}
+
+func (fg *fileGenerator) refineSingleInconsistentFile(fileName string, feedback string, filesContent map[string]string, fileCompliances []FileCompliance, standards []config.Standard) error {
+	content, ok := filesContent[fileName]
+	if !ok {
+		return nil
+	}
+
+	var referenceDoc string
+	if fileName != sourceModelFileName {
+		sourcePath := filepath.Join(fg.outputDir, sourceModelFileName)
+		if bytes, err := os.ReadFile(sourcePath); err == nil {
+			referenceDoc = string(bytes)
+		}
+	}
+
+	refined, err := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedback, nil, referenceDoc)
+	if err != nil {
+		return fmt.Errorf("failed to refine inconsistent file %s: %w", fileName, err)
+	}
+
+	filePath := filepath.Join(fg.outputDir, fileName)
+	if err := os.WriteFile(filePath, []byte(refined), 0644); err != nil {
+		return fmt.Errorf("failed to save refined content for %s: %w", fileName, err)
+	}
+
+	filesContent[fileName] = refined
+
+	// Update compliance results
+	evalResults, evalErr := fg.gw.EvaluateCompliance(fg.ctx, fileName, refined, standards)
+	if evalErr == nil {
+		fg.updateComplianceAndSession(fileName, refined, evalResults, fileCompliances)
+	}
+	return nil
+}
+
+func (fg *fileGenerator) updateComplianceAndSession(fileName string, refined string, evalResults []gateway.ComplianceResult, fileCompliances []FileCompliance) {
+	for idx, fc := range fileCompliances {
+		if fc.FileName == fileName {
+			fileCompliances[idx].Results = evalResults
+			fg.sessionMu.Lock()
+			for sIdx, gf := range fg.sess.GeneratedFiles {
+				if gf.FileName == fileName {
+					fg.sess.GeneratedFiles[sIdx].Results = evalResults
+					fg.sess.GeneratedFiles[sIdx].InProgressText = refined
+					break
+				}
+			}
+			fg.sessionMu.Unlock()
+			break
+		}
+	}
 }
 
 func (fg *fileGenerator) getCachedFileState(fileName string) (state.GeneratedFileState, bool) {
@@ -723,12 +822,12 @@ func (fg *fileGenerator) updateSessionProgress(fileName string, complianceResult
 	return nil
 }
 
-func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, standards []config.Standard) error {
+func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, standards []config.Standard, consistencyReport *gateway.ConsistencyReport) error {
 	sendProgress(fg.progress, ProgressEvent{
 		Status:  "compiling_report",
 		Message: "Compiling compliance report (00_compliance_report.md)...",
 	})
-	reportContent := GenerateComplianceReport(fg.sess.ProjectName, fileCompliances, standards)
+	reportContent := GenerateComplianceReport(fg.sess.ProjectName, fileCompliances, standards, consistencyReport)
 	reportPath := filepath.Join(fg.outputDir, "00_compliance_report.md")
 	if err := os.WriteFile(reportPath, []byte(reportContent), 0644); err != nil {
 		return fmt.Errorf("failed to write 00_compliance_report.md: %w", err)
