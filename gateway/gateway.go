@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/toanle/synthspec/config"
@@ -60,6 +61,26 @@ type ComplianceResult struct {
 	Score      int    `json:"score"`
 	Compliant  bool   `json:"compliant"`
 	Feedback   string `json:"feedback"`
+}
+
+// UnmarshalJSON implements custom deserialization for ComplianceResult to handle raw string IDs gracefully.
+func (c *ComplianceResult) UnmarshalJSON(data []byte) error {
+	var id string
+	if err := json.Unmarshal(data, &id); err == nil {
+		c.StandardID = id
+		c.Score = 0
+		c.Compliant = false
+		c.Feedback = "Auditor returned only standard ID without detailed metrics."
+		return nil
+	}
+
+	type Alias ComplianceResult
+	var aux Alias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*c = ComplianceResult(aux)
+	return nil
 }
 
 // ConsistencyReport represents the evaluation of cross-document logical consistency

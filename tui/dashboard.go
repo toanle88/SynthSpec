@@ -188,14 +188,16 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
+
 		// Prevent typing while loading or generating
 		if m.loading || m.isGenerating {
 			return m, nil
 		}
 
 		switch msg.Type {
-		case tea.KeyCtrlC:
-			return m, tea.Quit
 
 		case tea.KeyEnter:
 			if m.showUpdatePrompt {
@@ -286,6 +288,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyEsc:
+			if m.err != nil {
+				m.err = nil
+				return m, nil
+			}
 			if m.showUpdatePrompt {
 				m.showUpdatePrompt = false
 				m.updateInput.Blur()

@@ -240,7 +240,9 @@ func (m DashboardModel) renderFooter() string {
 
 	// Keybindings helper
 	keys := []string{"Ctrl+C: Quit"}
-	if !m.isCompleted {
+	if m.err != nil {
+		keys = append(keys, "Esc: Dismiss Error")
+	} else if !m.isCompleted {
 		keys = append(keys, "Enter: Send", ":edit: Open full editor")
 	}
 	elements = append(elements, strings.Join(keys, "  |  "))
