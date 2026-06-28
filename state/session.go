@@ -19,6 +19,8 @@ type GeneratedFileState struct {
 	ErrorStr       string                     `json:"error_str,omitempty"`
 	InProgressText string                     `json:"in_progress_text,omitempty"`
 	CurrentAttempt int                        `json:"current_attempt,omitempty"`
+	PromptHash     string                     `json:"prompt_hash,omitempty"`
+	FactsHash      string                     `json:"facts_hash,omitempty"`
 }
 
 // Session represents a project session state

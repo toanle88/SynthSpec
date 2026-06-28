@@ -759,3 +759,86 @@ func TestGenerate_ConsistencyCheckAndSelfCorrection(t *testing.T) {
 	}
 }
 
+func TestGenerate_DiffBasedCaching(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-cache-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sess := &state.Session{
+		ProjectName: "test-cache-project",
+		Provider:    "test-provider",
+		Facts: gateway.Facts{
+			Functional: "Functional Facts v1",
+		},
+	}
+
+	tg := &TestGateway{
+		responses: map[string][]string{
+			"01_domain_model_use_cases.md":       {"Domain v1"},
+			"02_prd_functional.md":               {"PRD v1"},
+			"03_system_architecture.md":          {"System Arch v1"},
+			"04_api_architecture_integration.md": {"API Integration v1"},
+			"05_coding_standards_guidelines.md":  {"Coding Guidelines v1"},
+			"06_security_threat_model.md":        {"Threat Model v1"},
+			"07_engineering_roadmap.md":          {"Roadmap v1"},
+		},
+		callCounts: make(map[string]int),
+	}
+
+	progress := make(chan string, 100)
+	go func() {
+		for range progress {
+			continue
+		}
+	}()
+
+	// 1. Initial Generation
+	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	if err != nil {
+		t.Fatalf("initial generation failed: %v", err)
+	}
+
+	// 2. Run again with no changes -> expect skipped status and no calls to gateway
+	tg.callCounts = make(map[string]int)
+	progress2 := make(chan string, 100)
+	go func() {
+		for range progress2 {
+			continue
+		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress2)
+	if err != nil {
+		t.Fatalf("second generation failed: %v", err)
+	}
+
+	for fileName, count := range tg.callCounts {
+		if count > 0 {
+			t.Errorf("expected 0 calls for %s (cached), got %d", fileName, count)
+		}
+	}
+
+	// 3. Modify facts -> expect file to be regenerated (call count > 0)
+	sess.Facts.Functional = "Functional Facts v2 (Modified)"
+	tg.callCounts = make(map[string]int)
+	progress3 := make(chan string, 100)
+	go func() {
+		for range progress3 {
+			continue
+		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress3)
+	if err != nil {
+		t.Fatalf("generation after facts modification failed: %v", err)
+	}
+
+	totalCalls := 0
+	for _, count := range tg.callCounts {
+		totalCalls += count
+	}
+	if totalCalls == 0 {
+		t.Error("expected files to be regenerated after facts modification, but got 0 calls")
+	}
+}
+

@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -299,6 +300,18 @@ func (fg *fileGenerator) runConsistencyVerification(templates []config.Template,
 		Message: "Verifying cross-document logical consistency...",
 	})
 
+	filesContent := fg.readFilesContent(templates)
+
+	report, err := fg.runConsistencyRefinementLoop(filesContent, fileCompliances, standards)
+	if err != nil {
+		return err
+	}
+
+	return fg.finishGeneration(fileCompliances, standards, report)
+}
+
+// readFilesContent reads all currently generated template files from disk and returns their text contents.
+func (fg *fileGenerator) readFilesContent(templates []config.Template) map[string]string {
 	filesContent := make(map[string]string)
 	for _, template := range templates {
 		filePath := filepath.Join(fg.outputDir, template.FileName)
@@ -307,12 +320,16 @@ func (fg *fileGenerator) runConsistencyVerification(templates []config.Template,
 			filesContent[template.FileName] = string(contentBytes)
 		}
 	}
+	return filesContent
+}
 
+// runConsistencyRefinementLoop loops up to 3 times to evaluate consistency and auto-refine any inconsistent documents.
+func (fg *fileGenerator) runConsistencyRefinementLoop(filesContent map[string]string, fileCompliances []FileCompliance, standards []config.Standard) (*gateway.ConsistencyReport, error) {
 	var consistencyReport *gateway.ConsistencyReport
 	for cAttempt := 1; cAttempt <= 3; cAttempt++ {
 		report, err := fg.gw.VerifyConsistency(fg.ctx, filesContent)
 		if err != nil {
-			return fmt.Errorf("cross-document consistency verification failed: %w", err)
+			return nil, fmt.Errorf("cross-document consistency verification failed: %w", err)
 		}
 		consistencyReport = report
 
@@ -332,16 +349,15 @@ func (fg *fileGenerator) runConsistencyVerification(templates []config.Template,
 
 		for fileName, feedback := range report.Feedback {
 			if err := fg.refineSingleInconsistentFile(fileName, feedback, filesContent, fileCompliances, standards); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
 	if consistencyReport != nil && !consistencyReport.Consistent {
-		return fmt.Errorf("failed to achieve cross-document consistency after 3 refinement attempts")
+		return nil, fmt.Errorf("failed to achieve cross-document consistency after 3 refinement attempts")
 	}
-
-	return fg.finishGeneration(fileCompliances, standards, consistencyReport)
+	return consistencyReport, nil
 }
 
 func (fg *fileGenerator) refineSingleInconsistentFile(fileName string, feedback string, filesContent map[string]string, fileCompliances []FileCompliance, standards []config.Standard) error {
@@ -413,12 +429,16 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 	filePath := filepath.Join(fg.outputDir, fileName)
 	_, statErr := os.Stat(filePath)
 
-	if cached && statErr == nil && !cachedState.HasError {
+	currentPromptHash := computeSha256(promptTemplate)
+	factsBytes, _ := json.Marshal(fg.sess.Facts)
+	currentFactsHash := computeSha256(string(factsBytes))
+
+	if cached && statErr == nil && !cachedState.HasError && cachedState.PromptHash == currentPromptHash && cachedState.FactsHash == currentFactsHash {
 		sendProgress(fg.progress, ProgressEvent{
 			File:    fileName,
 			Status:  "skipped",
 			Details: "already generated",
-			Message: fmt.Sprintf("Skipping %s (already generated)", fileName),
+			Message: fmt.Sprintf("Skipping %s (already generated & unchanged)", fileName),
 		})
 		return FileCompliance{
 			FileName: fileName,
@@ -432,7 +452,7 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 		return FileCompliance{}, err
 	}
 
-	content, complianceResults, checkErr, err := fg.runSelfCorrection(fileName, content, startAttempt, standards, referenceDoc)
+	content, complianceResults, checkErr, err := fg.runSelfCorrection(fileName, content, startAttempt, standards, referenceDoc, promptTemplate)
 	if err != nil {
 		return FileCompliance{}, err
 	}
@@ -447,7 +467,7 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 		return FileCompliance{}, fmt.Errorf("failed to write %s output file: %w", fileName, err)
 	}
 
-	if err := fg.updateSessionProgress(fileName, complianceResults, checkErr); err != nil {
+	if err := fg.updateSessionProgress(fileName, promptTemplate, complianceResults, checkErr); err != nil {
 		return FileCompliance{}, err
 	}
 
@@ -519,7 +539,7 @@ func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTempla
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	_ = fg.updateInProgressState(fileName, content, 1)
+	_ = fg.updateInProgressState(fileName, content, 1, promptTemplate)
 	return content, 1, nil
 }
 
@@ -543,7 +563,7 @@ func buildGenerationPrompt(promptTemplate string, facts gateway.Facts, reference
 	return builder.String(), nil
 }
 
-func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard, referenceDoc string) (string, []gateway.ComplianceResult, error, error) {
+func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard, referenceDoc string, promptTemplate string) (string, []gateway.ComplianceResult, error, error) {
 	var complianceResults []gateway.ComplianceResult
 	var checkErr error
 
@@ -552,14 +572,14 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 	for attempt := startAttempt; attempt < maxRetries; attempt++ {
 		checkErr = PerformStaticValidation(fileName, content)
 		if checkErr != nil {
-			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr, referenceDoc)
+			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr, referenceDoc, promptTemplate)
 			continue
 		}
 
 		if len(applicableStds) > 0 {
 			var passed bool
 			var err error
-			content, complianceResults, checkErr, passed, err = fg.handleComplianceEvaluation(fileName, content, attempt, standards, referenceDoc)
+			content, complianceResults, checkErr, passed, err = fg.handleComplianceEvaluation(fileName, content, attempt, standards, referenceDoc, promptTemplate)
 			if err != nil {
 				return content, nil, nil, err
 			}
@@ -598,7 +618,7 @@ func getApplicableStandards(standards []config.Standard, fileName string) []conf
 	return applicableStds
 }
 
-func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error, referenceDoc string) (string, error) {
+func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error, referenceDoc string, promptTemplate string) (string, error) {
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
 		Status:  "correcting",
@@ -609,7 +629,7 @@ func (fg *fileGenerator) handleSyntaxError(fileName string, content string, atte
 	refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedback, nil, referenceDoc)
 	if refineErr == nil {
 		content = refined
-		_ = fg.updateInProgressState(fileName, content, attempt+1)
+		_ = fg.updateInProgressState(fileName, content, attempt+1, promptTemplate)
 	}
 	time.Sleep(100 * time.Millisecond)
 	return content, checkErr
@@ -739,7 +759,7 @@ func collectFailedStandards(evalResults []gateway.ComplianceResult, standards []
 	return failedStds, feedbackLines
 }
 
-func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard, referenceDoc string) (string, []gateway.ComplianceResult, error, bool, error) {
+func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard, referenceDoc string, promptTemplate string) (string, []gateway.ComplianceResult, error, bool, error) {
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
 		Status:  "auditing",
@@ -782,7 +802,7 @@ func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content str
 		refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedbackText, failedStds, referenceDoc)
 		if refineErr == nil {
 			content = refined
-			_ = fg.updateInProgressState(fileName, content, attempt+1)
+			_ = fg.updateInProgressState(fileName, content, attempt+1, promptTemplate)
 		}
 		time.Sleep(100 * time.Millisecond)
 		return content, evalResults, nil, false, nil
@@ -791,11 +811,17 @@ func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content str
 	return content, evalResults, nil, true, nil
 }
 
-func (fg *fileGenerator) updateSessionProgress(fileName string, complianceResults []gateway.ComplianceResult, checkErr error) error {
+func (fg *fileGenerator) updateSessionProgress(fileName string, promptTemplate string, complianceResults []gateway.ComplianceResult, checkErr error) error {
+	currentPromptHash := computeSha256(promptTemplate)
+	factsBytes, _ := json.Marshal(fg.sess.Facts)
+	currentFactsHash := computeSha256(string(factsBytes))
+
 	newGenState := state.GeneratedFileState{
-		FileName: fileName,
-		Results:  complianceResults,
-		HasError: checkErr != nil,
+		FileName:   fileName,
+		Results:    complianceResults,
+		HasError:   checkErr != nil,
+		PromptHash: currentPromptHash,
+		FactsHash:  currentFactsHash,
 	}
 	if checkErr != nil {
 		newGenState.ErrorStr = checkErr.Error()
@@ -875,12 +901,18 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 	return nil
 }
 
-func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt int) error {
+func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt int, promptTemplate string) error {
+	currentPromptHash := computeSha256(promptTemplate)
+	factsBytes, _ := json.Marshal(fg.sess.Facts)
+	currentFactsHash := computeSha256(string(factsBytes))
+
 	newGenState := state.GeneratedFileState{
 		FileName:       fileName,
 		InProgressText: content,
 		CurrentAttempt: attempt,
 		HasError:       true,
+		PromptHash:     currentPromptHash,
+		FactsHash:      currentFactsHash,
 	}
 	fg.sessionMu.Lock()
 	defer fg.sessionMu.Unlock()
@@ -899,4 +931,10 @@ func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt
 		fg.sess.GeneratedFiles = append(fg.sess.GeneratedFiles, newGenState)
 	}
 	return fg.sess.Save()
+}
+
+func computeSha256(data string) string {
+	h := sha256.New()
+	h.Write([]byte(data))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
