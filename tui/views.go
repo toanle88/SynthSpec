@@ -168,7 +168,7 @@ func (m DashboardModel) renderCompletedState() string {
 	}
 	content = append(content, "\nAll requirement vectors have achieved 100% confidence and files have been generated.")
 	content = append(content, "You can still edit raw facts to regenerate, or quit:\n")
-	content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate files"))
+	content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [G] to manually Regenerate & Verify consistency"))
 	content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [U] to Add new requirements / Modify specifications"))
 	content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to launch Editor & make modifications"))
 	content = append(content, lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("  Press [Q] to Save & Exit CLI"))
@@ -334,11 +334,11 @@ func (m DashboardModel) renderFooter() string {
 	if m.err != nil {
 		keys = append(keys, "Esc: Dismiss Error")
 	} else if m.isCompleted {
-		keys = append(keys, "v/Enter: View file", "g: Regenerate", "u: Modify", "e: Editor")
+		keys = append(keys, "v/Enter: View file", "g: Regenerate & Verify", "u: Modify", "e: Editor")
 	} else if m.showTextInput {
 		keys = append(keys, "Enter: Send", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", ":edit: Open full editor", "Esc: Cancel")
 	} else {
-		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", "g: Regenerate", "u: Modify", "e: Editor")
+		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", "g: Regenerate & Verify", "u: Modify", "e: Editor")
 	}
 	elements = append(elements, strings.Join(keys, "  |  "))
 

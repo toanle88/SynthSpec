@@ -460,8 +460,7 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 	_, statErr := os.Stat(filePath)
 
 	currentPromptHash := computeSha256(promptTemplate)
-	factsBytes, _ := json.Marshal(fg.sess.Facts)
-	currentFactsHash := computeSha256(string(factsBytes))
+	currentFactsHash := fg.computeFactsHash(fileName)
 
 	if cached && statErr == nil && !cachedState.HasError && cachedState.PromptHash == currentPromptHash && cachedState.FactsHash == currentFactsHash {
 		sendProgress(fg.progress, ProgressEvent{
@@ -843,8 +842,7 @@ func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content str
 
 func (fg *fileGenerator) updateSessionProgress(fileName string, promptTemplate string, complianceResults []gateway.ComplianceResult, checkErr error) error {
 	currentPromptHash := computeSha256(promptTemplate)
-	factsBytes, _ := json.Marshal(fg.sess.Facts)
-	currentFactsHash := computeSha256(string(factsBytes))
+	currentFactsHash := fg.computeFactsHash(fileName)
 
 	newGenState := state.GeneratedFileState{
 		FileName:   fileName,
@@ -933,8 +931,7 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 
 func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt int, promptTemplate string) error {
 	currentPromptHash := computeSha256(promptTemplate)
-	factsBytes, _ := json.Marshal(fg.sess.Facts)
-	currentFactsHash := computeSha256(string(factsBytes))
+	currentFactsHash := fg.computeFactsHash(fileName)
 
 	newGenState := state.GeneratedFileState{
 		FileName:       fileName,
@@ -961,6 +958,19 @@ func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt
 		fg.sess.GeneratedFiles = append(fg.sess.GeneratedFiles, newGenState)
 	}
 	return fg.sess.Save()
+}
+
+func (fg *fileGenerator) computeFactsHash(fileName string) string {
+	factsBytes, _ := json.Marshal(fg.sess.Facts)
+	hash := computeSha256(string(factsBytes))
+
+	if fileName != sourceModelFileName {
+		sourcePath := filepath.Join(fg.outputDir, sourceModelFileName)
+		if bytes, err := os.ReadFile(sourcePath); err == nil {
+			hash = computeSha256(hash + computeSha256(string(bytes)))
+		}
+	}
+	return hash
 }
 
 func computeSha256(data string) string {
