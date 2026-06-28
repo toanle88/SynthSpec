@@ -162,9 +162,9 @@ func (tg *TestGateway) QueryOracle(ctx context.Context, facts gateway.Facts, his
 
 func (tg *TestGateway) GenerateSpecFile(ctx context.Context, facts gateway.Facts, fileName string, promptTemplate string) (string, error) {
 	tg.mu.Lock()
+	defer tg.mu.Unlock()
 	tg.callCounts[fileName]++
 	resps, ok := tg.responses[fileName]
-	tg.mu.Unlock()
 	if !ok || len(resps) == 0 {
 		if fileName == "04_openapi_contract.yaml" {
 			return "openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths: {}", nil
@@ -463,6 +463,13 @@ func TestGenerate_PersistentFailure(t *testing.T) {
 				`   `,
 				`   `,
 				`   `,
+				`   `,
+				`   `,
+				`   `,
+				`   `,
+				`   `,
+				`   `,
+				`   `,
 			},
 		},
 		callCounts: make(map[string]int),
@@ -479,8 +486,8 @@ func TestGenerate_PersistentFailure(t *testing.T) {
 		t.Fatal("expected failure, got success")
 	}
 
-	if tg.callCounts["05_coding_standards_guidelines.md"] != 3 {
-		t.Errorf("expected 3 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
+		t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
 	}
 }
 

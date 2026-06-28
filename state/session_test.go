@@ -1,8 +1,10 @@
 package state
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,3 +92,38 @@ func TestListProjects(t *testing.T) {
 		t.Errorf("failed to list all saved projects, got list: %v", projects)
 	}
 }
+
+func TestLogError(t *testing.T) {
+	projectName := "test-error-log-project"
+	defer os.RemoveAll(filepath.Join("synthspec", projectName))
+	defer os.Remove(filepath.Join("synthspec", "errors.log"))
+
+	// Test project-specific error logging
+	errSample := fmt.Errorf("sample error description")
+	LogError(projectName, errSample)
+
+	logPath := filepath.Join("synthspec", projectName, "errors.log")
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read project log file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "ERROR: sample error description") {
+		t.Errorf("expected log file to contain error description, got: %s", string(content))
+	}
+
+	// Test global error logging
+	errGlobalSample := fmt.Errorf("global sample error description")
+	LogError("", errGlobalSample)
+
+	globalLogPath := filepath.Join("synthspec", "errors.log")
+	globalContent, err := os.ReadFile(globalLogPath)
+	if err != nil {
+		t.Fatalf("failed to read global log file: %v", err)
+	}
+
+	if !strings.Contains(string(globalContent), "ERROR: global sample error description") {
+		t.Errorf("expected global log file to contain error description, got: %s", string(globalContent))
+	}
+}
+

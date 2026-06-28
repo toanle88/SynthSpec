@@ -167,3 +167,39 @@ func (s *Session) AddTurn(userMsg, assistantMsg string, tokensPrompt, tokensComp
 	s.History = append(s.History, gateway.Message{Role: "assistant", Content: assistantMsg})
 	s.TotalTokensUsed = tokensPrompt + tokensCompletion
 }
+
+// LogError writes an error message with a timestamp to the project's error log file.
+// If projectName is empty, it writes to the global "synthspec/errors.log" file.
+func LogError(projectName string, err error) {
+	if err == nil {
+		return
+	}
+
+	// Create "synthspec" root directory if it doesn't exist
+	if errMk := os.MkdirAll("synthspec", 0755); errMk != nil {
+		return // Silently fail if we can't write to disk
+	}
+
+	var logPath string
+	if projectName != "" {
+		projDir := GetSessionDir(projectName)
+		if errMk := os.MkdirAll(projDir, 0755); errMk == nil {
+			logPath = filepath.Join(projDir, "errors.log")
+		} else {
+			logPath = filepath.Join("synthspec", "errors.log")
+		}
+	} else {
+		logPath = filepath.Join("synthspec", "errors.log")
+	}
+
+	f, errOpen := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if errOpen != nil {
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logEntry := fmt.Sprintf("[%s] ERROR: %v\n", timestamp, err)
+	_, _ = f.WriteString(logEntry)
+}
+

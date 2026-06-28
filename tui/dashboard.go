@@ -229,7 +229,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Run Editor Subprocess
 					editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
 					if err != nil {
-						m.err = err
+						m.setError(err)
 						return m, nil
 					}
 					m.editorTempPath = tempPath
@@ -327,7 +327,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Launch Editor
 					editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
 					if err != nil {
-						m.err = err
+						m.setError(err)
 						return m, nil
 					}
 					m.editorTempPath = tempPath
@@ -372,7 +372,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case oracleResultMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.err = msg.err
+			m.setError(msg.err)
 			return m, nil
 		}
 
@@ -419,14 +419,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorFinishedMsg:
 		if msg.err != nil {
-			m.err = fmt.Errorf("editor failed: %w", msg.err)
+			m.setError(fmt.Errorf("editor failed: %w", msg.err))
 			return m, nil
 		}
 
 		// Read back edited facts
 		editedFacts, err := state.ReadBackEditedFacts(m.editorTempPath)
 		if err != nil {
-			m.err = fmt.Errorf("failed to read back edited requirements: %w", err)
+			m.setError(fmt.Errorf("failed to read back edited requirements: %w", err))
 			return m, nil
 		}
 
@@ -485,7 +485,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case genFinishedMsg:
 		m.isGenerating = false
 		if msg.err != nil {
-			m.err = msg.err
+			m.setError(msg.err)
 		} else {
 			m.genStatus = "All specifications synthesized successfully!"
 			m.Session.Save() // Save final state
@@ -512,9 +512,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case contextPruneResultMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.err = fmt.Errorf("context pruning failed: %w", msg.err)
+			m.setError(fmt.Errorf("context pruning failed: %w", msg.err))
 		} else if msg.pruned {
-			m.err = fmt.Errorf("conversation summarized to fit context limit")
+			m.setError(fmt.Errorf("conversation summarized to fit context limit"))
 		}
 		return m, nil
 	}
@@ -600,3 +600,15 @@ func (m DashboardModel) getChoicesList() []string {
 	list = append(list, "Custom user input...")
 	return list
 }
+
+func (m *DashboardModel) setError(err error) {
+	m.err = err
+	if err != nil {
+		var projectName string
+		if m.Session != nil {
+			projectName = m.Session.ProjectName
+		}
+		state.LogError(projectName, err)
+	}
+}
+

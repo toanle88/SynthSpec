@@ -18,6 +18,7 @@ import (
 )
 
 const sourceModelFileName = "01_domain_model_use_cases.md"
+const maxRetries = 10
 
 // TelemetryMetadata represents the .synthspec-meta.json structure
 type TelemetryMetadata struct {
@@ -367,7 +368,6 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 
 func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTemplate string, referenceDoc string) (string, int, error) {
 	cachedState, cached := fg.getCachedFileState(fileName)
-	maxRetries := 3
 
 	if cached && cachedState.InProgressText != "" {
 		content := cachedState.InProgressText
@@ -445,7 +445,6 @@ func buildGenerationPrompt(promptTemplate string, facts gateway.Facts, reference
 }
 
 func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard, referenceDoc string) (string, []gateway.ComplianceResult, error, error) {
-	maxRetries := 3
 	var complianceResults []gateway.ComplianceResult
 	var checkErr error
 
@@ -501,7 +500,6 @@ func getApplicableStandards(standards []config.Standard, fileName string) []conf
 }
 
 func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error, referenceDoc string) (string, error) {
-	maxRetries := 3
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
 		Status:  "correcting",
@@ -643,7 +641,6 @@ func collectFailedStandards(evalResults []gateway.ComplianceResult, standards []
 }
 
 func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard, referenceDoc string) (string, []gateway.ComplianceResult, error, bool, error) {
-	maxRetries := 3
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
 		Status:  "auditing",
