@@ -1136,7 +1136,11 @@ func (m DashboardModel) recvThoughtCmd() tea.Cmd {
 func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 	logger.LogEvent("TUI", fmt.Sprintf("Querying Oracle with latestInput (length: %d)", len(latestInput)))
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		timeoutSec := 300
+		if m.Settings != nil && m.Settings.TimeoutSeconds > 0 {
+			timeoutSec = m.Settings.TimeoutSeconds
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 		defer cancel()
 
 		// If user answer was provided, append it to history beforehand

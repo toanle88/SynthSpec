@@ -16,8 +16,8 @@ type Settings struct {
 }
 
 const (
-	DefaultTimeoutSeconds      = 60
-	DefaultMaxRetries          = 3
+	DefaultTimeoutSeconds      = 300
+	DefaultMaxRetries          = 10
 	DefaultOutputFolderValue   = "./output"
 )
 
