@@ -20,7 +20,11 @@ import (
 	"github.com/toanle/synthspec/state"
 )
 
-const manualUpdateMsg = "Requirements updated manually via editor."
+const (
+	manualUpdateMsg        = "Requirements updated manually via editor."
+	domainModelFilename    = "01_domain_model_use_cases.md"
+	domainModelApprovedMsg = "Domain Model approved! Commencing downstream parallel generation..."
+)
 
 // Msg Types
 type oracleResultMsg struct {
@@ -113,6 +117,7 @@ type DashboardModel struct {
 	approvalChan      chan struct{}
 	isWaitingApproval bool
 	isEditingFile     bool
+	cancelGen         context.CancelFunc
 }
 
 
@@ -250,19 +255,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
-			return m, tea.Quit
-		}
-		if m.loading || (m.isGenerating && !m.isWaitingApproval) {
-			return m, nil
-		}
-		var keyCmd tea.Cmd
-		var model tea.Model
-		model, keyCmd = m.handleKeyMsg(msg)
-		m = model.(DashboardModel)
-		if keyCmd != nil {
-			cmds = append(cmds, keyCmd)
-		}
+		return m.handleUpdateKeyMsg(msg)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -280,15 +273,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleEditorFinished(msg)
 
 	case fileEditorFinishedMsg:
-		m.isEditingFile = false
-		if msg.err != nil {
-			m.setError(fmt.Errorf("file editor failed: %w", msg.err))
-		}
-		if m.isWaitingApproval && m.showViewer {
-			// Reload file contents in the viewport
-			return m.openFileViewer()
-		}
-		return m, nil
+		return m.handleUpdateFileEditorFinishedMsg(msg)
 
 	case genProgressMsg:
 		return m.handleGenProgress(msg)
@@ -300,52 +285,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleContextPruneResult(msg)
 
 	case initQueryMsg:
-		// First boot query: routed through startOracleQuery so thoughtChan and
-		// isStreaming are correctly set on the REAL model (not a discarded Init copy).
 		return m.startOracleQuery("")
 
 	case thoughtTokenMsg:
-		m.thoughtBuffer += string(msg)
-		var tickCmd tea.Cmd
-		if !m.isTyping && len(m.thoughtBuffer) > 0 {
-			m.isTyping = true
-			tickCmd = tea.Tick(35*time.Millisecond, func(t time.Time) tea.Msg {
-				return typingTickMsg{}
-			})
-		}
-		return m, tea.Batch(m.recvThoughtCmd(), tickCmd)
+		return m.handleUpdateThoughtTokenMsg(msg)
 
 	case typingTickMsg:
-		if len(m.thoughtBuffer) > 0 {
-			runes := []rune(m.thoughtBuffer)
-			// Adaptive typing speed: if the buffer is large, type out more characters
-			// per tick to avoid falling too far behind.
-			rChunkSize := len(runes) / 60
-			if rChunkSize < 1 {
-				rChunkSize = 1
-			}
-			if rChunkSize > len(runes) {
-				rChunkSize = len(runes)
-			}
-
-			chunk := string(runes[:rChunkSize])
-			m.streamingTokens += chunk
-			m.thoughtBuffer = string(runes[rChunkSize:])
-
-			m.updateChatViewport()
-			m.chatViewport.GotoBottom()
-
-			return m, tea.Tick(35*time.Millisecond, func(t time.Time) tea.Msg {
-				return typingTickMsg{}
-			})
-		} else {
-			m.isTyping = false
-			if !m.isStreaming {
-				m.updateChatViewport()
-				m.chatViewport.GotoBottom()
-			}
-			return m, nil
-		}
+		return m.handleUpdateTypingTickMsg()
 
 	case streamDoneMsg:
 		m.isStreaming = false
@@ -355,85 +301,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		if msg.Button == tea.MouseButtonWheelUp {
-			if m.isCompleted || m.isGenerating {
-				m.selectedFileIdx = maxInt(0, m.selectedFileIdx-1)
-			} else if !m.loading {
-				m.chatViewport.LineUp(3)
-			}
-			return m, nil
-		}
-		if msg.Button == tea.MouseButtonWheelDown {
-			if m.isCompleted || m.isGenerating {
-				m.selectedFileIdx = minInt(len(m.genFiles)-1, m.selectedFileIdx+1)
-			} else if !m.loading {
-				m.chatViewport.LineDown(3)
-			}
-			return m, nil
-		}
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			rendered := stripANSI(m.View())
-			lines := strings.Split(rendered, "\n")
-			if msg.Y >= 0 && msg.Y < len(lines) {
-				line := lines[msg.Y]
-				if m.isCompleted || m.isGenerating {
-					for i, file := range m.genFiles {
-						if strings.Contains(line, file) {
-							m.selectedFileIdx = i
-							return m.openFileViewer()
-						}
-					}
-					if m.isCompleted {
-						if strings.Contains(line, "Regenerate files") {
-							return m.triggerRegeneration()
-						}
-						if strings.Contains(line, "Add new requirements") {
-							return m.activateUpdatePrompt()
-						}
-						if strings.Contains(line, "launch Editor") {
-							return m.launchExternalEditor()
-						}
-						if strings.Contains(line, "Save & Exit CLI") {
-							return m, tea.Quit
-						}
-					} else if m.isWaitingApproval {
-						if strings.Contains(line, "View 01_domain_model_use_cases.md") {
-							m.selectedFileIdx = 0
-							return m.openFileViewer()
-						}
-						if strings.Contains(line, "Edit 01_domain_model_use_cases.md") {
-							return m.launchFileEditor("01_domain_model_use_cases.md")
-						}
-						if strings.Contains(line, "Approve and Resume") {
-							if m.approvalChan != nil {
-								close(m.approvalChan)
-								m.approvalChan = nil
-							}
-							m.isWaitingApproval = false
-							m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
-							return m, nil
-						}
-					}
-				}
-				if !m.isCompleted && !m.loading && !m.showTextInput {
-					choices := m.getChoicesList()
-					for i, choice := range choices {
-						if strings.Contains(line, choice) {
-							m.selectedChoiceIdx = i
-							return m.handleKeyEnterChoiceSelection()
-						}
-					}
-				}
-				if m.showTextInput && strings.Contains(line, "> ") {
-					m.textInput.Focus()
-					return m, nil
-				}
-				if m.showUpdatePrompt && strings.Contains(line, "> ") {
-					m.updateInput.Focus()
-					return m, nil
-				}
-			}
-		}
+		return m.handleUpdateMouseMsg(msg)
 	}
 
 	if !m.isCompleted && !m.loading && m.showTextInput {
@@ -446,9 +314,195 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
-	m.updateChatViewport()
 	return m, tea.Batch(cmds...)
 }
+
+func (m DashboardModel) handleUpdateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+	if m.isGenerating && !m.isWaitingApproval {
+		keyStr := msg.String()
+		if keyStr == "q" || keyStr == "esc" {
+			if m.cancelGen != nil {
+				m.cancelGen()
+			}
+			m.isGenerating = false
+			m.genStatus = "Specification generation cancelled."
+			return m, nil
+		}
+		return m, nil
+	}
+	if m.loading {
+		return m, nil
+	}
+	return m.handleKeyMsg(msg)
+}
+
+func (m DashboardModel) handleUpdateFileEditorFinishedMsg(msg fileEditorFinishedMsg) (tea.Model, tea.Cmd) {
+	m.isEditingFile = false
+	if msg.err != nil {
+		m.setError(fmt.Errorf("file editor failed: %w", msg.err))
+	}
+	if m.isWaitingApproval && m.showViewer {
+		return m.openFileViewer()
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleUpdateThoughtTokenMsg(msg thoughtTokenMsg) (tea.Model, tea.Cmd) {
+	m.thoughtBuffer += string(msg)
+	var tickCmd tea.Cmd
+	if !m.isTyping && len(m.thoughtBuffer) > 0 {
+		m.isTyping = true
+		tickCmd = tea.Tick(35*time.Millisecond, func(t time.Time) tea.Msg {
+			return typingTickMsg{}
+		})
+	}
+	return m, tea.Batch(m.recvThoughtCmd(), tickCmd)
+}
+
+func (m DashboardModel) handleUpdateTypingTickMsg() (tea.Model, tea.Cmd) {
+	if len(m.thoughtBuffer) > 0 {
+		runes := []rune(m.thoughtBuffer)
+		rChunkSize := len(runes) / 60
+		if rChunkSize < 1 {
+			rChunkSize = 1
+		}
+		if rChunkSize > len(runes) {
+			rChunkSize = len(runes)
+		}
+
+		chunk := string(runes[:rChunkSize])
+		m.streamingTokens += chunk
+		m.thoughtBuffer = string(runes[rChunkSize:])
+
+		m.updateChatViewport()
+		m.chatViewport.GotoBottom()
+
+		return m, tea.Tick(35*time.Millisecond, func(t time.Time) tea.Msg {
+			return typingTickMsg{}
+		})
+	}
+	m.isTyping = false
+	if !m.isStreaming {
+		m.updateChatViewport()
+		m.chatViewport.GotoBottom()
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleUpdateMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button == tea.MouseButtonWheelUp {
+		if m.isCompleted || m.isGenerating {
+			m.selectedFileIdx = maxInt(0, m.selectedFileIdx-1)
+		} else if !m.loading {
+			m.chatViewport.LineUp(3)
+		}
+		return m, nil
+	}
+	if msg.Button == tea.MouseButtonWheelDown {
+		if m.isCompleted || m.isGenerating {
+			m.selectedFileIdx = minInt(len(m.genFiles)-1, m.selectedFileIdx+1)
+		} else if !m.loading {
+			m.chatViewport.LineDown(3)
+		}
+		return m, nil
+	}
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		return m.handleMouseLeftClickDashboard(msg)
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleMouseLeftClickDashboard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	rendered := stripANSI(m.View())
+	lines := strings.Split(rendered, "\n")
+	if msg.Y < 0 || msg.Y >= len(lines) {
+		return m, nil
+	}
+	line := lines[msg.Y]
+	if m.isCompleted || m.isGenerating {
+		return m.handleMouseLeftClickGeneratingCompleted(line)
+	}
+	if !m.isCompleted && !m.loading && !m.showTextInput {
+		return m.handleMouseLeftClickChoices(line)
+	}
+	if m.showTextInput && strings.Contains(line, "> ") {
+		m.textInput.Focus()
+		return m, nil
+	}
+	if m.showUpdatePrompt && strings.Contains(line, "> ") {
+		m.updateInput.Focus()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleMouseLeftClickGeneratingCompleted(line string) (tea.Model, tea.Cmd) {
+	for i, file := range m.genFiles {
+		if strings.Contains(line, file) {
+			m.selectedFileIdx = i
+			return m.openFileViewer()
+		}
+	}
+	if m.isCompleted {
+		return m.handleMouseLeftClickCompleted(line)
+	}
+	if m.isWaitingApproval {
+		return m.handleMouseLeftClickWaitingApproval(line)
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleMouseLeftClickCompleted(line string) (tea.Model, tea.Cmd) {
+	if strings.Contains(line, "Regenerate files") {
+		return m.triggerRegeneration()
+	}
+	if strings.Contains(line, "Add new requirements") {
+		return m.activateUpdatePrompt()
+	}
+	if strings.Contains(line, "launch Editor") {
+		return m.launchExternalEditor()
+	}
+	if strings.Contains(line, "Save & Exit CLI") {
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleMouseLeftClickWaitingApproval(line string) (tea.Model, tea.Cmd) {
+	if strings.Contains(line, "View "+domainModelFilename) {
+		m.selectedFileIdx = 0
+		return m.openFileViewer()
+	}
+	if strings.Contains(line, "Edit "+domainModelFilename) {
+		return m.launchFileEditor(domainModelFilename)
+	}
+	if strings.Contains(line, "Approve and Resume") {
+		if m.approvalChan != nil {
+			close(m.approvalChan)
+			m.approvalChan = nil
+		}
+		m.isWaitingApproval = false
+		m.genStatus = domainModelApprovedMsg
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleMouseLeftClickChoices(line string) (tea.Model, tea.Cmd) {
+	choices := m.getChoicesList()
+	for i, choice := range choices {
+		if strings.Contains(line, choice) {
+			m.selectedChoiceIdx = i
+			return m.handleKeyEnterChoiceSelection()
+		}
+	}
+	return m, nil
+}
+
+
 
 // handleViewerUpdate processes updates to the document viewer overlay, handling size changes and dismissal key events.
 func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -459,92 +513,107 @@ func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateViewportSize()
 	}
 	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
-		if mouseMsg.Button == tea.MouseButtonWheelUp || mouseMsg.Button == tea.MouseButtonWheelDown {
-			m.viewport, cmd = m.viewport.Update(msg)
-			return m, cmd
-		}
-		if mouseMsg.Action == tea.MouseActionPress && mouseMsg.Button == tea.MouseButtonLeft {
-			rendered := stripANSI(m.View())
-			lines := strings.Split(rendered, "\n")
-			if mouseMsg.Y >= 0 && mouseMsg.Y < len(lines) {
-				line := lines[mouseMsg.Y]
-				for i, file := range m.genFiles {
-					if strings.Contains(line, file) {
-						m.selectedFileIdx = i
-						return m.openFileViewer()
-					}
-				}
-				if strings.Contains(line, "Back") {
-					m.showViewer = false
-					return m, nil
-				}
-				if strings.Contains(line, "Toggle Layout") {
-					m.isFullScreenViewer = !m.isFullScreenViewer
-					m.updateViewportSize()
-					return m.openFileViewer()
-				}
-				if m.isWaitingApproval {
-					if strings.Contains(line, "Approve") {
-						m.showViewer = false
-						if m.approvalChan != nil {
-							close(m.approvalChan)
-							m.approvalChan = nil
-						}
-						m.isWaitingApproval = false
-						m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
-						return m, nil
-					}
-					if strings.Contains(line, "Edit") {
-						return m.launchFileEditor("01_domain_model_use_cases.md")
-					}
-				}
-			}
-		}
+		return m.handleViewerMouseUpdate(mouseMsg)
 	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if keyMsg.Type == tea.KeyEsc || keyMsg.String() == "q" {
-			m.showViewer = false
-			return m, nil
-		}
-		if keyMsg.String() == "f" || keyMsg.String() == "F" {
-			m.isFullScreenViewer = !m.isFullScreenViewer
-			m.updateViewportSize()
-			return m, nil
-		}
-		if m.isWaitingApproval {
-			switch strings.ToLower(keyMsg.String()) {
-			case "a", "enter":
-				m.showViewer = false
-				if m.approvalChan != nil {
-					close(m.approvalChan)
-					m.approvalChan = nil
-				}
-				m.isWaitingApproval = false
-				m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
-				return m, nil
-			case "e":
-				return m.launchFileEditor("01_domain_model_use_cases.md")
-			}
-		}
-		if m.Settings.VimMode {
-			switch keyMsg.String() {
-			case "j":
-				m.viewport.LineDown(1)
-				return m, nil
-			case "k":
-				m.viewport.LineUp(1)
-				return m, nil
-			case "d", "ctrl+d":
-				m.viewport.HalfPageDown()
-				return m, nil
-			case "u", "ctrl+u":
-				m.viewport.HalfPageUp()
-				return m, nil
-			}
-		}
+		return m.handleViewerKeyUpdate(keyMsg)
 	}
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+func (m DashboardModel) handleViewerMouseUpdate(mouseMsg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	if mouseMsg.Button == tea.MouseButtonWheelUp || mouseMsg.Button == tea.MouseButtonWheelDown {
+		m.viewport, cmd = m.viewport.Update(mouseMsg)
+		return m, cmd
+	}
+	if mouseMsg.Action == tea.MouseActionPress && mouseMsg.Button == tea.MouseButtonLeft {
+		rendered := stripANSI(m.View())
+		lines := strings.Split(rendered, "\n")
+		if mouseMsg.Y >= 0 && mouseMsg.Y < len(lines) {
+			return m.handleViewerLeftClick(lines[mouseMsg.Y])
+		}
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleViewerLeftClick(line string) (tea.Model, tea.Cmd) {
+	for i, file := range m.genFiles {
+		if strings.Contains(line, file) {
+			m.selectedFileIdx = i
+			return m.openFileViewer()
+		}
+	}
+	if strings.Contains(line, "Back") {
+		m.showViewer = false
+		return m, nil
+	}
+	if strings.Contains(line, "Toggle Layout") {
+		m.isFullScreenViewer = !m.isFullScreenViewer
+		m.updateViewportSize()
+		return m.openFileViewer()
+	}
+	if m.isWaitingApproval {
+		if strings.Contains(line, "Approve") {
+			m.showViewer = false
+			if m.approvalChan != nil {
+				close(m.approvalChan)
+				m.approvalChan = nil
+			}
+			m.isWaitingApproval = false
+			m.genStatus = domainModelApprovedMsg
+			return m, nil
+		}
+		if strings.Contains(line, "Edit") {
+			return m.launchFileEditor(domainModelFilename)
+		}
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleViewerKeyUpdate(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if keyMsg.Type == tea.KeyEsc || keyMsg.String() == "q" {
+		m.showViewer = false
+		return m, nil
+	}
+	if keyMsg.String() == "f" || keyMsg.String() == "F" {
+		m.isFullScreenViewer = !m.isFullScreenViewer
+		m.updateViewportSize()
+		return m, nil
+	}
+	if m.isWaitingApproval {
+		switch strings.ToLower(keyMsg.String()) {
+		case "a", "enter":
+			m.showViewer = false
+			if m.approvalChan != nil {
+				close(m.approvalChan)
+				m.approvalChan = nil
+			}
+			m.isWaitingApproval = false
+			m.genStatus = domainModelApprovedMsg
+			return m, nil
+		case "e":
+			return m.launchFileEditor(domainModelFilename)
+		}
+	}
+	if m.Settings.VimMode {
+		switch keyMsg.String() {
+		case "j":
+			m.viewport.LineDown(1)
+			return m, nil
+		case "k":
+			m.viewport.LineUp(1)
+			return m, nil
+		case "d", "ctrl+d":
+			m.viewport.HalfPageDown()
+			return m, nil
+		case "u", "ctrl+u":
+			m.viewport.HalfPageUp()
+			return m, nil
+		}
+	}
+	return m, nil
 }
 
 // updateViewportSize computes the width and height of the viewer viewport depending on layout mode.
@@ -565,22 +634,7 @@ func (m *DashboardModel) updateViewportSize() {
 // handleKeyMsg routes key presses to specific action handlers based on key type.
 func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.isWaitingApproval {
-		switch strings.ToLower(msg.String()) {
-		case "a", "enter":
-			if m.approvalChan != nil {
-				close(m.approvalChan)
-				m.approvalChan = nil
-			}
-			m.isWaitingApproval = false
-			m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
-			return m, nil
-		case "v":
-			m.selectedFileIdx = 0
-			return m.openFileViewer()
-		case "e":
-			return m.launchFileEditor("01_domain_model_use_cases.md")
-		}
-		return m, nil
+		return m.handleKeyMsgWaitingApproval(msg)
 	}
 
 	switch msg.Type {
@@ -594,16 +648,10 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyUp()
 	case tea.KeyDown:
 		return m.handleKeyDown()
-	case tea.KeyPgUp:
+	case tea.KeyPgUp, tea.KeyCtrlU:
 		m.chatViewport.HalfPageUp()
 		return m, nil
-	case tea.KeyPgDown:
-		m.chatViewport.HalfPageDown()
-		return m, nil
-	case tea.KeyCtrlU:
-		m.chatViewport.HalfPageUp()
-		return m, nil
-	case tea.KeyCtrlD:
+	case tea.KeyPgDown, tea.KeyCtrlD:
 		m.chatViewport.HalfPageDown()
 		return m, nil
 	case tea.KeyLeft:
@@ -618,6 +666,25 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyTab(true)
 	case tea.KeyRunes:
 		return m.handleKeyRunes(msg)
+	}
+	return m, nil
+}
+
+func (m DashboardModel) handleKeyMsgWaitingApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch strings.ToLower(msg.String()) {
+	case "a", "enter":
+		if m.approvalChan != nil {
+			close(m.approvalChan)
+			m.approvalChan = nil
+		}
+		m.isWaitingApproval = false
+		m.genStatus = domainModelApprovedMsg
+		return m, nil
+	case "v":
+		m.selectedFileIdx = 0
+		return m.openFileViewer()
+	case "e":
+		return m.launchFileEditor(domainModelFilename)
 	}
 	return m, nil
 }
@@ -902,8 +969,12 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 	}
 	m.approvalChan = make(chan struct{})
 	m.isWaitingApproval = false
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelGen = cancel
+
 	return m, tea.Batch(
-		m.generateSpecsCmd(),
+		m.generateSpecsCmd(ctx),
 		m.recvGenProgressCmd(),
 	)
 }
@@ -953,7 +1024,7 @@ func (m DashboardModel) getFileGridPositions() (int, [][]int) {
 	sourceIdx := -1
 	var downstream []int
 	for idx, file := range m.genFiles {
-		if file == "01_domain_model_use_cases.md" {
+		if file == domainModelFilename {
 			sourceIdx = idx
 		} else {
 			downstream = append(downstream, idx)
@@ -1177,7 +1248,11 @@ func (m DashboardModel) checkAndTriggerPostOracle(wasCompleted bool) (tea.Model,
 		}
 		m.approvalChan = make(chan struct{})
 		m.isWaitingApproval = false
-		batchCmds = append(batchCmds, m.generateSpecsCmd(), m.recvGenProgressCmd())
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelGen = cancel
+
+		batchCmds = append(batchCmds, m.generateSpecsCmd(ctx), m.recvGenProgressCmd())
 	} else if !m.isCompleted {
 		m.loading = true
 		batchCmds = append(batchCmds, m.pruneContextCmd())
@@ -1281,7 +1356,11 @@ func (m *DashboardModel) handleGenProgressLogs(ev generator.ProgressEvent) {
 func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cmd) {
 	m.isGenerating = false
 	if msg.err != nil {
-		m.setError(msg.err)
+		if msg.err == context.Canceled || strings.Contains(msg.err.Error(), "context canceled") {
+			m.genStatus = "Specification generation cancelled."
+		} else {
+			m.setError(msg.err)
+		}
 	} else {
 		m.genStatus = "All specifications synthesized successfully!"
 		m.Session.Save()
@@ -1408,9 +1487,8 @@ func (m DashboardModel) recvGenProgressCmd() tea.Cmd {
 
 // Background command to run generation sequentially
 // generateSpecsCmd synthesizes all targets in parallel inside background worker goroutines.
-func (m DashboardModel) generateSpecsCmd() tea.Cmd {
+func (m DashboardModel) generateSpecsCmd(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
 		if m.approvalChan != nil {
 			ctx = context.WithValue(ctx, generator.ApprovalChanKey, m.approvalChan)
 		}

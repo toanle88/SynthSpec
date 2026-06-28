@@ -44,28 +44,41 @@ var rootCmd = &cobra.Command{
 		logger.Close()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		m := tui.NewWelcomeModel()
-		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
-		resModel, err := p.Run()
-		if err != nil {
-			return fmt.Errorf("welcome menu execution failed: %w", err)
-		}
-
-		welcomeModel := resModel.(tui.WelcomeModel)
-		switch welcomeModel.Action {
-		case tui.ActionCreate:
-			if welcomeModel.SelectedBlueprint != "" {
-				_ = initCmd.Flags().Set("blueprint", welcomeModel.SelectedBlueprint)
+		for {
+			m := tui.NewWelcomeModel()
+			p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+			resModel, err := p.Run()
+			if err != nil {
+				return fmt.Errorf("welcome menu execution failed: %w", err)
 			}
-			return initCmd.RunE(initCmd, []string{welcomeModel.ProjectName})
-		case tui.ActionResume:
-			return resumeCmd.RunE(resumeCmd, []string{welcomeModel.ProjectName})
-		case tui.ActionExport:
-			return exportCmd.RunE(exportCmd, []string{welcomeModel.ProjectName})
-		case tui.ActionExit:
-			return nil
+
+			welcomeModel := resModel.(tui.WelcomeModel)
+			switch welcomeModel.Action {
+			case tui.ActionCreate:
+				if welcomeModel.SelectedBlueprint != "" {
+					_ = initCmd.Flags().Set("blueprint", welcomeModel.SelectedBlueprint)
+				}
+				err = initCmd.RunE(initCmd, []string{welcomeModel.ProjectName})
+				_ = initCmd.Flags().Set("blueprint", "") // clear blueprint flag
+				if err != nil {
+					return err
+				}
+			case tui.ActionResume:
+				err = resumeCmd.RunE(resumeCmd, []string{welcomeModel.ProjectName})
+				if err != nil {
+					return err
+				}
+			case tui.ActionExport:
+				err = exportCmd.RunE(exportCmd, []string{welcomeModel.ProjectName})
+				if err != nil {
+					return err
+				}
+			case tui.ActionExit:
+				return nil
+			default:
+				return nil
+			}
 		}
-		return nil
 	},
 }
 
