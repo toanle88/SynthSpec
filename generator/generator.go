@@ -240,7 +240,7 @@ func findSourceTemplate(templates []config.Template) (int, error) {
 
 func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, standards []config.Standard) (FileCompliance, string, error) {
 	sendProgress(fg.progress, ProgressEvent{
-		Status:  "started",
+		Status:  "synthesizing",
 		Phase:   "source",
 		File:    sourceTemplate.FileName,
 		Message: fmt.Sprintf("Generating source document %s...", sourceTemplate.FileName),
@@ -276,6 +276,12 @@ func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, 
 				return FileCompliance{}, "", fmt.Errorf("failed to re-read source model document %s: %w", sourceTemplate.FileName, err)
 			}
 			sourceDoc = strings.TrimSpace(string(sourceDocBytes))
+			sendProgress(fg.progress, ProgressEvent{
+				File:    sourceTemplate.FileName,
+				Status:  "done",
+				Details: "completed successfully",
+				Message: fmt.Sprintf("Source document %s approved and locked", sourceTemplate.FileName),
+			})
 		case <-fg.ctx.Done():
 			return FileCompliance{}, "", fg.ctx.Err()
 		}

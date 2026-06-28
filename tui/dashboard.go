@@ -161,6 +161,11 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 
 	showTextInput := len(sess.LastChoices) == 0
 
+	resolvedOutputDir := outputDir
+	if resolvedOutputDir == "" {
+		resolvedOutputDir = filepath.Join(state.GetSessionDir(sess.ProjectName), "output")
+	}
+
 	templates, _ := config.LoadTemplates()
 	var genFiles []string
 	for _, t := range templates {
@@ -169,7 +174,12 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 	genFileStatuses := make(map[string]string)
 	genFileDetails := make(map[string]string)
 	for _, f := range genFiles {
-		genFileStatuses[f] = "pending"
+		filePath := filepath.Join(resolvedOutputDir, f)
+		if _, err := os.Stat(filePath); err == nil {
+			genFileStatuses[f] = "done"
+		} else {
+			genFileStatuses[f] = "pending"
+		}
 	}
 
 	ui := textinput.New()
@@ -408,17 +418,13 @@ func (m DashboardModel) handleUpdateTypingTickMsg() (tea.Model, tea.Cmd) {
 
 func (m DashboardModel) handleUpdateMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Button == tea.MouseButtonWheelUp {
-		if m.isCompleted || m.isGenerating {
-			m.selectedFileIdx = maxInt(0, m.selectedFileIdx-1)
-		} else if !m.loading {
+		if !m.loading {
 			m.chatViewport.LineUp(3)
 		}
 		return m, nil
 	}
 	if msg.Button == tea.MouseButtonWheelDown {
-		if m.isCompleted || m.isGenerating {
-			m.selectedFileIdx = minInt(len(m.genFiles)-1, m.selectedFileIdx+1)
-		} else if !m.loading {
+		if !m.loading {
 			m.chatViewport.LineDown(3)
 		}
 		return m, nil
@@ -499,6 +505,7 @@ func (m DashboardModel) handleMouseLeftClickWaitingApproval(line string) (tea.Mo
 			m.approvalChan = nil
 		}
 		m.isWaitingApproval = false
+		m.genFileStatuses[domainModelFilename] = "done"
 		m.genStatus = domainModelApprovedMsg
 		return m, nil
 	}
@@ -576,6 +583,7 @@ func (m DashboardModel) handleViewerLeftClick(line string) (tea.Model, tea.Cmd) 
 				m.approvalChan = nil
 			}
 			m.isWaitingApproval = false
+			m.genFileStatuses[domainModelFilename] = "done"
 			m.genStatus = domainModelApprovedMsg
 			return m, nil
 		}
@@ -605,6 +613,7 @@ func (m DashboardModel) handleViewerKeyUpdate(keyMsg tea.KeyMsg) (tea.Model, tea
 				m.approvalChan = nil
 			}
 			m.isWaitingApproval = false
+			m.genFileStatuses[domainModelFilename] = "done"
 			m.genStatus = domainModelApprovedMsg
 			return m, nil
 		case "e":
@@ -692,6 +701,7 @@ func (m DashboardModel) handleKeyMsgWaitingApproval(msg tea.KeyMsg) (tea.Model, 
 			m.approvalChan = nil
 		}
 		m.isWaitingApproval = false
+		m.genFileStatuses[domainModelFilename] = "done"
 		m.genStatus = domainModelApprovedMsg
 		return m, nil
 	case "v":

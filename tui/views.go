@@ -252,12 +252,6 @@ func (m DashboardModel) renderMainChat() string {
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Enter to submit, Esc to cancel)"))
 		return strings.Join(content, "\n")
 	}
-	if m.isGenerating {
-		return m.renderGeneratingState()
-	}
-	if m.isCompleted {
-		return m.renderCompletedState()
-	}
 	return m.chatViewport.View()
 }
 
@@ -767,5 +761,12 @@ func (m *DashboardModel) updateChatViewport() {
 
 	m.chatViewport.Width = chatWidth - 4
 	m.chatViewport.Height = bodyHeight - 2
-	m.chatViewport.SetContent(m.renderInterrogationState())
+
+	if m.isGenerating {
+		m.chatViewport.SetContent(m.renderGeneratingState())
+	} else if m.isCompleted {
+		m.chatViewport.SetContent(m.renderCompletedState())
+	} else {
+		m.chatViewport.SetContent(m.renderInterrogationState())
+	}
 }
