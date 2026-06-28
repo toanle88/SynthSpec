@@ -60,6 +60,8 @@ var rootCmd = &cobra.Command{
 			return initCmd.RunE(initCmd, []string{welcomeModel.ProjectName})
 		case tui.ActionResume:
 			return resumeCmd.RunE(resumeCmd, []string{welcomeModel.ProjectName})
+		case tui.ActionExport:
+			return exportCmd.RunE(exportCmd, []string{welcomeModel.ProjectName})
 		case tui.ActionExit:
 			return nil
 		}

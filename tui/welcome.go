@@ -23,6 +23,7 @@ const (
 	PhaseSettings
 	PhaseViewAssets
 	PhaseAuditWorkspace
+	PhaseExportSelect
 )
 
 type WelcomeAction int
@@ -31,6 +32,7 @@ const (
 	ActionNone WelcomeAction = iota
 	ActionCreate
 	ActionResume
+	ActionExport
 	ActionExit
 )
 
@@ -129,7 +131,7 @@ func NewWelcomeModel() WelcomeModel {
 	return WelcomeModel{
 		Phase:          PhaseMenu,
 		Action:         ActionNone,
-		Options:        []string{"Create New Project", "Resume Existing Project", "View Assets", "Audit Workspace", "Settings", "Exit"},
+		Options:        []string{"Create New Project", "Resume Existing Project", "Export to Static HTML", "View Assets", "Audit Workspace", "Settings", "Exit"},
 		SelectedOption: 0,
 		textInput:      ti,
 		filterInput:    fi,
@@ -173,6 +175,8 @@ func (m WelcomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateBlueprintSelect(msg)
 	case PhaseResumeSelect:
 		return m.updateResumeSelect(msg)
+	case PhaseExportSelect:
+		return m.updateExportSelect(msg)
 	case PhaseStatusAlert:
 		m.Phase = PhaseMenu
 		return m, nil
@@ -302,6 +306,44 @@ func (m WelcomeModel) updateResumeSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m WelcomeModel) updateExportSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg.String() {
+	case "up", keyCtrlP:
+		m.SelectedProject = maxInt(0, m.SelectedProject-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.SelectedProject = maxInt(0, m.SelectedProject-1)
+		}
+	case "down", keyCtrlN:
+		m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+	case "j":
+		if m.Settings.VimMode {
+			m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+		}
+	case "tab":
+		if len(m.FilteredProjects) > 0 {
+			m.SelectedProject = (m.SelectedProject + 1) % len(m.FilteredProjects)
+		}
+	case keyShiftTab:
+		if len(m.FilteredProjects) > 0 {
+			m.SelectedProject = (m.SelectedProject - 1 + len(m.FilteredProjects)) % len(m.FilteredProjects)
+		}
+	case "enter":
+		if len(m.FilteredProjects) > 0 && m.SelectedProject >= 0 && m.SelectedProject < len(m.FilteredProjects) {
+			m.ProjectName = m.FilteredProjects[m.SelectedProject]
+			m.Action = ActionExport
+			return m, tea.Quit
+		}
+	case "esc":
+		m.Phase = PhaseMenu
+	default:
+		m.filterInput, cmd = m.filterInput.Update(msg)
+		m.runFuzzyFiltering()
+	}
+	return m, cmd
+}
+
 func (m *WelcomeModel) runFuzzyFiltering() {
 	var filtered []string
 	for _, proj := range m.Projects {
@@ -416,11 +458,31 @@ func (m *WelcomeModel) handleMenuSelection() {
 		m.filterInput.Focus()
 		m.Phase = PhaseResumeSelect
 	case 2:
-		m.Phase = PhaseViewAssets
+		projects, err := state.ListProjects()
+		if err != nil {
+			m.alertTitle = "Error Scanning Projects"
+			m.alertMessage = fmt.Sprintf("Failed to list existing projects: %v", err)
+			m.Phase = PhaseStatusAlert
+			return
+		}
+		if len(projects) == 0 {
+			m.alertTitle = "No Saved Projects"
+			m.alertMessage = "No active SynthSpec projects were found to export.\nChoose 'Create New Project' to get started."
+			m.Phase = PhaseStatusAlert
+			return
+		}
+		m.Projects = projects
+		m.FilteredProjects = projects
+		m.SelectedProject = 0
+		m.filterInput.SetValue("")
+		m.filterInput.Focus()
+		m.Phase = PhaseExportSelect
 	case 3:
+		m.Phase = PhaseViewAssets
+	case 4:
 		m.Phase = PhaseThemeToggle() // Or keep PhaseAuditWorkspace as planned
 		m.Phase = PhaseAuditWorkspace
-	case 4:
+	case 5:
 		m.settingInputs[0].SetValue(fmt.Sprintf("%d", m.Settings.TimeoutSeconds))
 		m.settingInputs[1].SetValue(fmt.Sprintf("%d", m.Settings.MaxRetries))
 		m.settingInputs[2].SetValue(m.Settings.DefaultOutputFolder)
@@ -429,7 +491,7 @@ func (m *WelcomeModel) handleMenuSelection() {
 		m.settingInputs[1].Blur()
 		m.settingInputs[2].Blur()
 		m.Phase = PhaseSettings
-	case 5:
+	case 6:
 		m.Action = ActionExit
 		m.Phase = PhaseStatusAlert
 	}
@@ -468,6 +530,8 @@ func (m WelcomeModel) View() string {
 		content = m.viewBlueprintSelect()
 	case PhaseResumeSelect:
 		content = m.viewResumeSelect()
+	case PhaseExportSelect:
+		content = m.viewExportSelect()
 	case PhaseStatusAlert:
 		content = m.viewStatusAlert()
 	case PhaseSettings:
@@ -563,6 +627,30 @@ func (m WelcomeModel) viewResumeSelect() string {
 	}
 	
 	lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to resume project, Esc to return to menu"))
+	return strings.Join(lines, "\n")
+}
+
+func (m WelcomeModel) viewExportSelect() string {
+	var lines []string
+	lines = append(lines, "", TitleStyle.Render("📂 Select Project to Export to HTML"), "")
+	lines = append(lines, fmt.Sprintf("Search: %s", m.filterInput.View()), "")
+	
+	if len(m.FilteredProjects) == 0 {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(ColorMuted).Render("No matching projects found."), "")
+	} else {
+		for i, proj := range m.FilteredProjects {
+			indicator := " "
+			style := lipgloss.NewStyle().Foreground(ColorText)
+			if i == m.SelectedProject {
+				indicator = "➔"
+				style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+			}
+			lines = append(lines, fmt.Sprintf(selectionFormat, indicator, style.Render(proj)))
+		}
+		lines = append(lines, "")
+	}
+	
+	lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to export project, Esc to return to menu"))
 	return strings.Join(lines, "\n")
 }
 
