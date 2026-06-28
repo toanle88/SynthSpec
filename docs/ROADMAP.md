@@ -43,7 +43,7 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] Implement an integrated split-pane or full-screen markdown viewer with ANSI syntax highlighting.
 - [x] **Vim & Accessibility Keybindings**: Add a configuration toggle for Vim-style (hjkl) navigation and ensure TUI interactions support standard accessible key maps.
 - [x] **Streaming Token Visualization**: Upgrade the static TUI spinner to a "Streaming Thought Box" that exposes raw reasoning tokens in a dimmed secondary panel to confirm responsiveness during long queries.
-- [ ] **The "I Don't Know" Fallback**: Map a hotkey (e.g., `Ctrl+K`) allowing users to request AI recommendations for highly specific compliance or architecture questions during the interrogation loop.
+- [x] **The "I Don't Know" Fallback**: Map a hotkey (e.g., `Ctrl+K`) allowing users to request AI recommendations for highly specific compliance or architecture questions during the interrogation loop.
 - [ ] **The Domain Approval Gate**: Enforce a hard pause after generating `01_domain_model_use_cases.md`, presenting it in the viewer for explicit user sign-off (and editing) before unlocking the parallel generation of downstream documents.
 - [ ] **Static Site Generator (SSG) Export**: Add a compilation pipeline to build the generated Markdown workspace into a standalone, searchable static HTML site (e.g., via Docusaurus or MkDocs templates) for presentation to non-technical stakeholders.
 - [ ] Extend HTTP client timeouts and implement robust retry/error handling to resolve `context deadline exceeded` errors.

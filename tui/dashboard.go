@@ -339,6 +339,10 @@ func (m *DashboardModel) updateViewportSize() {
 // handleKeyMsg routes key presses to specific action handlers based on key type.
 func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
+	case tea.KeyCtrlK:
+		if !m.isCompleted && !m.loading && !m.isGenerating && !m.showUpdatePrompt {
+			return m.startOracleQuery("I do not know the answer. Please recommend the best compliance/architectural choice based on industry standards.")
+		}
 	case tea.KeyEnter:
 		return m.handleKeyEnter()
 	case tea.KeyUp, tea.KeyPgUp:

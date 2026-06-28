@@ -325,9 +325,9 @@ func (m DashboardModel) renderFooter() string {
 	} else if m.isCompleted {
 		keys = append(keys, "v/Enter: View file", "g: Regenerate", "u: Modify", "e: Editor")
 	} else if m.showTextInput {
-		keys = append(keys, "Enter: Send", ":edit: Open full editor", "Esc: Cancel")
+		keys = append(keys, "Enter: Send", "Ctrl+K: I Don't Know", ":edit: Open full editor", "Esc: Cancel")
 	} else {
-		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "g: Regenerate", "u: Modify", "e: Editor")
+		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "Ctrl+K: I Don't Know", "g: Regenerate", "u: Modify", "e: Editor")
 	}
 	elements = append(elements, strings.Join(keys, "  |  "))
 
