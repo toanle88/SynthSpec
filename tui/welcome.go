@@ -42,8 +42,10 @@ type WelcomeModel struct {
 	Options        []string
 
 	// Project Resume Selection
-	Projects        []string
-	SelectedProject int
+	Projects         []string
+	FilteredProjects []string
+	SelectedProject  int
+	filterInput      textinput.Model
 
 	// TextInput for name
 	textInput textinput.Model
@@ -73,6 +75,11 @@ func NewWelcomeModel() WelcomeModel {
 	ti.Focus()
 	ti.CharLimit = 64
 	ti.Width = 30
+
+	fi := textinput.New()
+	fi.Placeholder = "Type to search..."
+	fi.CharLimit = 64
+	fi.Width = 30
 
 	blueprints, _ := config.LoadBlueprints()
 	settings, _ := config.LoadSettings()
@@ -105,6 +112,7 @@ func NewWelcomeModel() WelcomeModel {
 		Options:        []string{"Create New Project", "Resume Existing Project", "View Assets", "Audit Workspace", "Settings", "Exit"},
 		SelectedOption: 0,
 		textInput:      ti,
+		filterInput:    fi,
 		Blueprints:     blueprints,
 		Settings:       settings,
 		settingInputs:  []textinput.Model{tInput, rInput, oInput},
@@ -221,25 +229,49 @@ func (m WelcomeModel) updateBlueprintSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 }
 
 func (m WelcomeModel) updateResumeSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg.String() {
-	case "up", "k":
+	case "up", "k", "ctrl+p":
 		if m.SelectedProject > 0 {
 			m.SelectedProject--
 		}
-	case "down", "j":
-		if m.SelectedProject < len(m.Projects)-1 {
+	case "down", "j", "ctrl+n":
+		if m.SelectedProject < len(m.FilteredProjects)-1 {
 			m.SelectedProject++
 		}
 	case "enter":
-		if len(m.Projects) > 0 && m.SelectedProject >= 0 && m.SelectedProject < len(m.Projects) {
-			m.ProjectName = m.Projects[m.SelectedProject]
+		if len(m.FilteredProjects) > 0 && m.SelectedProject >= 0 && m.SelectedProject < len(m.FilteredProjects) {
+			m.ProjectName = m.FilteredProjects[m.SelectedProject]
 			m.Action = ActionResume
 			return m, tea.Quit
 		}
-	case "esc", "q":
+	case "esc":
 		m.Phase = PhaseMenu
+	default:
+		m.filterInput, cmd = m.filterInput.Update(msg)
+		
+		// Re-run fuzzy filtering on all projects
+		var filtered []string
+		for _, proj := range m.Projects {
+			if fuzzyMatch(proj, m.filterInput.Value()) {
+				filtered = append(filtered, proj)
+			}
+		}
+		m.FilteredProjects = filtered
+		
+		// Clamp SelectedProject index
+		if m.SelectedProject >= len(m.FilteredProjects) {
+			if len(m.FilteredProjects) > 0 {
+				m.SelectedProject = len(m.FilteredProjects) - 1
+			} else {
+				m.SelectedProject = 0
+			}
+		}
+		if m.SelectedProject < 0 {
+			m.SelectedProject = 0
+		}
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m WelcomeModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -326,7 +358,10 @@ func (m *WelcomeModel) handleMenuSelection() {
 			return
 		}
 		m.Projects = projects
+		m.FilteredProjects = projects
 		m.SelectedProject = 0
+		m.filterInput.SetValue("")
+		m.filterInput.Focus()
 		m.Phase = PhaseResumeSelect
 	case 2:
 		m.Phase = PhaseViewAssets
@@ -458,16 +493,24 @@ func (m WelcomeModel) viewBlueprintSelect() string {
 func (m WelcomeModel) viewResumeSelect() string {
 	var lines []string
 	lines = append(lines, "", TitleStyle.Render("📂 Select Project to Resume"), "")
-	for i, proj := range m.Projects {
-		indicator := " "
-		style := lipgloss.NewStyle().Foreground(ColorText)
-		if i == m.SelectedProject {
-			indicator = "➔"
-			style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	lines = append(lines, fmt.Sprintf("Search: %s", m.filterInput.View()), "")
+	
+	if len(m.FilteredProjects) == 0 {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(ColorMuted).Render("No matching projects found."), "")
+	} else {
+		for i, proj := range m.FilteredProjects {
+			indicator := " "
+			style := lipgloss.NewStyle().Foreground(ColorText)
+			if i == m.SelectedProject {
+				indicator = "➔"
+				style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+			}
+			lines = append(lines, fmt.Sprintf(selectionFormat, indicator, style.Render(proj)))
 		}
-		lines = append(lines, fmt.Sprintf(selectionFormat, indicator, style.Render(proj)))
+		lines = append(lines, "")
 	}
-	lines = append(lines, "", lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to resume project, Esc to return to menu"))
+	
+	lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to resume project, Esc to return to menu"))
 	return strings.Join(lines, "\n")
 }
 
@@ -524,4 +567,30 @@ func (m WelcomeModel) viewAuditWorkspace() string {
 	lines = append(lines, "This compliance enforcement engine is planned for later Milestone 11.", "")
 	lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Esc or q to return to the main menu."))
 	return strings.Join(lines, "\n")
+}
+
+func fuzzyMatch(s, query string) bool {
+	s = strings.ToLower(s)
+	query = strings.ToLower(query)
+	if query == "" {
+		return true
+	}
+	sRunes := []rune(s)
+	qRunes := []rune(query)
+	sIdx := 0
+	for _, qRune := range qRunes {
+		found := false
+		for sIdx < len(sRunes) {
+			if sRunes[sIdx] == qRune {
+				found = true
+				sIdx++
+				break
+			}
+			sIdx++
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
