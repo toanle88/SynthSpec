@@ -817,7 +817,14 @@ func (m DashboardModel) handleKeyEnterChoiceSelection() (tea.Model, tea.Cmd) {
 
 // openFileViewer opens the full screen Markdown document viewer viewport overlay.
 func (m DashboardModel) openFileViewer() (tea.Model, tea.Cmd) {
-	selectedFile := m.genFiles[m.selectedFileIdx]
+	var selectedFile string
+	if m.isWaitingApproval {
+		selectedFile = domainModelFilename
+	} else if len(m.genFiles) > 0 && m.selectedFileIdx >= 0 && m.selectedFileIdx < len(m.genFiles) {
+		selectedFile = m.genFiles[m.selectedFileIdx]
+	} else {
+		selectedFile = domainModelFilename
+	}
 	dir := m.OutputDir
 	if dir == "" {
 		dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
