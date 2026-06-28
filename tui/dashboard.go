@@ -47,6 +47,7 @@ type DashboardModel struct {
 	Session   *state.Session
 	Gateway   gateway.Gateway
 	OutputDir string
+	Settings  *config.Settings
 
 	textInput textinput.Model
 	spinner   spinner.Model
@@ -150,10 +151,22 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 	ui.CharLimit = 2000
 	ui.Width = 60
 
+	settings, _ := config.LoadSettings()
+	if settings == nil {
+		settings = &config.Settings{
+			TimeoutSeconds:      config.DefaultTimeoutSeconds,
+			MaxRetries:          config.DefaultMaxRetries,
+			DefaultOutputFolder: config.DefaultOutputFolderValue,
+			Debug:               false,
+			VimMode:             false,
+		}
+	}
+
 	return DashboardModel{
 		Session:           sess,
 		Gateway:           gw,
 		OutputDir:         outputDir,
+		Settings:          settings,
 		textInput:         ti,
 		updateInput:       ui,
 		spinner:           s,
@@ -274,6 +287,22 @@ func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateViewportSize()
 			return m, nil
 		}
+		if m.Settings.VimMode {
+			switch keyMsg.String() {
+			case "j":
+				m.viewport.LineDown(1)
+				return m, nil
+			case "k":
+				m.viewport.LineUp(1)
+				return m, nil
+			case "d", "ctrl+d":
+				m.viewport.HalfPageDown()
+				return m, nil
+			case "u", "ctrl+u":
+				m.viewport.HalfPageUp()
+				return m, nil
+			}
+		}
 	}
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
@@ -309,10 +338,49 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKeyRight()
 	case tea.KeyEsc:
 		return m.handleKeyEsc()
+	case tea.KeyTab:
+		return m.handleKeyTab(false)
+	case tea.KeyShiftTab:
+		return m.handleKeyTab(true)
 	case tea.KeyRunes:
 		return m.handleKeyRunes(msg)
 	}
 	return m, nil
+}
+
+// handleKeyTab cycles focus or selection in incomplete and completed phases.
+func (m DashboardModel) handleKeyTab(shift bool) (tea.Model, tea.Cmd) {
+	if m.showUpdatePrompt {
+		return m, nil
+	}
+	if m.isCompleted {
+		if shift {
+			return m.navigateFilesUp()
+		}
+		return m.navigateFilesDown()
+	}
+	if !m.showTextInput {
+		m.cycleChoice(shift)
+	}
+	return m, nil
+}
+
+func (m *DashboardModel) cycleChoice(shift bool) {
+	choices := m.getChoicesList()
+	if len(choices) == 0 {
+		return
+	}
+	if shift {
+		m.selectedChoiceIdx--
+		if m.selectedChoiceIdx < 0 {
+			m.selectedChoiceIdx = len(choices) - 1
+		}
+	} else {
+		m.selectedChoiceIdx++
+		if m.selectedChoiceIdx >= len(choices) {
+			m.selectedChoiceIdx = 0
+		}
+	}
 }
 
 // handleKeyEnter processes Enter key presses, submitting inputs, selecting options, or launching full editors.
@@ -531,13 +599,21 @@ func (m DashboardModel) handleKeyRunesCompleted(msg tea.KeyMsg) (tea.Model, tea.
 			return m.openFileViewer()
 		}
 	case "k":
-		return m.navigateFilesUp()
+		if m.Settings.VimMode {
+			return m.navigateFilesUp()
+		}
 	case "j":
-		return m.navigateFilesDown()
+		if m.Settings.VimMode {
+			return m.navigateFilesDown()
+		}
 	case "h":
-		return m.navigateFilesLeft()
+		if m.Settings.VimMode {
+			return m.navigateFilesLeft()
+		}
 	case "l":
-		return m.navigateFilesRight()
+		if m.Settings.VimMode {
+			return m.navigateFilesRight()
+		}
 	case "q":
 		return m, tea.Quit
 	}
@@ -748,16 +824,20 @@ func (m DashboardModel) handleKeyRunesIncomplete(msg tea.KeyMsg) (tea.Model, tea
 	case "q":
 		return m, tea.Quit
 	case "k":
-		choices := m.getChoicesList()
-		m.selectedChoiceIdx--
-		if m.selectedChoiceIdx < 0 {
-			m.selectedChoiceIdx = len(choices) - 1
+		if m.Settings.VimMode {
+			choices := m.getChoicesList()
+			m.selectedChoiceIdx--
+			if m.selectedChoiceIdx < 0 {
+				m.selectedChoiceIdx = len(choices) - 1
+			}
 		}
 	case "j":
-		choices := m.getChoicesList()
-		m.selectedChoiceIdx++
-		if m.selectedChoiceIdx >= len(choices) {
-			m.selectedChoiceIdx = 0
+		if m.Settings.VimMode {
+			choices := m.getChoicesList()
+			m.selectedChoiceIdx++
+			if m.selectedChoiceIdx >= len(choices) {
+				m.selectedChoiceIdx = 0
+			}
 		}
 	}
 	return m, nil

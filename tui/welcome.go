@@ -34,6 +34,26 @@ const (
 	ActionExit
 )
 
+const (
+	keyCtrlP    = "ctrl+p"
+	keyCtrlN    = "ctrl+n"
+	keyShiftTab = "shift+tab"
+)
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 type WelcomeModel struct {
 	Phase          WelcomePhase
 	Action         WelcomeAction
@@ -168,14 +188,22 @@ func (m WelcomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m WelcomeModel) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "k":
-		if m.SelectedOption > 0 {
-			m.SelectedOption--
+	case "up", keyCtrlP:
+		m.SelectedOption = maxInt(0, m.SelectedOption-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.SelectedOption = maxInt(0, m.SelectedOption-1)
 		}
-	case "down", "j":
-		if m.SelectedOption < len(m.Options)-1 {
-			m.SelectedOption++
+	case "down", keyCtrlN:
+		m.SelectedOption = minInt(len(m.Options)-1, m.SelectedOption+1)
+	case "j":
+		if m.Settings.VimMode {
+			m.SelectedOption = minInt(len(m.Options)-1, m.SelectedOption+1)
 		}
+	case "tab":
+		m.SelectedOption = (m.SelectedOption + 1) % len(m.Options)
+	case keyShiftTab:
+		m.SelectedOption = (m.SelectedOption - 1 + len(m.Options)) % len(m.Options)
 	case "enter":
 		m.handleMenuSelection()
 	case "q", "esc":
@@ -206,14 +234,22 @@ func (m WelcomeModel) updateCreateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m WelcomeModel) updateBlueprintSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "k":
-		if m.SelectedBPIdx > 0 {
-			m.SelectedBPIdx--
+	case "up", keyCtrlP:
+		m.SelectedBPIdx = maxInt(0, m.SelectedBPIdx-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.SelectedBPIdx = maxInt(0, m.SelectedBPIdx-1)
 		}
-	case "down", "j":
-		if m.SelectedBPIdx < len(m.Blueprints) {
-			m.SelectedBPIdx++
+	case "down", keyCtrlN:
+		m.SelectedBPIdx = minInt(len(m.Blueprints), m.SelectedBPIdx+1)
+	case "j":
+		if m.Settings.VimMode {
+			m.SelectedBPIdx = minInt(len(m.Blueprints), m.SelectedBPIdx+1)
 		}
+	case "tab":
+		m.SelectedBPIdx = (m.SelectedBPIdx + 1) % (len(m.Blueprints) + 1)
+	case keyShiftTab:
+		m.SelectedBPIdx = (m.SelectedBPIdx - 1 + len(m.Blueprints) + 1) % (len(m.Blueprints) + 1)
 	case "enter":
 		if m.SelectedBPIdx == 0 {
 			m.SelectedBlueprint = ""
@@ -231,13 +267,25 @@ func (m WelcomeModel) updateBlueprintSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 func (m WelcomeModel) updateResumeSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg.String() {
-	case "up", "k", "ctrl+p":
-		if m.SelectedProject > 0 {
-			m.SelectedProject--
+	case "up", keyCtrlP:
+		m.SelectedProject = maxInt(0, m.SelectedProject-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.SelectedProject = maxInt(0, m.SelectedProject-1)
 		}
-	case "down", "j", "ctrl+n":
-		if m.SelectedProject < len(m.FilteredProjects)-1 {
-			m.SelectedProject++
+	case "down", keyCtrlN:
+		m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+	case "j":
+		if m.Settings.VimMode {
+			m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+		}
+	case "tab":
+		if len(m.FilteredProjects) > 0 {
+			m.SelectedProject = (m.SelectedProject + 1) % len(m.FilteredProjects)
+		}
+	case keyShiftTab:
+		if len(m.FilteredProjects) > 0 {
+			m.SelectedProject = (m.SelectedProject - 1 + len(m.FilteredProjects)) % len(m.FilteredProjects)
 		}
 	case "enter":
 		if len(m.FilteredProjects) > 0 && m.SelectedProject >= 0 && m.SelectedProject < len(m.FilteredProjects) {
@@ -249,85 +297,89 @@ func (m WelcomeModel) updateResumeSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Phase = PhaseMenu
 	default:
 		m.filterInput, cmd = m.filterInput.Update(msg)
-		
-		// Re-run fuzzy filtering on all projects
-		var filtered []string
-		for _, proj := range m.Projects {
-			if fuzzyMatch(proj, m.filterInput.Value()) {
-				filtered = append(filtered, proj)
-			}
-		}
-		m.FilteredProjects = filtered
-		
-		// Clamp SelectedProject index
-		if m.SelectedProject >= len(m.FilteredProjects) {
-			if len(m.FilteredProjects) > 0 {
-				m.SelectedProject = len(m.FilteredProjects) - 1
-			} else {
-				m.SelectedProject = 0
-			}
-		}
-		if m.SelectedProject < 0 {
-			m.SelectedProject = 0
-		}
+		m.runFuzzyFiltering()
 	}
 	return m, cmd
+}
+
+func (m *WelcomeModel) runFuzzyFiltering() {
+	var filtered []string
+	for _, proj := range m.Projects {
+		if fuzzyMatch(proj, m.filterInput.Value()) {
+			filtered = append(filtered, proj)
+		}
+	}
+	m.FilteredProjects = filtered
+
+	if len(m.FilteredProjects) > 0 {
+		m.SelectedProject = minInt(len(m.FilteredProjects)-1, maxInt(0, m.SelectedProject))
+	} else {
+		m.SelectedProject = 0
+	}
+}
+
+func (m *WelcomeModel) adjustSettingFocus(delta int) {
+	if m.SelectedSettingIdx < len(m.settingInputs) {
+		m.settingInputs[m.SelectedSettingIdx].Blur()
+	}
+
+	totalSettings := len(m.settingInputs) + 2
+	m.SelectedSettingIdx = (m.SelectedSettingIdx + delta + totalSettings) % totalSettings
+
+	if m.SelectedSettingIdx < len(m.settingInputs) {
+		m.settingInputs[m.SelectedSettingIdx].Focus()
+	}
+}
+
+func (m *WelcomeModel) saveSettingsFromInputs() {
+	var tSec, mRet int
+	_, _ = fmt.Sscanf(m.settingInputs[0].Value(), "%d", &tSec)
+	_, _ = fmt.Sscanf(m.settingInputs[1].Value(), "%d", &mRet)
+	outFolder := strings.TrimSpace(m.settingInputs[2].Value())
+
+	if tSec > 0 {
+		m.Settings.TimeoutSeconds = tSec
+	}
+	if mRet >= 0 {
+		m.Settings.MaxRetries = mRet
+	}
+	if outFolder != "" {
+		m.Settings.DefaultOutputFolder = outFolder
+	}
+
+	_ = config.SaveSettings(m.Settings, true)
+	_ = config.SaveSettings(m.Settings, false)
+
+	logger.LogEvent("TUI", fmt.Sprintf("Saved settings: timeout_seconds=%d max_retries=%d default_output_folder=%s debug=%t vim_mode=%t", m.Settings.TimeoutSeconds, m.Settings.MaxRetries, m.Settings.DefaultOutputFolder, m.Settings.Debug, m.Settings.VimMode))
+	_ = logger.Init(false, m.Settings.Debug)
+	m.Phase = PhaseMenu
 }
 
 func (m WelcomeModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg.String() {
-	case "up", "k", "shift+tab":
-		if m.SelectedSettingIdx < len(m.settingInputs) {
-			m.settingInputs[m.SelectedSettingIdx].Blur()
+	case "up", keyShiftTab:
+		m.adjustSettingFocus(-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.adjustSettingFocus(-1)
 		}
-		if m.SelectedSettingIdx > 0 {
-			m.SelectedSettingIdx--
-		} else {
-			m.SelectedSettingIdx = len(m.settingInputs)
-		}
-		if m.SelectedSettingIdx < len(m.settingInputs) {
-			m.settingInputs[m.SelectedSettingIdx].Focus()
-		}
-	case "down", "j", "tab":
-		if m.SelectedSettingIdx < len(m.settingInputs) {
-			m.settingInputs[m.SelectedSettingIdx].Blur()
-		}
-		if m.SelectedSettingIdx < len(m.settingInputs) {
-			m.SelectedSettingIdx++
-		} else {
-			m.SelectedSettingIdx = 0
-		}
-		if m.SelectedSettingIdx < len(m.settingInputs) {
-			m.settingInputs[m.SelectedSettingIdx].Focus()
+	case "down", "tab":
+		m.adjustSettingFocus(1)
+	case "j":
+		if m.Settings.VimMode {
+			m.adjustSettingFocus(1)
 		}
 	case " ", "space":
 		if m.SelectedSettingIdx == len(m.settingInputs) {
 			m.Settings.Debug = !m.Settings.Debug
 			logger.LogEvent("TUI", fmt.Sprintf("Debug logging toggled: %t", m.Settings.Debug))
+		} else if m.SelectedSettingIdx == len(m.settingInputs)+1 {
+			m.Settings.VimMode = !m.Settings.VimMode
+			logger.LogEvent("TUI", fmt.Sprintf("Vim mode toggled: %t", m.Settings.VimMode))
 		}
 	case "enter":
-		var tSec, mRet int
-		_, _ = fmt.Sscanf(m.settingInputs[0].Value(), "%d", &tSec)
-		_, _ = fmt.Sscanf(m.settingInputs[1].Value(), "%d", &mRet)
-		outFolder := strings.TrimSpace(m.settingInputs[2].Value())
-
-		if tSec > 0 {
-			m.Settings.TimeoutSeconds = tSec
-		}
-		if mRet >= 0 {
-			m.Settings.MaxRetries = mRet
-		}
-		if outFolder != "" {
-			m.Settings.DefaultOutputFolder = outFolder
-		}
-
-		_ = config.SaveSettings(m.Settings, true)
-		_ = config.SaveSettings(m.Settings, false)
-
-		logger.LogEvent("TUI", fmt.Sprintf("Saved settings: timeout_seconds=%d max_retries=%d default_output_folder=%s debug=%t", m.Settings.TimeoutSeconds, m.Settings.MaxRetries, m.Settings.DefaultOutputFolder, m.Settings.Debug))
-		_ = logger.Init(false, m.Settings.Debug)
-		m.Phase = PhaseMenu
+		m.saveSettingsFromInputs()
 	case "esc":
 		m.Phase = PhaseMenu
 	default:
@@ -525,7 +577,7 @@ func (m WelcomeModel) viewStatusAlert() string {
 func (m WelcomeModel) viewSettings() string {
 	var lines []string
 	lines = append(lines, "", TitleStyle.Render("⚙️ Global & Workspace Settings"), "")
-	settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Debug Logging (opt-in)"}
+	settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Debug Logging (opt-in)", "Vim Keybindings (hjkl)"}
 	for i, field := range settingFields {
 		prefix := "  "
 		labelStyle := lipgloss.NewStyle().Foreground(ColorText)
@@ -536,8 +588,14 @@ func (m WelcomeModel) viewSettings() string {
 		var valView string
 		if i < len(m.settingInputs) {
 			valView = m.settingInputs[i].View()
-		} else {
+		} else if i == len(m.settingInputs) {
 			if m.Settings.Debug {
+				valView = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render("[x] Enabled (press Space to toggle)")
+			} else {
+				valView = lipgloss.NewStyle().Foreground(ColorMuted).Render("[ ] Disabled (press Space to toggle)")
+			}
+		} else {
+			if m.Settings.VimMode {
 				valView = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render("[x] Enabled (press Space to toggle)")
 			} else {
 				valView = lipgloss.NewStyle().Foreground(ColorMuted).Render("[ ] Disabled (press Space to toggle)")

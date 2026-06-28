@@ -41,7 +41,7 @@ func TestLoadBlueprints(t *testing.T) {
 	}
 }
 
-func setupTestSettingsEnvironment(t *testing.T) (string, string, bool, []byte, bool, []byte) {
+func setupTestSettingsEnvironment(_ *testing.T) (string, string, bool, []byte, bool, []byte) {
 	localPath := GetLocalSettingsPath()
 	origExist := false
 	var origData []byte

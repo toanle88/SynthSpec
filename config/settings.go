@@ -12,6 +12,7 @@ type Settings struct {
 	MaxRetries          int    `json:"max_retries"`
 	DefaultOutputFolder string `json:"default_output_folder"`
 	Debug               bool   `json:"debug"`
+	VimMode             bool   `json:"vim_mode"`
 }
 
 const (
@@ -42,6 +43,7 @@ func LoadSettings() (*Settings, error) {
 		MaxRetries:          DefaultMaxRetries,
 		DefaultOutputFolder: DefaultOutputFolderValue,
 		Debug:               false,
+		VimMode:             false,
 	}
 
 	// 1. Try to load from global settings
@@ -76,11 +78,14 @@ func mergeSettingsFromFile(s *Settings, path string) {
 		s.DefaultOutputFolder = loaded.DefaultOutputFolder
 	}
 	
-	// Only override debug if it is explicitly present in JSON
+	// Only override debug/vim_mode if they are explicitly present in JSON
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err == nil {
 		if _, ok := raw["debug"]; ok {
 			s.Debug = loaded.Debug
+		}
+		if _, ok := raw["vim_mode"]; ok {
+			s.VimMode = loaded.VimMode
 		}
 	}
 }
