@@ -97,6 +97,8 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 
 	ti := textinput.New()
 	ti.Placeholder = "Type your answer here, or ':edit' to open in full editor..."
+	ti.Prompt = "> "
+	ti.PromptStyle = InputPrefixStyle
 	ti.Focus()
 	ti.CharLimit = 2000
 	ti.Width = 60
@@ -141,6 +143,8 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 
 	ui := textinput.New()
 	ui.Placeholder = "Type new requirements or modifications here..."
+	ui.Prompt = "> "
+	ui.PromptStyle = InputPrefixStyle
 	ui.CharLimit = 2000
 	ui.Width = 60
 
@@ -204,7 +208,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.loading || m.isGenerating {
 			return m, nil
 		}
-		return m.handleKeyMsg(msg)
+		var keyCmd tea.Cmd
+		var model tea.Model
+		model, keyCmd = m.handleKeyMsg(msg)
+		m = model.(DashboardModel)
+		if keyCmd != nil {
+			cmds = append(cmds, keyCmd)
+		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

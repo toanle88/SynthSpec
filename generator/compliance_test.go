@@ -75,8 +75,7 @@ paths:
 # YAML
 ` + "```yaml" + `
 paths:
-  /users:
-  - invalid indentation list
+  /users: "unclosed string
 ` + "```" + `
 `
 		err := PerformStaticValidation("04_api_architecture_integration.md", content)

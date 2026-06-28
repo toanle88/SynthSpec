@@ -171,7 +171,11 @@ Guidelines for evaluation:
 	}
 
 	var oracleResp OracleResponse
-	contentStr := chatResp.Choices[0].Message.Content
+	contentStr := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	if contentStr == "" {
+		return nil, fmt.Errorf("LLM returned an empty response. This can happen with reasoning models or transient provider errors on OpenRouter. Please try submitting again.")
+	}
+	contentStr = sanitizeJSON(contentStr)
 	if err := json.Unmarshal([]byte(contentStr), &oracleResp); err != nil {
 		return nil, fmt.Errorf("LLM returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
 	}

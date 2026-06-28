@@ -176,7 +176,7 @@ func (m DashboardModel) renderInterrogationState() string {
 	if m.loading {
 		content = append(content, fmt.Sprintf("\n%s Architectural Reasoning in progress. Calling AI API...", m.spinner.View()))
 	} else if m.showTextInput {
-		content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.textInput.View())
+		content = append(content, "\n"+m.textInput.View())
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Esc to return to choices)"))
 	} else {
 		choices := m.getChoicesList()
@@ -201,7 +201,7 @@ func (m DashboardModel) renderMainChat() string {
 		var content []string
 		content = append(content, TitleStyle.Render("📝 Add New Requirement / Modify Specification"))
 		content = append(content, "\nEnter your new requirements or modifications below:")
-		content = append(content, "\n"+InputPrefixStyle.Render("> ")+m.updateInput.View())
+		content = append(content, "\n"+m.updateInput.View())
 		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorMuted).Render("(Press Enter to submit, Esc to cancel)"))
 		return strings.Join(content, "\n")
 	}
