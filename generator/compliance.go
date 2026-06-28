@@ -1,12 +1,15 @@
 package generator
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
+	"gopkg.in/yaml.v3"
 )
 
 // FileCompliance represents the results of auditing a single generated file
@@ -149,12 +152,44 @@ func writeConsistencyCheck(sb *strings.Builder, consistencyReport *gateway.Consi
 	sb.WriteString("\n")
 }
 
+var codeBlockRegex = regexp.MustCompile("(?s)```(json|yaml|yml)\n(.*?)\n```")
+
 // PerformStaticValidation checks file syntax correctness
 func PerformStaticValidation(fileName string, content string) error {
 	switch fileName {
 	case "04_api_architecture_integration.md", "05_coding_standards_guidelines.md":
 		if strings.TrimSpace(content) == "" {
 			return fmt.Errorf("generated file content is empty")
+		}
+	}
+
+	if err := validateCodeBlocks(content); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateCodeBlocks parses and validates all yaml and json blocks in the content.
+func validateCodeBlocks(content string) error {
+	matches := codeBlockRegex.FindAllStringSubmatch(content, -1)
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		lang := match[1]
+		code := strings.TrimSpace(match[2])
+
+		switch lang {
+		case "json":
+			var temp interface{}
+			if err := json.Unmarshal([]byte(code), &temp); err != nil {
+				return fmt.Errorf("invalid json code block: %w", err)
+			}
+		case "yaml", "yml":
+			var temp interface{}
+			if err := yaml.Unmarshal([]byte(code), &temp); err != nil {
+				return fmt.Errorf("invalid yaml code block: %w", err)
+			}
 		}
 	}
 	return nil

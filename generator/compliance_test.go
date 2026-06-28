@@ -24,6 +24,66 @@ func TestPerformStaticValidation(t *testing.T) {
 			t.Error("expected empty content error, got nil")
 		}
 	})
+
+	t.Run("Valid JSON and YAML block", func(t *testing.T) {
+		content := `
+# OpenAPI Specification
+Here is the JSON specification:
+` + "```json" + `
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "SynthSpec API",
+    "version": "1.0.0"
+  }
+}
+` + "```" + `
+And the yaml:
+` + "```yaml" + `
+paths:
+  /users:
+    get:
+      summary: List users
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err != nil {
+			t.Errorf("expected valid markdown with code blocks to pass, got error: %v", err)
+		}
+	})
+
+	t.Run("Malformed JSON block", func(t *testing.T) {
+		content := `
+# OpenAPI
+` + "```json" + `
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "SynthSpec API", // trailing comma or invalid comment
+  }
+}
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err == nil {
+			t.Error("expected syntax error on malformed JSON block, got nil")
+		}
+	})
+
+	t.Run("Malformed YAML block", func(t *testing.T) {
+		content := `
+# YAML
+` + "```yaml" + `
+paths:
+  /users:
+  - invalid indentation list
+` + "```" + `
+`
+		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		if err == nil {
+			t.Error("expected syntax error on malformed YAML block, got nil")
+		}
+	})
 }
 
 func TestGenerateComplianceReport(t *testing.T) {

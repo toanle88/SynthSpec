@@ -524,84 +524,92 @@ func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
 	}
 
 	t.Run("SimulateFailure", func(t *testing.T) {
-		tg1 := &TestGateway{
-			responses: map[string][]string{
-				"01_domain_model_use_cases.md": {"Domain content"},
-				"02_prd_functional.md":         {"PRD content"},
-				"03_system_architecture.md":    {"ERROR:mocked_api_failure"},
-			},
-			callCounts: make(map[string]int),
-		}
-
-		progress1 := make(chan string, 20)
-		go func() {
-			for range progress1 {
-				continue
-			}
-		}()
-		err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
-		if err1 == nil {
-			t.Fatal("expected failure on 03_system_architecture.md, got success")
-		}
-
-		// Verify the failed file was not cached, while the completed siblings were preserved.
-		if len(sess.GeneratedFiles) != 6 {
-			t.Errorf("expected 6 cached files after a downstream failure, got %d", len(sess.GeneratedFiles))
-		}
-		cachedFiles := make(map[string]bool)
-		for _, gf := range sess.GeneratedFiles {
-			cachedFiles[gf.FileName] = true
-		}
-		if !cachedFiles["01_domain_model_use_cases.md"] || !cachedFiles["02_prd_functional.md"] {
-			t.Errorf("expected the source doc and PRD to remain cached, got: %+v", sess.GeneratedFiles)
-		}
-		if cachedFiles["03_system_architecture.md"] {
-			t.Errorf("expected failed file 03_system_architecture.md to remain uncached, got: %+v", sess.GeneratedFiles)
-		}
+		runSimulateFailureSubtest(t, sess, tempDir)
 	})
 
 	t.Run("ResumeHealthy", func(t *testing.T) {
-		tg2 := &TestGateway{
-			responses: map[string][]string{
-				"03_system_architecture.md":          {"Arch content"},
-				"04_api_architecture_integration.md": {"# API Integration Guide"},
-				"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
-				"06_security_threat_model.md":        {"Threat model content"},
-				"07_engineering_roadmap.md":          {"Roadmap content"},
-			},
-			callCounts: make(map[string]int),
-		}
-
-		progress2 := make(chan string, 20)
-		go func() {
-			for range progress2 {
-				continue
-			}
-		}()
-		err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
-		if err2 != nil {
-			t.Fatalf("expected resumption success, got err: %v", err2)
-		}
-
-		// Verify skipping occurred for the completed files.
-		skippedFiles := []string{
-			"01_domain_model_use_cases.md",
-			"02_prd_functional.md",
-			"04_api_architecture_integration.md",
-			"05_coding_standards_guidelines.md",
-			"06_security_threat_model.md",
-			"07_engineering_roadmap.md",
-		}
-		for _, file := range skippedFiles {
-			if tg2.callCounts[file] != 0 {
-				t.Errorf("expected 0 calls for %s on resume, got %d", file, tg2.callCounts[file])
-			}
-		}
-		// The failed file must be regenerated on resume.
-		if tg2.callCounts["03_system_architecture.md"] != 1 {
-			t.Errorf("expected 1 call for 03_system_architecture.md, got %d", tg2.callCounts["03_system_architecture.md"])
-		}
+		runResumeHealthySubtest(t, sess, tempDir)
 	})
+}
+
+func runSimulateFailureSubtest(t *testing.T, sess *state.Session, tempDir string) {
+	tg1 := &TestGateway{
+		responses: map[string][]string{
+			"01_domain_model_use_cases.md": {"Domain content"},
+			"02_prd_functional.md":         {"PRD content"},
+			"03_system_architecture.md":    {"ERROR:mocked_api_failure"},
+		},
+		callCounts: make(map[string]int),
+	}
+
+	progress1 := make(chan string, 20)
+	go func() {
+		for range progress1 {
+			continue
+		}
+	}()
+	err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
+	if err1 == nil {
+		t.Fatal("expected failure on 03_system_architecture.md, got success")
+	}
+
+	// Verify the failed file was not cached, while the completed siblings were preserved.
+	if len(sess.GeneratedFiles) != 6 {
+		t.Errorf("expected 6 cached files after a downstream failure, got %d", len(sess.GeneratedFiles))
+	}
+	cachedFiles := make(map[string]bool)
+	for _, gf := range sess.GeneratedFiles {
+		cachedFiles[gf.FileName] = true
+	}
+	if !cachedFiles["01_domain_model_use_cases.md"] || !cachedFiles["02_prd_functional.md"] {
+		t.Errorf("expected the source doc and PRD to remain cached, got: %+v", sess.GeneratedFiles)
+	}
+	if cachedFiles["03_system_architecture.md"] {
+		t.Errorf("expected failed file 03_system_architecture.md to remain uncached, got: %+v", sess.GeneratedFiles)
+	}
+}
+
+func runResumeHealthySubtest(t *testing.T, sess *state.Session, tempDir string) {
+	tg2 := &TestGateway{
+		responses: map[string][]string{
+			"03_system_architecture.md":          {"Arch content"},
+			"04_api_architecture_integration.md": {"# API Integration Guide"},
+			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
+			"06_security_threat_model.md":        {"Threat model content"},
+			"07_engineering_roadmap.md":          {"Roadmap content"},
+		},
+		callCounts: make(map[string]int),
+	}
+
+	progress2 := make(chan string, 20)
+	go func() {
+		for range progress2 {
+			continue
+		}
+	}()
+	err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
+	if err2 != nil {
+		t.Fatalf("expected resumption success, got err: %v", err2)
+	}
+
+	// Verify skipping occurred for the completed files.
+	skippedFiles := []string{
+		"01_domain_model_use_cases.md",
+		"02_prd_functional.md",
+		"04_api_architecture_integration.md",
+		"05_coding_standards_guidelines.md",
+		"06_security_threat_model.md",
+		"07_engineering_roadmap.md",
+	}
+	for _, file := range skippedFiles {
+		if tg2.callCounts[file] != 0 {
+			t.Errorf("expected 0 calls for %s on resume, got %d", file, tg2.callCounts[file])
+		}
+	}
+	// The failed file must be regenerated on resume.
+	if tg2.callCounts["03_system_architecture.md"] != 1 {
+		t.Errorf("expected 1 call for 03_system_architecture.md, got %d", tg2.callCounts["03_system_architecture.md"])
+	}
 }
 
 func TestResumableMidLoop(t *testing.T) {
