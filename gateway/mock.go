@@ -2,10 +2,8 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/toanle/synthspec/config"
 )
@@ -105,28 +103,7 @@ func (m *MockGateway) QueryOracleStream(ctx context.Context, facts Facts, histor
 		close(tokenChan)
 		return nil, err
 	}
-
-	data, _ := json.MarshalIndent(res, "", "  ")
-	strData := string(data)
-
-	go func() {
-		defer close(tokenChan)
-		runes := []rune(strData)
-		chunkSize := 4
-		for i := 0; i < len(runes); i += chunkSize {
-			end := i + chunkSize
-			if end > len(runes) {
-				end = len(runes)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case tokenChan <- string(runes[i:end]):
-				time.Sleep(5 * time.Millisecond)
-			}
-		}
-	}()
-
+	StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 

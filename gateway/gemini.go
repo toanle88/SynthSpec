@@ -226,7 +226,7 @@ func (g *GeminiGateway) QueryOracleStream(ctx context.Context, facts Facts, hist
 		close(tokenChan)
 		return nil, err
 	}
-	StreamOracleResponse(ctx, res, tokenChan)
+	StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 

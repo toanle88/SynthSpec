@@ -219,7 +219,7 @@ func (a *AnthropicGateway) QueryOracleStream(ctx context.Context, facts Facts, h
 		close(tokenChan)
 		return nil, err
 	}
-	StreamOracleResponse(ctx, res, tokenChan)
+	StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 

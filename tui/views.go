@@ -186,13 +186,17 @@ func (m DashboardModel) renderInterrogationState() string {
 	var content []string
 	content = append(content, TitleStyle.Render("💬 Conversation Timeline"))
 
-	if m.Session.LastQuestion != "" && !m.loading {
+	if m.Session.LastQuestion != "" && !m.loading && !m.isStreaming {
 		content = append(content, "\n"+QuestionStyle.Render("Architect's Question:"))
 		content = append(content, wrapText(m.Session.LastQuestion, m.width-45))
 	}
 
-	if m.loading {
-		content = append(content, fmt.Sprintf("\n%s Architectural Reasoning in progress. Calling AI API...", m.spinner.View()))
+	if m.loading || m.isStreaming {
+		if m.loading {
+			content = append(content, fmt.Sprintf("\n%s Architectural Reasoning in progress. Calling AI API...", m.spinner.View()))
+		} else {
+			content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("✓ Response received — streaming thought tokens..."))
+		}
 		content = append(content, "\n"+m.renderThoughtBox())
 	} else if m.showTextInput {
 		content = append(content, "\n"+m.textInput.View())

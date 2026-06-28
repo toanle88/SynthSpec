@@ -166,7 +166,7 @@ func (tg *TestGateway) QueryOracleStream(ctx context.Context, facts gateway.Fact
 		close(tokenChan)
 		return nil, err
 	}
-	gateway.StreamOracleResponse(ctx, res, tokenChan)
+	gateway.StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 

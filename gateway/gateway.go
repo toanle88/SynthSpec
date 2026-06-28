@@ -181,8 +181,10 @@ func sanitizeJSON(content string) string {
 	return content
 }
 
-// StreamOracleResponse takes a response, marshals it, and streams it to tokenChan.
-func StreamOracleResponse(ctx context.Context, res *OracleResponse, tokenChan chan<- string) {
+// StreamOracleResponse takes a response, marshals it, and streams it chunk-by-chunk to tokenChan.
+// It uses its own independent background context so it is never cancelled by the HTTP request's
+// context timeout (which fires via defer cancel() when queryOracleCmd returns).
+func StreamOracleResponse(res *OracleResponse, tokenChan chan<- string) {
 	data, _ := json.MarshalIndent(res, "", "  ")
 	strData := string(data)
 
@@ -195,12 +197,8 @@ func StreamOracleResponse(ctx context.Context, res *OracleResponse, tokenChan ch
 			if end > len(runes) {
 				end = len(runes)
 			}
-			select {
-			case <-ctx.Done():
-				return
-			case tokenChan <- string(runes[i:end]):
-				time.Sleep(2 * time.Millisecond)
-			}
+			tokenChan <- string(runes[i:end])
+			time.Sleep(2 * time.Millisecond)
 		}
 	}()
 }

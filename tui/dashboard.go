@@ -47,6 +47,8 @@ type contextPruneResultMsg struct {
 }
 
 type thoughtTokenMsg string
+type streamDoneMsg struct{}
+type initQueryMsg struct{}
 
 // DashboardModel represents the TUI state
 type DashboardModel struct {
@@ -101,6 +103,7 @@ type DashboardModel struct {
 	// Thought stream state
 	thoughtChan     chan string
 	streamingTokens string
+	isStreaming     bool // true from query start until thoughtChan is fully drained
 
 	// Approval Gate state
 	approvalChan      chan struct{}
@@ -219,9 +222,12 @@ func (m DashboardModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.spinner.Tick)
 
-	// Bootstrapping: If history is empty and last question is empty, query Oracle first
+	// Bootstrapping: fire initQueryMsg so that Update() handles it via startOracleQuery,
+	// which correctly sets isStreaming and thoughtChan on the REAL Bubble Tea model.
+	// We cannot mutate those fields here because Init() has a value receiver —
+	// any changes made to m inside Init() are discarded by the runtime.
 	if len(m.Session.History) == 0 && m.Session.LastQuestion == "" {
-		cmds = append(cmds, m.queryOracleCmd(""), m.recvThoughtCmd())
+		cmds = append(cmds, func() tea.Msg { return initQueryMsg{} })
 	}
 
 	return tea.Batch(cmds...)
@@ -285,9 +291,17 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case contextPruneResultMsg:
 		return m.handleContextPruneResult(msg)
 
+	case initQueryMsg:
+		// First boot query: routed through startOracleQuery so thoughtChan and
+		// isStreaming are correctly set on the REAL model (not a discarded Init copy).
+		return m.startOracleQuery("")
+
 	case thoughtTokenMsg:
 		m.streamingTokens += string(msg)
 		return m, m.recvThoughtCmd()
+
+	case streamDoneMsg:
+		m.isStreaming = false
 
 	case tea.MouseMsg:
 		if msg.Button == tea.MouseButtonWheelUp {
@@ -1248,14 +1262,26 @@ func (m DashboardModel) startOracleQuery(val string) (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.err = nil
 	m.streamingTokens = ""
-	return m, tea.Batch(m.queryOracleCmd(val), m.recvThoughtCmd())
+	m.isStreaming = true
+	// Recreate thoughtChan fresh every query so we never close an already-closed channel
+	// and the streaming goroutine always writes into a live, empty channel.
+	m.thoughtChan = make(chan string, 200)
+	// Start multiple concurrent readers so tokens are consumed as they arrive
+	// (the thought box fills in real-time rather than staying empty).
+	return m, tea.Batch(
+		m.queryOracleCmd(val),
+		m.recvThoughtCmd(),
+		m.recvThoughtCmd(),
+		m.recvThoughtCmd(),
+		m.recvThoughtCmd(),
+	)
 }
 
 func (m DashboardModel) recvThoughtCmd() tea.Cmd {
 	return func() tea.Msg {
 		token, ok := <-m.thoughtChan
 		if !ok {
-			return nil
+			return streamDoneMsg{}
 		}
 		return thoughtTokenMsg(token)
 	}
