@@ -2,7 +2,9 @@ package generator
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +17,151 @@ import (
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/state"
 )
+
+func TestFindSourceTemplate(t *testing.T) {
+	templates := []config.Template{
+		{FileName: "02_prd_functional.md", Name: "PRD"},
+		{FileName: "01_domain_model_use_cases.md", Name: "Domain Model"},
+		{FileName: "03_system_architecture.md", Name: "Architecture"},
+	}
+	idx, err := findSourceTemplate(templates)
+	if err != nil {
+		t.Fatalf("expected to find source template: %v", err)
+	}
+	if idx != 1 {
+		t.Errorf("expected index 1, got %d", idx)
+	}
+}
+
+func TestFindSourceTemplate_NotFound(t *testing.T) {
+	templates := []config.Template{
+		{FileName: "other.md", Name: "Other"},
+	}
+	_, err := findSourceTemplate(templates)
+	if err == nil {
+		t.Fatal("expected error when source template not found")
+	}
+}
+
+func TestBuildGenerationPrompt(t *testing.T) {
+	facts := gateway.Facts{
+		Functional: "Build a payment system",
+		Structural: "Microservices with PostgreSQL",
+	}
+
+	prompt, err := buildGenerationPrompt("Generate the {{type}} document", facts, "")
+	if err != nil {
+		t.Fatalf("buildGenerationPrompt failed: %v", err)
+	}
+	if !strings.Contains(prompt, "Generate the {{type}} document") {
+		t.Errorf("expected prompt template in output")
+	}
+	if !strings.Contains(prompt, "Build a payment system") {
+		t.Errorf("expected facts in output")
+	}
+}
+
+func TestBuildGenerationPrompt_WithReference(t *testing.T) {
+	facts := gateway.Facts{
+		Functional: "Build a payment system",
+	}
+	prompt, err := buildGenerationPrompt("Generate document", facts, "# Reference Doc\nContent here")
+	if err != nil {
+		t.Fatalf("buildGenerationPrompt failed: %v", err)
+	}
+	if !strings.Contains(prompt, "Reference source document") {
+		t.Errorf("expected reference doc marker in output")
+	}
+	if !strings.Contains(prompt, "Content here") {
+		t.Errorf("expected reference content in output")
+	}
+}
+
+func TestGetApplicableStandards(t *testing.T) {
+	standards := []config.Standard{
+		{ID: "s1", TargetFiles: []string{"01_domain_model_use_cases.md"}},
+		{ID: "s2", TargetFiles: []string{"02_prd_functional.md"}},
+	}
+	result := getApplicableStandards(standards, "01_domain_model_use_cases.md")
+	if len(result) != 1 || result[0].ID != "s1" {
+		t.Errorf("expected 1 standard (s1), got %v", result)
+	}
+}
+
+func TestGetApplicableStandards_NoMatch(t *testing.T) {
+	result := getApplicableStandards(nil, "any.md")
+	if result != nil {
+		t.Errorf("expected nil for empty input, got %v", result)
+	}
+}
+
+func TestComputeSha256(t *testing.T) {
+	h := sha256.New()
+	h.Write([]byte("hello"))
+	expected := fmt.Sprintf("%x", h.Sum(nil))
+
+	result := computeSha256("hello")
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+
+	// Verify determinism
+	if computeSha256("hello") != computeSha256("hello") {
+		t.Errorf("sha256 must be deterministic")
+	}
+}
+
+func TestSendProgress(t *testing.T) {
+	ch := make(chan string, 1)
+	sendProgress(ch, ProgressEvent{File: "test.md", Status: "done", Message: "Done"})
+	msg := <-ch
+	if !strings.Contains(msg, "test.md") || !strings.Contains(msg, "done") {
+		t.Errorf("expected progress event JSON containing test.md and done, got: %s", msg)
+	}
+}
+
+func TestCollectFailedStandards(t *testing.T) {
+	standards := []config.Standard{
+		{ID: "s1", Name: "Standard 1", MinScore: 80},
+		{ID: "s2", Name: "Standard 2", MinScore: 60},
+	}
+	results := []gateway.ComplianceResult{
+		{StandardID: "s1", Score: 50, Compliant: false},
+		{StandardID: "s2", Score: 100, Compliant: true},
+	}
+	failed, _ := collectFailedStandards(results, standards)
+	if len(failed) != 1 || failed[0].ID != "s1" {
+		t.Errorf("expected 1 failed standard (s1), got %d", len(failed))
+	}
+}
+
+func TestUpdateComplianceResultWithValidationError(t *testing.T) {
+	res := &gateway.ComplianceResult{Score: 100, Compliant: true, Feedback: "All good"}
+	updateComplianceResultWithValidationError(res, fmt.Errorf("validator failed"), "output from validator")
+	if res.Compliant {
+		t.Errorf("expected compliant=false after validation error")
+	}
+	if res.Score != 0 {
+		t.Errorf("expected score 0 after validation error, got %d", res.Score)
+	}
+}
+
+func TestGetOrInsertResult(t *testing.T) {
+	results := []gateway.ComplianceResult{}
+	resultsMap := make(map[string]*gateway.ComplianceResult)
+
+	// Insert new
+	r := getOrInsertResult("s1", resultsMap, &results)
+	if r.StandardID != "s1" || r.Score != 100 {
+		t.Errorf("expected new result with default score 100")
+	}
+
+	// Get existing
+	r2 := getOrInsertResult("s1", resultsMap, &results)
+	if r2 != r {
+		t.Errorf("expected same pointer for existing result")
+	}
+}
 
 func TestSanitizeJSONOutput(t *testing.T) {
 	tests := []struct {
@@ -859,4 +1006,3 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 		t.Error("expected files to be regenerated after facts modification, but got 0 calls")
 	}
 }
-

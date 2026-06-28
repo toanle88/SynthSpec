@@ -140,9 +140,9 @@ func TestInitBlueprint(t *testing.T) {
 	}()
 
 	mockFlag = true
-	
+
 	// Reset/clear flags
-	blueprintFlag = "" 
+	blueprintFlag = ""
 
 	rootCmd.SetArgs([]string{"init", "bp-proj", "-b", "fintech-saas"})
 	err = rootCmd.Execute()
@@ -164,3 +164,32 @@ func TestInitBlueprint(t *testing.T) {
 	}
 }
 
+func TestGetGatewayForSession_Mock(t *testing.T) {
+	sess := &state.Session{
+		ProjectName: "test-gw",
+		Provider:    "mock",
+		Model:       "mock-model",
+	}
+	gw, err := getGatewayForSession(sess, false)
+	if err != nil {
+		t.Fatalf("expected success with mock provider, got: %v", err)
+	}
+	if gw == nil {
+		t.Fatal("expected non-nil gateway")
+	}
+}
+
+func TestGetGatewayForSession_ForceMock(t *testing.T) {
+	sess := &state.Session{
+		ProjectName: "test-gw-force",
+		Provider:    "anthropic",
+		Model:       "claude-3-5-sonnet",
+	}
+	gw, err := getGatewayForSession(sess, true)
+	if err != nil {
+		t.Fatalf("expected success with forceMock=true, got: %v", err)
+	}
+	if gw == nil {
+		t.Fatal("expected non-nil gateway")
+	}
+}
