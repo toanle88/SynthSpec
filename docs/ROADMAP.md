@@ -31,7 +31,7 @@ This document tracks current priorities, upcoming milestones, and development st
 ## Upcoming Milestones (Iterative Hardening & Scaling)
 
 ### Milestone 5: Interactive Boot Menu & Project Manager (v0.5.0) ── [ ] Planned
-- [ ] **Welcome Screen**: Implement an interactive selection menu on boot using a TUI component library, removing the need to memorize CLI subcommands.
+- [x] **Welcome Screen**: Implement an interactive selection menu on boot using a TUI component library, removing the need to memorize CLI subcommands.
 - [ ] **Industry-Specific Blueprints**: Introduce starting templates (e.g., `fintech-saas`, `internal-crud`) during project initialization to pre-load context and accelerate the interrogation loop.
 - [ ] **Action Routing & Global Settings**: Provide global menu routes including "Create New Project", "Resume Existing", "View Assets", **"Audit Workspace (Drift Detection)"**, and a "Settings" configuration pane. 
 - [ ] **Configurable Application Parameters**: Allow users via the Settings pane to customize network constraints (API timeout limits and max retries) and set a default output folder for generated specifications.

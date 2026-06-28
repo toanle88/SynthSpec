@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/tui"
@@ -23,9 +25,25 @@ var rootCmd = &cobra.Command{
 	Use:   "synthspec",
 	Short: "SynthSpec: Open-Source BYOK AI Solution Architect CLI",
 	Long:  `SynthSpec is a privacy-first, open-source command-line utility that transforms vague application ideas into production-ready, enterprise-grade engineering specifications.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		m := tui.NewWelcomeModel()
+		p := tea.NewProgram(m)
+		resModel, err := p.Run()
+		if err != nil {
+			return fmt.Errorf("welcome menu execution failed: %w", err)
+		}
+
+		welcomeModel := resModel.(tui.WelcomeModel)
+		switch welcomeModel.Action {
+		case tui.ActionCreate:
+			return initCmd.RunE(initCmd, []string{welcomeModel.ProjectName})
+		case tui.ActionResume:
+			return resumeCmd.RunE(resumeCmd, []string{welcomeModel.ProjectName})
+		case tui.ActionExit:
+			return nil
+		}
+		return nil
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
