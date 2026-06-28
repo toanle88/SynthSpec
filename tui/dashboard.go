@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
@@ -84,6 +85,9 @@ type DashboardModel struct {
 	showUpdatePrompt bool
 	updateInput      textinput.Model
 	isCLIUpdateMode  bool
+	viewport         viewport.Model
+	showViewer       bool
+	selectedFileIdx  int
 }
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
@@ -188,6 +192,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	if m.showViewer {
+		return m.handleViewerUpdate(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
@@ -235,6 +243,25 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// handleViewerUpdate processes updates to the document viewer overlay, handling size changes and dismissal key events.
+func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = sizeMsg.Width
+		m.height = sizeMsg.Height
+		m.viewport.Width = sizeMsg.Width - 4
+		m.viewport.Height = sizeMsg.Height - 6
+	}
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.Type == tea.KeyEsc || keyMsg.String() == "q" {
+			m.showViewer = false
+			return m, nil
+		}
+	}
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
+}
+
 // handleKeyMsg routes key presses to specific action handlers based on key type.
 func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
@@ -255,47 +282,70 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleKeyEnter processes Enter key presses, submitting inputs, selecting options, or launching full editors.
 func (m DashboardModel) handleKeyEnter() (tea.Model, tea.Cmd) {
 	if m.showUpdatePrompt {
-		val := strings.TrimSpace(m.updateInput.Value())
-		if val == "" {
-			return m, nil
-		}
-		m.updateInput.SetValue("")
-		m.showUpdatePrompt = false
-		m.isCompleted = false
-		m.loading = true
-		m.err = nil
-		return m, m.queryOracleCmd("I have a new requirement/change: " + val)
+		return m.handleKeyEnterUpdatePrompt()
 	}
-
 	if m.isCompleted {
+		return m.handleKeyEnterCompleted()
+	}
+	if m.showTextInput {
+		return m.handleKeyEnterTextInput()
+	}
+	return m.handleKeyEnterChoiceSelection()
+}
+
+// handleKeyEnterUpdatePrompt processes Enter key presses inside the manual requirements update prompt.
+func (m DashboardModel) handleKeyEnterUpdatePrompt() (tea.Model, tea.Cmd) {
+	val := strings.TrimSpace(m.updateInput.Value())
+	if val == "" {
+		return m, nil
+	}
+	m.updateInput.SetValue("")
+	m.showUpdatePrompt = false
+	m.isCompleted = false
+	m.loading = true
+	m.err = nil
+	return m, m.queryOracleCmd("I have a new requirement/change: " + val)
+}
+
+// handleKeyEnterCompleted processes Enter key presses on the completion screen, opening the document viewer.
+func (m DashboardModel) handleKeyEnterCompleted() (tea.Model, tea.Cmd) {
+	if m.showViewer {
+		return m, nil
+	}
+	if len(m.genFiles) > 0 {
+		return m.openFileViewer()
+	}
+	return m, nil
+}
+
+// handleKeyEnterTextInput processes Enter key presses when typing answers directly into the console.
+func (m DashboardModel) handleKeyEnterTextInput() (tea.Model, tea.Cmd) {
+	val := strings.TrimSpace(m.textInput.Value())
+	if val == "" {
 		return m, nil
 	}
 
-	if m.showTextInput {
-		val := strings.TrimSpace(m.textInput.Value())
-		if val == "" {
+	m.textInput.SetValue("")
+
+	if val == ":edit" {
+		editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
+		if err != nil {
+			m.setError(err)
 			return m, nil
 		}
-
-		m.textInput.SetValue("")
-
-		if val == ":edit" {
-			editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
-			if err != nil {
-				m.setError(err)
-				return m, nil
-			}
-			m.editorTempPath = tempPath
-			return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-				return editorFinishedMsg{err: err}
-			})
-		}
-
-		m.loading = true
-		m.err = nil
-		return m, m.queryOracleCmd(val)
+		m.editorTempPath = tempPath
+		return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+			return editorFinishedMsg{err: err}
+		})
 	}
 
+	m.loading = true
+	m.err = nil
+	return m, m.queryOracleCmd(val)
+}
+
+// handleKeyEnterChoiceSelection processes Enter key presses when selecting choices in the list.
+func (m DashboardModel) handleKeyEnterChoiceSelection() (tea.Model, tea.Cmd) {
 	choices := m.getChoicesList()
 	selected := choices[m.selectedChoiceIdx]
 
@@ -318,9 +368,42 @@ func (m DashboardModel) handleKeyEnter() (tea.Model, tea.Cmd) {
 	return m, m.queryOracleCmd(val)
 }
 
+// openFileViewer opens the full screen Markdown document viewer viewport overlay.
+func (m DashboardModel) openFileViewer() (tea.Model, tea.Cmd) {
+	selectedFile := m.genFiles[m.selectedFileIdx]
+	dir := m.OutputDir
+	if dir == "" {
+		dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
+	}
+	filePath := filepath.Join(dir, selectedFile)
+	contentBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		m.setError(fmt.Errorf("failed to read file %s: %w", selectedFile, err))
+		return m, nil
+	}
+	content := string(contentBytes)
+
+	m.viewport = viewport.New(m.width-4, m.height-6)
+	m.viewport.SetContent(content)
+	m.showViewer = true
+	return m, nil
+}
+
 // handleKeyUp navigates upwards through choices in the interactive list.
 func (m DashboardModel) handleKeyUp() (tea.Model, tea.Cmd) {
-	if !m.showTextInput && !m.showUpdatePrompt {
+	if m.showUpdatePrompt {
+		return m, nil
+	}
+	if m.isCompleted {
+		if len(m.genFiles) > 0 {
+			m.selectedFileIdx--
+			if m.selectedFileIdx < 0 {
+				m.selectedFileIdx = len(m.genFiles) - 1
+			}
+		}
+		return m, nil
+	}
+	if !m.showTextInput {
 		choices := m.getChoicesList()
 		m.selectedChoiceIdx--
 		if m.selectedChoiceIdx < 0 {
@@ -332,7 +415,19 @@ func (m DashboardModel) handleKeyUp() (tea.Model, tea.Cmd) {
 
 // handleKeyDown navigates downwards through choices in the interactive list.
 func (m DashboardModel) handleKeyDown() (tea.Model, tea.Cmd) {
-	if !m.showTextInput && !m.showUpdatePrompt {
+	if m.showUpdatePrompt {
+		return m, nil
+	}
+	if m.isCompleted {
+		if len(m.genFiles) > 0 {
+			m.selectedFileIdx++
+			if m.selectedFileIdx >= len(m.genFiles) {
+				m.selectedFileIdx = 0
+			}
+		}
+		return m, nil
+	}
+	if !m.showTextInput {
 		choices := m.getChoicesList()
 		m.selectedChoiceIdx++
 		if m.selectedChoiceIdx >= len(choices) {
@@ -379,37 +474,82 @@ func (m DashboardModel) handleKeyRunesCompleted(msg tea.KeyMsg) (tea.Model, tea.
 	key := string(msg.Runes)
 	switch strings.ToLower(key) {
 	case "g":
-		m.isGenerating = true
-		m.genStatus = "Starting spec generation..."
-		m.genPhase = "source"
-		m.genChan = make(chan string, 10)
-		m.genFileStatuses = make(map[string]string)
-		m.genFileDetails = make(map[string]string)
-		m.validatorLogs = nil
-		for _, f := range m.genFiles {
-			m.genFileStatuses[f] = "pending"
-		}
-		return m, tea.Batch(
-			m.generateSpecsCmd(),
-			m.recvGenProgressCmd(),
-		)
+		return m.triggerRegeneration()
 	case "e":
-		editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
-		if err != nil {
-			m.setError(err)
-			return m, nil
-		}
-		m.editorTempPath = tempPath
-		return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-			return editorFinishedMsg{err: err}
-		})
+		return m.launchExternalEditor()
 	case "u":
-		m.showUpdatePrompt = true
-		m.updateInput.Focus()
-		m.updateInput.SetValue("")
-		return m, nil
+		return m.activateUpdatePrompt()
+	case "v":
+		if len(m.genFiles) > 0 {
+			return m.openFileViewer()
+		}
+	case "k":
+		return m.navigateFilesUp()
+	case "j":
+		return m.navigateFilesDown()
 	case "q":
 		return m, tea.Quit
+	}
+	return m, nil
+}
+
+// triggerRegeneration sets states and commands to begin a new specification file generation run.
+func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
+	m.isGenerating = true
+	m.genStatus = "Starting spec generation..."
+	m.genPhase = "source"
+	m.genChan = make(chan string, 10)
+	m.genFileStatuses = make(map[string]string)
+	m.genFileDetails = make(map[string]string)
+	m.validatorLogs = nil
+	for _, f := range m.genFiles {
+		m.genFileStatuses[f] = "pending"
+	}
+	return m, tea.Batch(
+		m.generateSpecsCmd(),
+		m.recvGenProgressCmd(),
+	)
+}
+
+// launchExternalEditor suspends Bubble Tea UI and runs the external system editor.
+func (m DashboardModel) launchExternalEditor() (tea.Model, tea.Cmd) {
+	editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
+	if err != nil {
+		m.setError(err)
+		return m, nil
+	}
+	m.editorTempPath = tempPath
+	return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+		return editorFinishedMsg{err: err}
+	})
+}
+
+// activateUpdatePrompt focuses the text input to enter manually updated requirements.
+func (m DashboardModel) activateUpdatePrompt() (tea.Model, tea.Cmd) {
+	m.showUpdatePrompt = true
+	m.updateInput.Focus()
+	m.updateInput.SetValue("")
+	return m, nil
+}
+
+// navigateFilesUp moves selectedFileIdx upwards in the completed file list.
+func (m DashboardModel) navigateFilesUp() (tea.Model, tea.Cmd) {
+	if len(m.genFiles) > 0 {
+		m.selectedFileIdx--
+		if m.selectedFileIdx < 0 {
+			m.selectedFileIdx = len(m.genFiles) - 1
+		}
+	}
+	return m, nil
+}
+
+// navigateFilesDown moves selectedFileIdx downwards in the completed file list.
+func (m DashboardModel) navigateFilesDown() (tea.Model, tea.Cmd) {
+	if len(m.genFiles) > 0 {
+		m.selectedFileIdx++
+		if m.selectedFileIdx >= len(m.genFiles) {
+			m.selectedFileIdx = 0
+		}
 	}
 	return m, nil
 }
@@ -445,19 +585,29 @@ func (m DashboardModel) handleOracleResult(msg oracleResultMsg) (tea.Model, tea.
 		return m, nil
 	}
 
-	m.Session.Facts = msg.resp.Facts
-	m.Session.Scores = msg.resp.ConfidenceScores
-	m.Session.Rationales = msg.resp.DimensionRationales
-	m.Session.LastQuestion = msg.resp.NextQuestion
-	m.Session.LastChoices = msg.resp.NextChoices
-	m.Session.GeneratedFiles = nil
-	m.selectedChoiceIdx = 0
-	m.showTextInput = len(m.Session.LastChoices) == 0
+	m.updateSessionState(msg.resp)
 
 	m.Session.Save()
 	wasCompleted := m.isCompleted
 	m.isCompleted = checkCompletion(m.Session.Scores)
 
+	return m.checkAndTriggerPostOracle(wasCompleted)
+}
+
+// updateSessionState updates the session structure fields with response metadata.
+func (m *DashboardModel) updateSessionState(resp *gateway.OracleResponse) {
+	m.Session.Facts = resp.Facts
+	m.Session.Scores = resp.ConfidenceScores
+	m.Session.Rationales = resp.DimensionRationales
+	m.Session.LastQuestion = resp.NextQuestion
+	m.Session.LastChoices = resp.NextChoices
+	m.Session.GeneratedFiles = nil
+	m.selectedChoiceIdx = 0
+	m.showTextInput = len(m.Session.LastChoices) == 0
+}
+
+// checkAndTriggerPostOracle performs checks to either initiate background document generation or queue context history compaction.
+func (m DashboardModel) checkAndTriggerPostOracle(wasCompleted bool) (tea.Model, tea.Cmd) {
 	var batchCmds []tea.Cmd
 	if m.isCompleted && !wasCompleted {
 		m.isGenerating = true
@@ -475,7 +625,6 @@ func (m DashboardModel) handleOracleResult(msg oracleResultMsg) (tea.Model, tea.
 		m.loading = true
 		batchCmds = append(batchCmds, m.pruneContextCmd())
 	}
-
 	return m, tea.Batch(batchCmds...)
 }
 

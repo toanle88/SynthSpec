@@ -194,6 +194,9 @@ func (m DashboardModel) renderInterrogationState() string {
 }
 
 func (m DashboardModel) renderMainChat() string {
+	if m.showViewer {
+		return m.renderViewer()
+	}
 	if m.showUpdatePrompt {
 		var content []string
 		content = append(content, TitleStyle.Render("📝 Add New Requirement / Modify Specification"))
@@ -209,6 +212,44 @@ func (m DashboardModel) renderMainChat() string {
 		return m.renderCompletedState()
 	}
 	return m.renderInterrogationState()
+}
+
+// renderViewer draws the scrollable Markdown document viewer with a border, header, and footer.
+func (m DashboardModel) renderViewer() string {
+	if len(m.genFiles) == 0 {
+		return "No files generated yet."
+	}
+	selectedFile := m.genFiles[m.selectedFileIdx]
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(ColorAccent).
+		Bold(true).
+		Border(lipgloss.NormalBorder(), false, false, true, false).
+		BorderForeground(ColorMuted).
+		Padding(0, 1)
+
+	header := headerStyle.Render("📖 Viewing: " + selectedFile)
+
+	footerStyle := lipgloss.NewStyle().
+		Foreground(ColorMuted).
+		Border(lipgloss.NormalBorder(), true, false, false, false).
+		BorderForeground(ColorMuted).
+		Padding(0, 1)
+
+	scrollPercent := fmt.Sprintf("%3.f%%", m.viewport.ScrollPercent()*100)
+	if m.viewport.AtBottom() {
+		scrollPercent = "End"
+	} else if m.viewport.AtTop() {
+		scrollPercent = "Top"
+	}
+
+	footer := footerStyle.Render(fmt.Sprintf("Progress: %s  |  [Esc / q] Back  |  [j / k] Scroll", scrollPercent))
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		"\n"+m.viewport.View(),
+		footer,
+	)
 }
 
 func (m DashboardModel) renderFooter() string {
@@ -243,7 +284,9 @@ func (m DashboardModel) renderFooter() string {
 	keys := []string{"Ctrl+C: Quit"}
 	if m.err != nil {
 		keys = append(keys, "Esc: Dismiss Error")
-	} else if !m.isCompleted {
+	} else if m.isCompleted {
+		keys = append(keys, "v/Enter: View file", "g: Regenerate", "u: Modify", "e: Editor")
+	} else {
 		keys = append(keys, "Enter: Send", ":edit: Open full editor")
 	}
 	elements = append(elements, strings.Join(keys, "  |  "))
@@ -426,50 +469,53 @@ func (m DashboardModel) renderStandardsGrid() string {
 	)
 }
 
+// getFileStatusIconAndStyle mapping maps dynamic status to its TUI icon and color style.
+func (m DashboardModel) getFileStatusIconAndStyle(status string) (string, lipgloss.Style) {
+	switch status {
+	case "skipped", "done":
+		return "🟢 Done", StyleSuccess
+	case "synthesizing":
+		return "🔄 Synthesizing", StyleInfo
+	case "correcting":
+		return "⚠️ Correcting", StyleWarning
+	case "auditing":
+		return "🔍 Auditing", StyleInfo
+	case "refining":
+		return "🛠️ Refining", StyleWarning
+	case "failed":
+		return "🔴 Failed", StyleError
+	default:
+		return pendingStr, StyleMuted
+	}
+}
+
+// renderFileProgressList draws the complete layout list of generated files with indicators.
 func (m DashboardModel) renderFileProgressList() string {
 	var sourceLines []string
 	var downstreamLines []string
 
-	for _, file := range m.genFiles {
+	for idx, file := range m.genFiles {
 		status := m.genFileStatuses[file]
 		details := m.genFileDetails[file]
 
-		var icon string
-		var style lipgloss.Style
-
-		switch status {
-		case "skipped", "done":
-			icon = "🟢 Done"
-			style = StyleSuccess
-		case "synthesizing":
-			icon = "🔄 Synthesizing"
-			style = StyleInfo
-		case "correcting":
-			icon = "⚠️ Correcting"
-			style = StyleWarning
-		case "auditing":
-			icon = "🔍 Auditing"
-			style = StyleInfo
-		case "refining":
-			icon = "🛠️ Refining"
-			style = StyleWarning
-		case "failed":
-			icon = "🔴 Failed"
-			style = StyleError
-		default:
-			icon = pendingStr
-			style = StyleMuted
-		}
-
+		icon, style := m.getFileStatusIconAndStyle(status)
 		styledIcon := style.Bold(true).Render(icon)
-		styledFile := lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render(file)
+
+		var styledFile string
+		prefix := "  "
+		if m.isCompleted && idx == m.selectedFileIdx {
+			prefix = "❯ "
+			styledFile = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true).Render(file)
+		} else {
+			styledFile = lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render(file)
+		}
 
 		var line string
 		if details != "" && details != "completed successfully" && details != "already generated" {
 			styledDetails := lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("(%s)", details))
-			line = fmt.Sprintf("  %s %s %s", styledIcon, styledFile, styledDetails)
+			line = fmt.Sprintf("%s%s %s %s", prefix, styledIcon, styledFile, styledDetails)
 		} else {
-			line = fmt.Sprintf("  %s %s", styledIcon, styledFile)
+			line = fmt.Sprintf("%s%s %s", prefix, styledIcon, styledFile)
 		}
 
 		if file == "01_domain_model_use_cases.md" {
