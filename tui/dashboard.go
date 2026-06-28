@@ -235,6 +235,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// handleKeyMsg routes key presses to specific action handlers based on key type.
 func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
@@ -251,6 +252,7 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleKeyEnter processes Enter key presses, submitting inputs, selecting options, or launching full editors.
 func (m DashboardModel) handleKeyEnter() (tea.Model, tea.Cmd) {
 	if m.showUpdatePrompt {
 		val := strings.TrimSpace(m.updateInput.Value())
@@ -316,6 +318,7 @@ func (m DashboardModel) handleKeyEnter() (tea.Model, tea.Cmd) {
 	return m, m.queryOracleCmd(val)
 }
 
+// handleKeyUp navigates upwards through choices in the interactive list.
 func (m DashboardModel) handleKeyUp() (tea.Model, tea.Cmd) {
 	if !m.showTextInput && !m.showUpdatePrompt {
 		choices := m.getChoicesList()
@@ -327,6 +330,7 @@ func (m DashboardModel) handleKeyUp() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleKeyDown navigates downwards through choices in the interactive list.
 func (m DashboardModel) handleKeyDown() (tea.Model, tea.Cmd) {
 	if !m.showTextInput && !m.showUpdatePrompt {
 		choices := m.getChoicesList()
@@ -338,6 +342,7 @@ func (m DashboardModel) handleKeyDown() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleKeyEsc dismisses active errors, update prompts, or custom text inputs.
 func (m DashboardModel) handleKeyEsc() (tea.Model, tea.Cmd) {
 	if m.err != nil {
 		m.err = nil
@@ -358,6 +363,7 @@ func (m DashboardModel) handleKeyEsc() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleKeyRunes routes rune character keys based on session completion status.
 func (m DashboardModel) handleKeyRunes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showUpdatePrompt {
 		return m, nil
@@ -368,6 +374,7 @@ func (m DashboardModel) handleKeyRunes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleKeyRunesIncomplete(msg)
 }
 
+// handleKeyRunesCompleted handles shortcut keys (generate, edit, update, quit) on the final completion dashboard screen.
 func (m DashboardModel) handleKeyRunesCompleted(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := string(msg.Runes)
 	switch strings.ToLower(key) {
@@ -407,6 +414,7 @@ func (m DashboardModel) handleKeyRunesCompleted(msg tea.KeyMsg) (tea.Model, tea.
 	return m, nil
 }
 
+// handleKeyRunesIncomplete processes vi-style navigation keys (j/k) when the requirements phase is still ongoing.
 func (m DashboardModel) handleKeyRunesIncomplete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showTextInput {
 		return m, nil
@@ -429,6 +437,7 @@ func (m DashboardModel) handleKeyRunesIncomplete(msg tea.KeyMsg) (tea.Model, tea
 	return m, nil
 }
 
+// handleOracleResult processes updates returned by the Oracle LLM model, saving session state and checking for completeness.
 func (m DashboardModel) handleOracleResult(msg oracleResultMsg) (tea.Model, tea.Cmd) {
 	m.loading = false
 	if msg.err != nil {
@@ -470,6 +479,7 @@ func (m DashboardModel) handleOracleResult(msg oracleResultMsg) (tea.Model, tea.
 	return m, tea.Batch(batchCmds...)
 }
 
+// handleEditorFinished reads back edited requirement documents when external editor processes terminate.
 func (m DashboardModel) handleEditorFinished(msg editorFinishedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.setError(fmt.Errorf("editor failed: %w", msg.err))
@@ -491,6 +501,7 @@ func (m DashboardModel) handleEditorFinished(msg editorFinishedMsg) (tea.Model, 
 	return m, m.queryOracleCmd(manualUpdateMsg)
 }
 
+// handleGenProgress processes incoming specification file generation progress notifications.
 func (m DashboardModel) handleGenProgress(msg genProgressMsg) (tea.Model, tea.Cmd) {
 	var ev generator.ProgressEvent
 	if err := json.Unmarshal([]byte(msg), &ev); err != nil {
@@ -515,6 +526,7 @@ func (m DashboardModel) handleGenProgress(msg genProgressMsg) (tea.Model, tea.Cm
 	return m, m.recvGenProgressCmd()
 }
 
+// handleGenProgressStart initializes the TUI metadata maps when document synthesis first starts.
 func (m *DashboardModel) handleGenProgressStart(ev generator.ProgressEvent) {
 	if ev.Phase != "" {
 		m.genPhase = ev.Phase
@@ -528,6 +540,7 @@ func (m *DashboardModel) handleGenProgressStart(ev generator.ProgressEvent) {
 	}
 }
 
+// handleGenProgressFile updates status information and evaluation details for individual target assets.
 func (m *DashboardModel) handleGenProgressFile(ev generator.ProgressEvent) {
 	if m.genFileStatuses == nil {
 		m.genFileStatuses = make(map[string]string)
@@ -539,6 +552,7 @@ func (m *DashboardModel) handleGenProgressFile(ev generator.ProgressEvent) {
 	m.genFileDetails[ev.File] = ev.Details
 }
 
+// handleGenProgressLogs appends real-time validation logs and limits memory capacity to the most recent 10 lines.
 func (m *DashboardModel) handleGenProgressLogs(ev generator.ProgressEvent) {
 	lines := strings.Split(ev.ValLogs, "\n")
 	for _, l := range lines {
@@ -551,6 +565,7 @@ func (m *DashboardModel) handleGenProgressLogs(ev generator.ProgressEvent) {
 	}
 }
 
+// handleGenFinished saves final status and parses scorecard performance statistics when the asset synthesis ends.
 func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cmd) {
 	m.isGenerating = false
 	if msg.err != nil {
@@ -578,6 +593,7 @@ func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cm
 	return m, nil
 }
 
+// handleContextPruneResult processes the outcome of Oracle conversation history context compaction.
 func (m DashboardModel) handleContextPruneResult(msg contextPruneResultMsg) (tea.Model, tea.Cmd) {
 	m.loading = false
 	if msg.err != nil {
@@ -589,6 +605,7 @@ func (m DashboardModel) handleContextPruneResult(msg contextPruneResultMsg) (tea
 }
 
 // Background commands
+// queryOracleCmd submits requirement definitions asynchronously to the LLM Oracle model.
 func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -616,6 +633,7 @@ func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 }
 
 // Receives generator logs asynchronously
+// recvGenProgressCmd reads progress logs asynchronously from the pipeline worker channel.
 func (m DashboardModel) recvGenProgressCmd() tea.Cmd {
 	return func() tea.Msg {
 		progress, ok := <-m.genChan
@@ -627,6 +645,7 @@ func (m DashboardModel) recvGenProgressCmd() tea.Cmd {
 }
 
 // Background command to run generation sequentially
+// generateSpecsCmd synthesizes all targets in parallel inside background worker goroutines.
 func (m DashboardModel) generateSpecsCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -635,6 +654,7 @@ func (m DashboardModel) generateSpecsCmd() tea.Cmd {
 	}
 }
 
+// pruneContextCmd triggers context history summarization when tokens limit is exceeded.
 func (m DashboardModel) pruneContextCmd() tea.Cmd {
 	return func() tea.Msg {
 		pruned, err := m.Session.CheckAndPruneContext(context.Background(), m.Gateway)
@@ -642,6 +662,7 @@ func (m DashboardModel) pruneContextCmd() tea.Cmd {
 	}
 }
 
+// getChoicesList formats standard and custom options to display on the interactive console list.
 func (m DashboardModel) getChoicesList() []string {
 	var list []string
 	for i, c := range m.Session.LastChoices {
@@ -656,6 +677,7 @@ func (m DashboardModel) getChoicesList() []string {
 	return list
 }
 
+// setError assigns the current model error and formats runtime diagnostic messages to errors.log.
 func (m *DashboardModel) setError(err error) {
 	m.err = err
 	if err != nil {
