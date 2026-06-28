@@ -131,7 +131,16 @@ func (m DashboardModel) renderGeneratingState() string {
 			content = append(content, lipgloss.NewStyle().Foreground(ColorMuted).Render(fmt.Sprintf("Fan-out active: %d downstream documents running in parallel.", len(m.genFiles)-1)))
 		}
 	}
-	content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
+	if m.isWaitingApproval {
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorWarning).Bold(true).Render("⏸️  THE DOMAIN APPROVAL GATE ACTIVE"))
+		content = append(content, "The source domain model has been generated and validated.")
+		content = append(content, "Please review the file and approve it to proceed with downstream parallel generation:\n")
+		content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [V] to View 01_domain_model_use_cases.md"))
+		content = append(content, lipgloss.NewStyle().Foreground(ColorInfo).Bold(true).Render("  Press [E] to Edit 01_domain_model_use_cases.md"))
+		content = append(content, lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("  Press [A] or [Enter] to Approve and Resume Downstream Synthesis"))
+	} else {
+		content = append(content, fmt.Sprintf("\n%s Running generative model downstream...", m.spinner.View()))
+	}
 	content = append(content, "\n"+TitleStyle.Render("📂 Document Synthesis Progress:"))
 	content = append(content, m.renderFileProgressList())
 	content = append(content, "\n"+lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true).Render("Status: "+m.genStatus))
@@ -281,7 +290,11 @@ func (m DashboardModel) renderViewer() string {
 		scrollPercent = "Top"
 	}
 
-	footer := footerStyle.Render(fmt.Sprintf("Progress: %s  |  [Esc / q] Back  |  [f] Toggle Layout  |  [j / k] Scroll", scrollPercent))
+	footerText := fmt.Sprintf("Progress: %s  |  [Esc / q] Back  |  [f] Toggle Layout  |  [j / k] Scroll", scrollPercent)
+	if m.isWaitingApproval {
+		footerText = fmt.Sprintf("Progress: %s  |  [A / Enter] Approve & Resume  |  [E] Edit  |  [Esc / q] Back  |  [f] Toggle Layout  |  [j / k] Scroll", scrollPercent)
+	}
+	footer := footerStyle.Render(footerText)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
@@ -514,6 +527,8 @@ func (m DashboardModel) getFileStatusIconAndStyle(status string) (string, lipglo
 	switch status {
 	case "skipped", "done":
 		return "🟢 Done", StyleSuccess
+	case "waiting_approval":
+		return "⏸️ Awaiting Approval", StyleWarning
 	case "synthesizing":
 		return "🔄 Synthesizing", StyleInfo
 	case "correcting":

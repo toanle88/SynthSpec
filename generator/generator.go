@@ -21,6 +21,10 @@ import (
 const sourceModelFileName = "01_domain_model_use_cases.md"
 const maxRetries = 10
 
+type ContextKey string
+const ApprovalChanKey ContextKey = "approvalChan"
+
+
 // TelemetryMetadata represents the .synthspec-meta.json structure
 type TelemetryMetadata struct {
 	ProjectName         string            `json:"project_name"`
@@ -255,6 +259,26 @@ func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, 
 	sourceDoc := strings.TrimSpace(string(sourceDocBytes))
 	if sourceDoc == "" {
 		return FileCompliance{}, "", fmt.Errorf("source model document %s is empty", sourceTemplate.FileName)
+	}
+
+	if approvalChan, ok := fg.ctx.Value(ApprovalChanKey).(chan struct{}); ok && approvalChan != nil {
+		sendProgress(fg.progress, ProgressEvent{
+			File:    sourceTemplate.FileName,
+			Status:  "waiting_approval",
+			Phase:   "source",
+			Message: "Awaiting domain model approval and sign-off...",
+		})
+		select {
+		case <-approvalChan:
+			// Re-read file to capture any manual edits made by the user during the pause
+			sourceDocBytes, err = os.ReadFile(sourceDocPath)
+			if err != nil {
+				return FileCompliance{}, "", fmt.Errorf("failed to re-read source model document %s: %w", sourceTemplate.FileName, err)
+			}
+			sourceDoc = strings.TrimSpace(string(sourceDocBytes))
+		case <-fg.ctx.Done():
+			return FileCompliance{}, "", fg.ctx.Err()
+		}
 	}
 
 	return sourceCompliance, sourceDoc, nil

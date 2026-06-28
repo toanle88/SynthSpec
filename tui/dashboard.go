@@ -32,6 +32,10 @@ type editorFinishedMsg struct {
 	err error
 }
 
+type fileEditorFinishedMsg struct {
+	err error
+}
+
 type genProgressMsg string
 type genFinishedMsg struct {
 	err error
@@ -97,7 +101,13 @@ type DashboardModel struct {
 	// Thought stream state
 	thoughtChan     chan string
 	streamingTokens string
+
+	// Approval Gate state
+	approvalChan      chan struct{}
+	isWaitingApproval bool
+	isEditingFile     bool
 }
+
 
 func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
 	s := spinner.New()
@@ -230,7 +240,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
-		if m.loading || m.isGenerating {
+		if m.loading || (m.isGenerating && !m.isWaitingApproval) {
 			return m, nil
 		}
 		var keyCmd tea.Cmd
@@ -254,6 +264,17 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorFinishedMsg:
 		return m.handleEditorFinished(msg)
+
+	case fileEditorFinishedMsg:
+		m.isEditingFile = false
+		if msg.err != nil {
+			m.setError(fmt.Errorf("file editor failed: %w", msg.err))
+		}
+		if m.isWaitingApproval && m.showViewer {
+			// Reload file contents in the viewport
+			return m.openFileViewer()
+		}
+		return m, nil
 
 	case genProgressMsg:
 		return m.handleGenProgress(msg)
@@ -300,6 +321,21 @@ func (m DashboardModel) handleViewerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateViewportSize()
 			return m, nil
 		}
+		if m.isWaitingApproval {
+			switch strings.ToLower(keyMsg.String()) {
+			case "a", "enter":
+				m.showViewer = false
+				if m.approvalChan != nil {
+					close(m.approvalChan)
+					m.approvalChan = nil
+				}
+				m.isWaitingApproval = false
+				m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
+				return m, nil
+			case "e":
+				return m.launchFileEditor("01_domain_model_use_cases.md")
+			}
+		}
 		if m.Settings.VimMode {
 			switch keyMsg.String() {
 			case "j":
@@ -338,6 +374,25 @@ func (m *DashboardModel) updateViewportSize() {
 
 // handleKeyMsg routes key presses to specific action handlers based on key type.
 func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.isWaitingApproval {
+		switch strings.ToLower(msg.String()) {
+		case "a", "enter":
+			if m.approvalChan != nil {
+				close(m.approvalChan)
+				m.approvalChan = nil
+			}
+			m.isWaitingApproval = false
+			m.genStatus = "Domain Model approved! Commencing downstream parallel generation..."
+			return m, nil
+		case "v":
+			m.selectedFileIdx = 0
+			return m.openFileViewer()
+		case "e":
+			return m.launchFileEditor("01_domain_model_use_cases.md")
+		}
+		return m, nil
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlK:
 		if !m.isCompleted && !m.loading && !m.isGenerating && !m.showUpdatePrompt {
@@ -643,6 +698,8 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 	for _, f := range m.genFiles {
 		m.genFileStatuses[f] = "pending"
 	}
+	m.approvalChan = make(chan struct{})
+	m.isWaitingApproval = false
 	return m, tea.Batch(
 		m.generateSpecsCmd(),
 		m.recvGenProgressCmd(),
@@ -661,6 +718,25 @@ func (m DashboardModel) launchExternalEditor() (tea.Model, tea.Cmd) {
 		return editorFinishedMsg{err: err}
 	})
 }
+
+// launchFileEditor suspends Bubble Tea UI and runs the external editor on an arbitrary generated file.
+func (m DashboardModel) launchFileEditor(fileName string) (tea.Model, tea.Cmd) {
+	dir := m.OutputDir
+	if dir == "" {
+		dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
+	}
+	filePath := filepath.Join(dir, fileName)
+	editorCmd, err := state.GetFileEditorCommand(filePath)
+	if err != nil {
+		m.setError(err)
+		return m, nil
+	}
+	m.isEditingFile = true
+	return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+		return fileEditorFinishedMsg{err: err}
+	})
+}
+
 
 // activateUpdatePrompt focuses the text input to enter manually updated requirements.
 func (m DashboardModel) activateUpdatePrompt() (tea.Model, tea.Cmd) {
@@ -897,6 +973,8 @@ func (m DashboardModel) checkAndTriggerPostOracle(wasCompleted bool) (tea.Model,
 		for _, f := range m.genFiles {
 			m.genFileStatuses[f] = "pending"
 		}
+		m.approvalChan = make(chan struct{})
+		m.isWaitingApproval = false
 		batchCmds = append(batchCmds, m.generateSpecsCmd(), m.recvGenProgressCmd())
 	} else if !m.isCompleted {
 		m.loading = true
@@ -945,6 +1023,14 @@ func (m DashboardModel) handleGenProgress(msg genProgressMsg) (tea.Model, tea.Cm
 
 	if ev.Message != "" {
 		m.genStatus = ev.Message
+	}
+
+	if ev.Status == "waiting_approval" {
+		m.isWaitingApproval = true
+		m.selectedFileIdx = 0
+		model, cmd := m.openFileViewer()
+		m = model.(DashboardModel)
+		return m, tea.Batch(cmd, m.recvGenProgressCmd())
 	}
 
 	return m, m.recvGenProgressCmd()
@@ -1091,6 +1177,9 @@ func (m DashboardModel) recvGenProgressCmd() tea.Cmd {
 func (m DashboardModel) generateSpecsCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
+		if m.approvalChan != nil {
+			ctx = context.WithValue(ctx, generator.ApprovalChanKey, m.approvalChan)
+		}
 		err := generator.Generate(ctx, m.Gateway, m.Session, m.OutputDir, m.genChan)
 		return genFinishedMsg{err: err}
 	}

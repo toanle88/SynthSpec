@@ -69,3 +69,10 @@ func resolveEditor(filePath string) (string, []string) {
 
 	return "vi", []string{filePath}
 }
+
+// GetFileEditorCommand returns the exec.Cmd to edit an arbitrary file using the resolved system editor.
+func GetFileEditorCommand(filePath string) (*exec.Cmd, error) {
+	editorCmd, editorArgs := resolveEditor(filePath)
+	return exec.Command(editorCmd, editorArgs...), nil
+}
+
