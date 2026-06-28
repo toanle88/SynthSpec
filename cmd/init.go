@@ -88,8 +88,14 @@ var initCmd = &cobra.Command{
 		}
 
 		// 4. Run TUI Dashboard
+		settings, _ := config.LoadSettings()
+		outDir := outputFlag
+		if outDir == "" && settings != nil {
+			outDir = settings.DefaultOutputFolder
+		}
+
 		fmt.Printf("Initializing project '%s' using %s (%s)...\n", projectName, cfg.Provider, cfg.Model)
-		m := tui.NewDashboardModel(&sess, gw, outputFlag)
+		m := tui.NewDashboardModel(&sess, gw, outDir)
 		if err := runTUI(m); err != nil {
 			return fmt.Errorf("bubbletea execution failed: %w", err)
 		}

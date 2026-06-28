@@ -19,19 +19,29 @@ const (
 )
 
 type GeminiGateway struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey     string
+	model      string
+	client     *http.Client
+	maxRetries int
 }
 
 func NewGeminiGateway(apiKey, model string) *GeminiGateway {
 	if model == "" {
 		model = "gemini-2.5-pro"
 	}
+	timeout := 5 * time.Minute
+	maxRetries := 3
+
+	if s, err := config.LoadSettings(); err == nil && s != nil {
+		timeout = time.Duration(s.TimeoutSeconds) * time.Second
+		maxRetries = s.MaxRetries
+	}
+
 	return &GeminiGateway{
-		apiKey: apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 5 * time.Minute},
+		apiKey:     apiKey,
+		model:      model,
+		client:     &http.Client{Timeout: timeout},
+		maxRetries: maxRetries,
 	}
 }
 
@@ -172,7 +182,7 @@ Guidelines for evaluation:
 	}
 	req.Header.Set(contentTypeHeader, applicationJSON)
 
-	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +236,7 @@ func (g *GeminiGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 	}
 	req.Header.Set(contentTypeHeader, applicationJSON)
 
-	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -310,7 +320,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON array stri
 	}
 	req.Header.Set(contentTypeHeader, applicationJSON)
 
-	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +411,7 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 	}
 	req.Header.Set(contentTypeHeader, applicationJSON)
 
-	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -470,7 +480,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON string.`
 	}
 	req.Header.Set(contentTypeHeader, applicationJSON)
 
-	respBytes, err := SendWithRetry(ctx, g.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
 	if err != nil {
 		return nil, err
 	}

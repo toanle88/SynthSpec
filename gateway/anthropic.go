@@ -22,19 +22,29 @@ const (
 )
 
 type AnthropicGateway struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey     string
+	model      string
+	client     *http.Client
+	maxRetries int
 }
 
 func NewAnthropicGateway(apiKey, model string) *AnthropicGateway {
 	if model == "" {
 		model = "claude-3-5-sonnet"
 	}
+	timeout := 5 * time.Minute
+	maxRetries := 3
+
+	if s, err := config.LoadSettings(); err == nil && s != nil {
+		timeout = time.Duration(s.TimeoutSeconds) * time.Second
+		maxRetries = s.MaxRetries
+	}
+
 	return &AnthropicGateway{
-		apiKey: apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 5 * time.Minute},
+		apiKey:     apiKey,
+		model:      model,
+		client:     &http.Client{Timeout: timeout},
+		maxRetries: maxRetries,
 	}
 }
 
@@ -165,7 +175,7 @@ Guidelines for evaluation:
 	req.Header.Set(authApiKeyHeader, a.apiKey)
 	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
-	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +232,7 @@ func (a *AnthropicGateway) GenerateSpecFile(ctx context.Context, facts Facts, fi
 	req.Header.Set(authApiKeyHeader, a.apiKey)
 	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
-	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -309,7 +319,7 @@ Output only the raw JSON string. Do NOT output any markdown formatting backticks
 	req.Header.Set(authApiKeyHeader, a.apiKey)
 	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
-	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +408,7 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 	req.Header.Set(authApiKeyHeader, a.apiKey)
 	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
-	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -467,7 +477,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON string.`
 	req.Header.Set(authApiKeyHeader, a.apiKey)
 	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
 
-	respBytes, err := SendWithRetry(ctx, a.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
 	if err != nil {
 		return nil, err
 	}

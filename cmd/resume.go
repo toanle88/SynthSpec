@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/state"
 	"github.com/toanle/synthspec/tui"
 )
@@ -61,8 +62,14 @@ var resumeCmd = &cobra.Command{
 		}
 
 		// 3. Boot Dashboard
+		settings, _ := config.LoadSettings()
+		outDir := outputFlag
+		if outDir == "" && settings != nil {
+			outDir = settings.DefaultOutputFolder
+		}
+
 		fmt.Printf("Resuming project '%s' using %s (%s)...\n", projectName, sess.Provider, sess.Model)
-		m := tui.NewDashboardModel(sess, gw, outputFlag)
+		m := tui.NewDashboardModel(sess, gw, outDir)
 		if err := runTUI(m); err != nil {
 			return fmt.Errorf("bubbletea execution failed: %w", err)
 		}

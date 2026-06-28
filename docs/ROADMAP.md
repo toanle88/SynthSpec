@@ -33,8 +33,8 @@ This document tracks current priorities, upcoming milestones, and development st
 ### Milestone 5: Interactive Boot Menu & Project Manager (v0.5.0) ── [ ] Planned
 - [x] **Welcome Screen**: Implement an interactive selection menu on boot using a TUI component library, removing the need to memorize CLI subcommands.
 - [x] **Industry-Specific Blueprints**: Introduce starting templates (e.g., `fintech-saas`, `internal-crud`) during project initialization to pre-load context and accelerate the interrogation loop.
-- [ ] **Action Routing & Global Settings**: Provide global menu routes including "Create New Project", "Resume Existing", "View Assets", **"Audit Workspace (Drift Detection)"**, and a "Settings" configuration pane. 
-- [ ] **Configurable Application Parameters**: Allow users via the Settings pane to customize network constraints (API timeout limits and max retries) and set a default output folder for generated specifications.
+- [x] **Action Routing & Global Settings**: Provide global menu routes including "Create New Project", "Resume Existing", "View Assets", **"Audit Workspace (Drift Detection)"**, and a "Settings" configuration pane. 
+- [x] **Configurable Application Parameters**: Allow users via the Settings pane to customize network constraints (API timeout limits and max retries) and set a default output folder for generated specifications.
 - [ ] **Ephemeral Debug Logging**: Add an opt-in `--debug` flag to write sanitized execution traces to `.synthspec/crash.log` for troubleshooting without violating the zero-data retention policy.
 - [ ] **Fuzzy Project Finder**: Build a dynamic directory scanner that populates a searchable, fuzzy-filtered list of existing projects.
 

@@ -23,19 +23,29 @@ const (
 )
 
 type OpenRouterGateway struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey     string
+	model      string
+	client     *http.Client
+	maxRetries int
 }
 
 func NewOpenRouterGateway(apiKey, model string) *OpenRouterGateway {
 	if model == "" {
 		model = "meta-llama/llama-3.1-405b-instruct"
 	}
+	timeout := 5 * time.Minute
+	maxRetries := 3
+
+	if s, err := config.LoadSettings(); err == nil && s != nil {
+		timeout = time.Duration(s.TimeoutSeconds) * time.Second
+		maxRetries = s.MaxRetries
+	}
+
 	return &OpenRouterGateway{
-		apiKey: apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 5 * time.Minute},
+		apiKey:     apiKey,
+		model:      model,
+		client:     &http.Client{Timeout: timeout},
+		maxRetries: maxRetries,
 	}
 }
 
@@ -156,7 +166,7 @@ Guidelines for evaluation:
 	req.Header.Set(refererHeader, refererValue)
 	req.Header.Set(xTitleHeader, "SynthSpec")
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +222,7 @@ func (o *OpenRouterGateway) GenerateSpecFile(ctx context.Context, facts Facts, f
 	req.Header.Set(refererHeader, refererValue)
 	req.Header.Set(xTitleHeader, "SynthSpec")
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -303,7 +313,7 @@ Output only the raw JSON string.`
 	req.Header.Set(refererHeader, refererValue)
 	req.Header.Set(xTitleHeader, "SynthSpec")
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +394,7 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 	req.Header.Set(refererHeader, refererValue)
 	req.Header.Set(xTitleHeader, "SynthSpec")
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -451,7 +461,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON string.`
 	req.Header.Set(refererHeader, refererValue)
 	req.Header.Set(xTitleHeader, "SynthSpec")
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return nil, err
 	}

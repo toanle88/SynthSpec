@@ -19,19 +19,29 @@ const (
 )
 
 type OpenAIGateway struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey     string
+	model      string
+	client     *http.Client
+	maxRetries int
 }
 
 func NewOpenAIGateway(apiKey, model string) *OpenAIGateway {
 	if model == "" {
 		model = "gpt-4o"
 	}
+	timeout := 5 * time.Minute
+	maxRetries := 3
+
+	if s, err := config.LoadSettings(); err == nil && s != nil {
+		timeout = time.Duration(s.TimeoutSeconds) * time.Second
+		maxRetries = s.MaxRetries
+	}
+
 	return &OpenAIGateway{
-		apiKey: apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 5 * time.Minute},
+		apiKey:     apiKey,
+		model:      model,
+		client:     &http.Client{Timeout: timeout},
+		maxRetries: maxRetries,
 	}
 }
 
@@ -150,7 +160,7 @@ Guidelines for evaluation:
 	req.Header.Set(contentTypeHeader, applicationJSON)
 	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +214,7 @@ func (o *OpenAIGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileN
 	req.Header.Set(contentTypeHeader, applicationJSON)
 	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -285,7 +295,7 @@ Output only the raw JSON string.`
 	req.Header.Set(contentTypeHeader, applicationJSON)
 	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +374,7 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 	req.Header.Set(contentTypeHeader, applicationJSON)
 	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return "", err
 	}
@@ -429,7 +439,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON string.`
 	req.Header.Set(contentTypeHeader, applicationJSON)
 	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
 
-	respBytes, err := SendWithRetry(ctx, o.client, req, 3)
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
 	if err != nil {
 		return nil, err
 	}

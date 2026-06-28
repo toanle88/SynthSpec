@@ -19,6 +19,9 @@ const (
 	PhaseBlueprintSelect
 	PhaseResumeSelect
 	PhaseStatusAlert
+	PhaseSettings
+	PhaseViewAssets
+	PhaseAuditWorkspace
 )
 
 type WelcomeAction int
@@ -53,6 +56,11 @@ type WelcomeModel struct {
 	alertTitle   string
 	alertMessage string
 
+	// Global Settings Phase Fields
+	Settings           *config.Settings
+	SelectedSettingIdx int
+	settingInputs      []textinput.Model
+
 	// Terminal dimensions
 	width  int
 	height int
@@ -66,6 +74,29 @@ func NewWelcomeModel() WelcomeModel {
 	ti.Width = 30
 
 	blueprints, _ := config.LoadBlueprints()
+	settings, _ := config.LoadSettings()
+	if settings == nil {
+		settings = &config.Settings{
+			TimeoutSeconds:      config.DefaultTimeoutSeconds,
+			MaxRetries:          config.DefaultMaxRetries,
+			DefaultOutputFolder: config.DefaultOutputFolderValue,
+		}
+	}
+
+	tInput := textinput.New()
+	tInput.Placeholder = "60"
+	tInput.CharLimit = 5
+	tInput.Width = 10
+
+	rInput := textinput.New()
+	rInput.Placeholder = "3"
+	rInput.CharLimit = 5
+	rInput.Width = 10
+
+	oInput := textinput.New()
+	oInput.Placeholder = "./output"
+	oInput.CharLimit = 256
+	oInput.Width = 30
 
 	return WelcomeModel{
 		Phase:          PhaseMenu,
@@ -74,6 +105,8 @@ func NewWelcomeModel() WelcomeModel {
 		SelectedOption: 0,
 		textInput:      ti,
 		Blueprints:     blueprints,
+		Settings:       settings,
+		settingInputs:  []textinput.Model{tInput, rInput, oInput},
 	}
 }
 
@@ -176,6 +209,56 @@ func (m WelcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case PhaseStatusAlert:
 			// Press any key to go back
 			m.Phase = PhaseMenu
+
+		case PhaseSettings:
+			switch msg.String() {
+			case "up", "k", "shift+tab":
+				m.settingInputs[m.SelectedSettingIdx].Blur()
+				if m.SelectedSettingIdx > 0 {
+					m.SelectedSettingIdx--
+				} else {
+					m.SelectedSettingIdx = len(m.settingInputs) - 1
+				}
+				m.settingInputs[m.SelectedSettingIdx].Focus()
+			case "down", "j", "tab":
+				m.settingInputs[m.SelectedSettingIdx].Blur()
+				if m.SelectedSettingIdx < len(m.settingInputs)-1 {
+					m.SelectedSettingIdx++
+				} else {
+					m.SelectedSettingIdx = 0
+				}
+				m.settingInputs[m.SelectedSettingIdx].Focus()
+			case "enter":
+				var tSec, mRet int
+				_, _ = fmt.Sscanf(m.settingInputs[0].Value(), "%d", &tSec)
+				_, _ = fmt.Sscanf(m.settingInputs[1].Value(), "%d", &mRet)
+				outFolder := strings.TrimSpace(m.settingInputs[2].Value())
+
+				if tSec > 0 {
+					m.Settings.TimeoutSeconds = tSec
+				}
+				if mRet >= 0 {
+					m.Settings.MaxRetries = mRet
+				}
+				if outFolder != "" {
+					m.Settings.DefaultOutputFolder = outFolder
+				}
+
+				_ = config.SaveSettings(m.Settings, true)
+				_ = config.SaveSettings(m.Settings, false)
+
+				m.Phase = PhaseMenu
+			case "esc":
+				m.Phase = PhaseMenu
+			default:
+				m.settingInputs[m.SelectedSettingIdx], cmd = m.settingInputs[m.SelectedSettingIdx].Update(msg)
+			}
+
+		case PhaseViewAssets, PhaseAuditWorkspace:
+			switch msg.String() {
+			case "esc", "q", "enter":
+				m.Phase = PhaseMenu
+			}
 		}
 	}
 
@@ -205,17 +288,18 @@ func (m *WelcomeModel) handleMenuSelection() {
 		m.SelectedProject = 0
 		m.Phase = PhaseResumeSelect
 	case 2: // View Assets
-		m.alertTitle = "View Assets"
-		m.alertMessage = "Interactive Asset Viewer is planned for Milestone 6.\nFor now, please inspect files in the generated output directories directly."
-		m.Phase = PhaseStatusAlert
+		m.Phase = PhaseViewAssets
 	case 3: // Audit Workspace
-		m.alertTitle = "Audit Workspace"
-		m.alertMessage = "Compliance Audit and Drift Detection is planned for Milestone 5.\nThis will scan and check local code against synthesized specs."
-		m.Phase = PhaseStatusAlert
+		m.Phase = PhaseAuditWorkspace
 	case 4: // Settings
-		m.alertTitle = "Global Settings"
-		m.alertMessage = "Settings Configuration Pane is planned for Milestone 5.\nThis will allow tweaking timeouts, retry thresholds, and export targets."
-		m.Phase = PhaseStatusAlert
+		m.settingInputs[0].SetValue(fmt.Sprintf("%d", m.Settings.TimeoutSeconds))
+		m.settingInputs[1].SetValue(fmt.Sprintf("%d", m.Settings.MaxRetries))
+		m.settingInputs[2].SetValue(m.Settings.DefaultOutputFolder)
+		m.SelectedSettingIdx = 0
+		m.settingInputs[0].Focus()
+		m.settingInputs[1].Blur()
+		m.settingInputs[2].Blur()
+		m.Phase = PhaseSettings
 	case 5: // Exit
 		m.Action = ActionExit
 		m.Phase = PhaseStatusAlert // or we could quit immediately
@@ -261,7 +345,7 @@ func (m WelcomeModel) View() string {
 
 			// Add visual indicator for coming soon
 			label := opt
-			if opt == "View Assets" || opt == "Audit Workspace" || opt == "Settings" {
+			if opt == "View Assets" || opt == "Audit Workspace" {
 				label = fmt.Sprintf("%s %s", opt, lipgloss.NewStyle().Foreground(ColorMuted).Render("(Coming Soon)"))
 			}
 
@@ -342,13 +426,59 @@ func (m WelcomeModel) View() string {
 		lines = append(lines, "")
 		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("[ Press any key to return to menu ]"))
 		content = strings.Join(lines, "\n")
+
+	case PhaseSettings:
+		var lines []string
+		lines = append(lines, "")
+		lines = append(lines, TitleStyle.Render("⚙️ Global & Workspace Settings"))
+		lines = append(lines, "")
+
+		settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder"}
+		for i, field := range settingFields {
+			prefix := "  "
+			labelStyle := lipgloss.NewStyle().Foreground(ColorText)
+			if i == m.SelectedSettingIdx {
+				prefix = "➔ "
+				labelStyle = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+			}
+			lines = append(lines, fmt.Sprintf("%s%s: %s", prefix, labelStyle.Render(field), m.settingInputs[i].View()))
+		}
+
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Up/Down to navigate, Enter to Save settings, Esc to cancel"))
+		content = strings.Join(lines, "\n")
+
+	case PhaseViewAssets:
+		var lines []string
+		lines = append(lines, "")
+		lines = append(lines, TitleStyle.Render("📂 View Assets (Interactive Viewer)"))
+		lines = append(lines, "")
+		lines = append(lines, "The interactive visual spec asset list and markdown reader is")
+		lines = append(lines, "currently scheduled for implementation under Milestone 6.")
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("For now, please inspect files in the generated output directories directly."))
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Esc or q to return to the main menu."))
+		content = strings.Join(lines, "\n")
+
+	case PhaseAuditWorkspace:
+		var lines []string
+		lines = append(lines, "")
+		lines = append(lines, TitleStyle.Render("🔍 Audit Workspace (Drift Detection)"))
+		lines = append(lines, "")
+		lines = append(lines, "The Workspace Auditor scans local physical source code and compares it")
+		lines = append(lines, "against the established spec to flag interface drift or security violations.")
+		lines = append(lines, "This compliance enforcement engine is planned for later Milestone 11.")
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Esc or q to return to the main menu."))
+		content = strings.Join(lines, "\n")
 	}
 
 	// Main frame
 	body := lipgloss.JoinVertical(lipgloss.Left, logoText, subTitle, content)
 	
 	h := 18
-	if m.Phase == PhaseBlueprintSelect {
+	if m.Phase == PhaseBlueprintSelect || m.Phase == PhaseSettings {
 		h = 22
 	}
 	styledBody := MainPanelStyle.
