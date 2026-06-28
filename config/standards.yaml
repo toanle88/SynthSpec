@@ -1,11 +1,47 @@
 standards:
+  - id: domain_model_purity
+    name: Domain Model Purity
+    description: Enforces that the domain model is a pure business specification.
+    target_files:
+      - 01_domain_model_use_cases.md
+    criteria: |
+      Verify that the document strictly contains pure business domain concepts (bounded contexts, entities, value objects, scenario walk-throughs) and Mermaid diagrams. CRITICAL: The document MUST NOT contain any programming code snippets, JSON API payloads, SQL schemas, or framework-specific implementation details.
+    min_score: 100
+
+  - id: domain_scenario_sequence_diagrams
+    name: Domain Scenario Sequence Diagrams
+    description: Scenario walkthroughs must contain Mermaid sequence diagrams.
+    target_files:
+      - 01_domain_model_use_cases.md
+    criteria: |
+      Each primary scenario walkthrough MUST contain a structured Mermaid.js sequence diagram showing the step-by-step actor and system interactions.
+    min_score: 90
+
+  - id: domain_bounded_contexts
+    name: Bounded Context Separation
+    description: Define contexts and map entities uniquely within them.
+    target_files:
+      - 01_domain_model_use_cases.md
+    criteria: |
+      Clearly define bounded contexts and ensure domain entities are mapped uniquely within their respective context to prevent context bleed.
+    min_score: 85
+
+  - id: prd_traceability
+    name: PRD Traceability
+    description: Functional requirements strictly trace back to domain use cases.
+    target_files:
+      - 02_prd_functional.md
+    criteria: |
+      Verify that every user story and functional requirement uses the exact actor and entity terminology defined in 01_domain_model_use_cases.md, and maps directly to a defined scenario walkthrough.
+    min_score: 100
+
   - id: clean_architecture
     name: Clean Architecture
     description: Separation of concerns; business logic decoupled from transport/DB frameworks.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
-      Verify that the proposed backend layout decouples business logic (core application services/use-cases) from delivery/transport layers (e.g. HTTP, gRPC) and data access layers (e.g. database repositories). High level layers should not depend on low level layers.
+      Verify that the backend layout decouples business logic from delivery/transport layers and data access layers. CRITICAL: Architectural boundaries (e.g., modules, microservices) MUST align strictly with the Bounded Contexts defined in 01_domain_model_use_cases.md.
     min_score: 85
 
   - id: api_envelope_responses
@@ -14,7 +50,7 @@ standards:
     target_files:
       - 04_api_architecture_integration.md
     criteria: |
-      Ensure all non-empty API responses are wrapped in a standard JSON envelope containing consistent root keys, such as 'data', 'error', and 'meta' (if applicable). No raw arrays or un-enveloped objects.
+      Ensure all non-empty API responses are wrapped in a standard JSON envelope containing consistent root keys, such as 'data', 'error', and 'meta'. No raw arrays or un-enveloped objects.
     min_score: 100
 
   - id: error_response_format
@@ -23,7 +59,7 @@ standards:
     target_files:
       - 04_api_architecture_integration.md
     criteria: |
-      Ensure all error responses (e.g. 4xx, 5xx codes) use a consistent error payload schema, containing fields like 'code', 'message', and 'details' (or similar structured fields explaining the error details).
+      Ensure all error responses (e.g. 4xx, 5xx codes) use a consistent error payload schema, containing fields like 'code', 'message', and 'details'.
     min_score: 100
 
   - id: pagination
@@ -32,24 +68,25 @@ standards:
     target_files:
       - 04_api_architecture_integration.md
     criteria: |
-      Check that all list/query endpoints returning collections support pagination using query parameters (such as limit/offset, page/per_page, or cursor keys) and return pagination metadata in the response.
+      Check that all list/query endpoints returning collections support pagination using query parameters (limit/offset, cursor keys) and return pagination metadata in the response.
     min_score: 100
 
   - id: input_validation
     name: Input Validation
-    description: Explicit validation rules for API request bodies and parameters.
+    description: Explicit validation rules mapping to domain attributes.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
       - 04_api_architecture_integration.md
+      - 06_security_threat_model.md
     criteria: |
-      Verify that the API contract and system details specify strict validation rules (e.g., minimum/maximum, format, pattern, required fields) for request headers, query parameters, and JSON payloads.
+      Verify strict validation rules (minimum/maximum, format, required fields) for request headers, query parameters, and JSON payloads. CRITICAL: Validation logic must accurately reflect the Value Objects and entity constraints defined in 01_domain_model_use_cases.md.
     min_score: 100
 
   - id: authentication
     name: Authentication
     description: Explicit secure authentication mechanisms (e.g., JWT Bearer).
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
       - 04_api_architecture_integration.md
     criteria: |
       Ensure all protected endpoints clearly specify their authentication scheme (e.g., HTTP Bearer JWT token authentication) and detail how tokens are validated.
@@ -59,25 +96,25 @@ standards:
     name: SQL Parameterization
     description: Parameterized queries or ORM usages preventing SQL Injection.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
-      Ensure all raw SQL queries, statements, and database interfaces shown in design utilize parameterized placeholders ($1, ? or named parameters) instead of string interpolation or concatenation.
+      Ensure all raw SQL queries, statements, and database interfaces utilize parameterized placeholders ($1, ? or named parameters) instead of string interpolation.
     min_score: 100
 
   - id: soft_delete
     name: Soft Delete
     description: Database records soft-deleted via timestamp columns rather than hard-removed.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
-      Check that relational database schema tables representing domain entities include a soft-delete column (e.g., deleted_at TIMESTAMPTZ) to preserve records rather than delete them physically.
+      Check that relational database schema tables include a soft-delete column (e.g., deleted_at TIMESTAMPTZ) to preserve records rather than delete them physically.
     min_score: 100
 
   - id: uuid_primary_keys
     name: UUID Primary Keys
     description: Globally unique identifiers utilized for database primary keys.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
       Verify that relational database tables use UUIDs (UUID or varchar(36) representation) as their primary keys instead of auto-incrementing sequential integers.
     min_score: 100
@@ -86,7 +123,7 @@ standards:
     name: TIMESTAMPTZ
     description: Timestamps with timezone offsets utilized for temporal columns.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
       Check that all temporal columns (created_at, updated_at, deleted_at, scheduled_at, etc.) in database schema designs use timezone-aware data types (TIMESTAMPTZ).
     min_score: 100
@@ -95,7 +132,7 @@ standards:
     name: Connection Pooling
     description: DB connection pool thresholds configured.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
       Check that the system architectural details or initialization section specifies connection pooling parameters such as Max Open Connections, Max Idle Connections, and Max Lifetime.
     min_score: 100
@@ -104,7 +141,7 @@ standards:
     name: Structured Logging
     description: System logs formatted as JSON with common metadata fields.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
       Verify that system logging plans define structured formats (e.g., JSON) capturing consistent metadata: timestamp, level, message, environment, and request/trace context IDs.
     min_score: 100
@@ -113,19 +150,28 @@ standards:
     name: Prometheus Metrics
     description: Metrics endpoints exposing request telemetry.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
       - 04_api_architecture_integration.md
     criteria: |
       Verify the specification describes endpoint telemetry tracking (e.g., a Prometheus /metrics endpoint) measuring latency, request rate, and error rate.
     min_score: 100
 
-  - id: go_doc_comments
-    name: Go Doc Comments
-    description: Architecture/code specs follow standard Go doc comment formatting.
+  - id: workflow_architecture_diagram
+    name: Workflow Architecture Diagram
+    description: Includes a Mermaid.js diagram showing workflow architecture.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
     criteria: |
-      If Go code snippets are shown in the architecture spec, check that package-level types and functions have proper Go doc comments starting with the entity name.
+      Verify that the system architecture specification includes a structured Mermaid.js diagram illustrating the high-level workflow architecture.
+    min_score: 90
+
+  - id: inline_code_documentation
+    name: Inline Code Documentation
+    description: Code snippets follow standard inline documentation formats for their respective languages.
+    target_files:
+      - 05_coding_standards_guidelines.md
+    criteria: |
+      If code snippets are used in the documentation, verify that standard inline documentation practices for the specified language (e.g., JSDoc, Python Docstrings, GoDoc, JavaDoc, Rustdoc) are explicitly mandated and demonstrated.
     min_score: 100
 
   - id: testing
@@ -150,7 +196,7 @@ standards:
     name: Health Checks
     description: Health endpoints exposing live and ready status probes.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
       - 04_api_architecture_integration.md
     criteria: |
       Check that the system designs specify standard health check endpoints (e.g., /healthz, /live, /ready) returning status codes indicating process and database connectivity health.
@@ -160,7 +206,7 @@ standards:
     name: Rate Limiting
     description: API rate limits configured to prevent DOS.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
       - 04_api_architecture_integration.md
     criteria: |
       Verify that API endpoints specify rate limiting configs (e.g., HTTP 429 Too Many Requests responses) with details on algorithm (token bucket, sliding window) or storage.
@@ -170,7 +216,7 @@ standards:
     name: CORS
     description: Cross-Origin Resource Sharing restrictions configured securely.
     target_files:
-      - 02_system_architecture.md
+      - 03_system_architecture.md
       - 04_api_architecture_integration.md
     criteria: |
       Ensure that the API security section or contract specifies configured CORS policies, restricting allowed origins, headers, and methods rather than allowing wildcard (*) everywhere.
@@ -180,8 +226,8 @@ standards:
     name: Theme Support
     description: Application design supports dark/light mode standards.
     target_files:
-      - 01_prd_functional.md
-      - 02_system_architecture.md
+      - 02_prd_functional.md
+      - 03_system_architecture.md
     criteria: |
       If front-end interfaces or client terminal themes are discussed, ensure that support for theming (e.g., light and dark theme mode configs) is detailed.
     min_score: 100
@@ -222,23 +268,23 @@ standards:
       Verify that rules for API versioning (e.g., URI vs Header versioning) and contract update documentation policy are detailed.
     min_score: 100
 
-  - id: domain_scenario_sequence_diagrams
-    name: Domain Scenario Sequence Diagrams
-    description: Scenario walkthroughs must contain Mermaid sequence diagrams.
+  - id: stride_threat_modeling
+    name: STRIDE Threat Modeling
+    description: STRIDE analysis explicitly mapped to domain scenarios.
     target_files:
-      - 06_domain_model_use_cases.md
+      - 06_security_threat_model.md
     criteria: |
-      Each primary scenario walkthrough MUST contain a structured Mermaid.js sequence diagram showing the step-by-step actor and system interactions.
-    min_score: 90
+      Verify the threat model performs a STRIDE analysis explicitly based on the scenario walkthroughs and actors defined in 01_domain_model_use_cases.md, mapping at least 5 identified threats to mitigations within a markdown table.
+    min_score: 100
 
-  - id: domain_bounded_contexts
-    name: Bounded Context Separation
-    description: Define contexts and map entities uniquely within them.
+  - id: security_boundaries_crypto
+    name: Security Boundaries & Cryptography
+    description: Explicit detailing of validation boundaries, timeouts, and cryptography.
     target_files:
-      - 06_domain_model_use_cases.md
+      - 06_security_threat_model.md
     criteria: |
-      Clearly define bounded contexts and ensure domain entities are mapped uniquely within their respective context to prevent context bleed.
-    min_score: 85
+      Check that the security document explicitly details input validation boundaries, timeout configurations, and cryptographic standards.
+    min_score: 100
 
   - id: roadmap_phases_milestones
     name: Roadmap Phases & Milestones
@@ -257,3 +303,87 @@ standards:
     criteria: |
       Verify that the roadmap includes a Mermaid.js Gantt chart depicting the phases and milestone timeline.
     min_score: 85
+
+  - id: documentation_testing
+    name: Documentation Testing
+    description: Automated validation of documentation, markdown, and API schemas.
+    target_files:
+      - 04_api_architecture_integration.md
+      - 05_coding_standards_guidelines.md
+    criteria: |
+      Verify that the guidelines mandate automated documentation testing, specifically including markdown linting, dead-link checking, and API specification (e.g., OpenAPI) schema validation within the CI/CD pipeline.
+    min_score: 100
+
+  - id: database_erd
+    name: Database ERD
+    description: Visual entity-relationship diagram matching domain entities.
+    target_files:
+      - 03_system_architecture.md
+    criteria: |
+      Verify that the system architecture specification includes a structured Mermaid.js Entity-Relationship Diagram (ERD) detailing all tables. CRITICAL: The tables and relationships MUST accurately reflect the Core Entities and Aggregates defined in 01_domain_model_use_cases.md.
+    min_score: 90
+
+  - id: performance_standards
+    name: Performance & Load Testing
+    description: Defined SLAs and mandated load testing strategies.
+    target_files:
+      - 03_system_architecture.md
+      - 05_coding_standards_guidelines.md
+    criteria: |
+      Check that performance SLAs (e.g., latency targets, throughput limits) are explicitly defined and a load/stress testing strategy utilizing specific tooling (e.g., k6, JMeter) is mandated.
+    min_score: 100
+
+  - id: pii_data_privacy
+    name: PII Handling & Data Privacy
+    description: Strict guidelines for handling Personally Identifiable Information.
+    target_files:
+      - 03_system_architecture.md
+      - 06_security_threat_model.md
+    criteria: |
+      Verify the specification explicitly details how PII (Personally Identifiable Information) is handled. It MUST mandate encryption at rest for sensitive database columns and strict PII masking/redaction in all structured application logs.
+    min_score: 100
+
+  - id: system_resiliency
+    name: System Resiliency & Fault Tolerance
+    description: Implementation of circuit breakers and retry mechanisms.
+    target_files:
+      - 03_system_architecture.md
+    criteria: |
+      Verify the architecture specifies fault tolerance patterns for external integrations, specifically mandating Circuit Breakers and exponential backoff retry policies to prevent cascading system failures.
+    min_score: 100
+
+  - id: software_supply_chain
+    name: Software Supply Chain Security
+    description: Mandates dependency tracking and SBOM generation.
+    target_files:
+      - 05_coding_standards_guidelines.md
+    criteria: |
+      Verify the CI/CD and coding standards mandate automated dependency update management (e.g., Dependabot/Renovate) and the generation of an SBOM (Software Bill of Materials) for all production builds.
+    min_score: 100
+
+  - id: accessibility_compliance
+    name: Accessibility Compliance
+    description: Baseline accessibility standards for user interfaces.
+    target_files:
+      - 02_prd_functional.md
+    criteria: |
+      If front-end user interfaces are specified in the PRD, verify that it mandates baseline accessibility compliance (e.g., WCAG 2.1 AA), explicitly requiring keyboard navigation and screen-reader semantic HTML support.
+    min_score: 100
+
+  - id: api_idempotency
+    name: API Idempotency
+    description: Safe retries for state-mutating endpoints.
+    target_files:
+      - 04_api_architecture_integration.md
+    criteria: |
+      Verify that the API architecture explicitly mandates client-provided Idempotency-Key headers for all state-mutating endpoints (e.g., POST, PUT, PATCH) to ensure safe retries and prevent duplicate processing.
+    min_score: 100
+
+  - id: async_background_jobs
+    name: Asynchronous & Background Jobs
+    description: Explicit definition of message brokers and async event schemas.
+    target_files:
+      - 03_system_architecture.md
+    criteria: |
+      Verify that the architecture specification details how background processing, scheduled jobs, or event-driven communication is handled, explicitly defining the message broker (e.g., Kafka, SQS, RabbitMQ) and event schema format (e.g., CloudEvents).
+    min_score: 100    

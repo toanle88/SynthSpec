@@ -268,7 +268,7 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 
 func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTemplate string) (string, int, error) {
 	cachedIdx := getCachedIndex(fg.sess, fileName)
-	maxRetries := 10
+	maxRetries := 3
 
 	if cachedIdx != -1 && fg.sess.GeneratedFiles[cachedIdx].InProgressText != "" {
 		content := fg.sess.GeneratedFiles[cachedIdx].InProgressText
@@ -322,7 +322,7 @@ func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTempla
 }
 
 func (fg *fileGenerator) runSelfCorrection(fileName string, content string, startAttempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, error) {
-	maxRetries := 10
+	maxRetries := 3
 	var complianceResults []gateway.ComplianceResult
 	var checkErr error
 
@@ -378,7 +378,7 @@ func getApplicableStandards(standards []config.Standard, fileName string) []conf
 }
 
 func (fg *fileGenerator) handleSyntaxError(fileName string, content string, attempt int, checkErr error) (string, error) {
-	maxRetries := 10
+	maxRetries := 3
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
 		Status:  "correcting",
@@ -520,7 +520,7 @@ func collectFailedStandards(evalResults []gateway.ComplianceResult, standards []
 }
 
 func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard) (string, []gateway.ComplianceResult, error, bool, error) {
-	maxRetries := 10
+	maxRetries := 3
 	sendProgress(fg.progress, ProgressEvent{
 		File:    fileName,
 		Status:  "auditing",
@@ -675,4 +675,3 @@ func updateInProgressState(sess *state.Session, fileName, content string, attemp
 	}
 	return sess.Save()
 }
-

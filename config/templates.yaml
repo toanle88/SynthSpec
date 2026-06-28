@@ -1,22 +1,101 @@
 templates:
-  - file_name: "01_prd_functional.md"
+  - file_name: "01_domain_model_use_cases.md"
+    name: "Domain Model & Use Cases"
+    prompt: |
+      Write a comprehensive Domain Model & Use Cases markdown file. Detail bounded contexts and ensure domain entities are mapped uniquely within them to prevent context bleed. Define core domain entities, value objects, and aggregates. Detail scenario walkthroughs (including actor, preconditions, triggers, main flow, and postconditions). 
+      
+      CRITICAL STANDARDS:
+      1. Each primary scenario walkthrough MUST contain a structured Mermaid.js sequence diagram showing step-by-step actor and system interactions. 
+      2. PURITY RULE: This document must be a pure business specification. DO NOT include any programming code snippets (e.g., Go, Python, etc.), JSON API payloads, SQL schemas, or framework-specific implementation details anywhere in this document. 
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
+
+  - file_name: "02_prd_functional.md"
     name: "PRD & Functional Requirements"
-    prompt: "Write a comprehensive Product Requirements Document (PRD) markdown file. Include product vision, user stories, features list, and a detailed functional requirements matrix with ID, Feature Name, Description, and Acceptance Criteria. Use these facts:\n"
-  - file_name: "02_system_architecture.md"
+    prompt: |
+      Write a comprehensive Product Requirements Document (PRD) markdown file based on the established domain model. Include product vision, user stories, and a detailed functional requirements matrix with ID, Feature Name, Description, and Acceptance Criteria.
+      
+      CRITICAL STANDARDS:
+      1. Traceability: Every user story and requirement MUST use the exact actor and entity terminology defined in 01_domain_model_use_cases.md.
+      2. UX/UI: If front-end interfaces or CLIs are discussed, explicitly detail support for dark/light mode terminal themes AND mandate baseline accessibility compliance (e.g., WCAG 2.1 AA, keyboard navigation, screen-reader support).
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
+
+  - file_name: "03_system_architecture.md"
     name: "System Architecture"
-    prompt: "Write a high-level System Architecture specification markdown file. Detail the component layout, backend layer division, API routing logic, database schema design (include raw SQL tables), and a Mermaid.js diagram showing workflow sequence/architecture. Use these facts:\n"
-  - file_name: "03_security_threat_model.md"
-    name: "Security & Threat Model"
-    prompt: "Write a detailed Security & Threat Model markdown file. Perform a STRIDE threat modeling analysis. Map identified threats (at least 5) to mitigations in a clean markdown table. Detail input validation, timeout configurations, and cryptographic standards. Use these facts:\n"
+    prompt: |
+      Write a high-level System Architecture specification markdown file. 
+      
+      CRITICAL STANDARDS: 
+      1. Architecture: Enforce Clean Architecture mapping strictly to the Bounded Contexts in 01_domain_model_use_cases.md. Include a Mermaid.js diagram showing workflow architecture.
+      2. Database Schema: Tables MUST use UUID primary keys, include a soft-delete column (deleted_at), and use TIMESTAMPTZ. You MUST include a Mermaid.js Entity-Relationship Diagram (ERD) detailing all tables.
+      3. Security & PII: Utilize parameterized SQL queries. Detail standard JWT Bearer authentication. Explicitly mandate encryption at rest for sensitive columns and strict PII masking in logs.
+      4. Observability & Infra: Detail structured JSON logging, DB connection pool parameters, and standard health check endpoints (/healthz, /live, /ready).
+      5. Resiliency & Performance: Specify fault tolerance patterns (Circuit Breakers, exponential backoff retries) and define Performance SLAs (latency/throughput) with load testing strategies.
+      6. Async/Background Jobs: Detail how background processing is handled, explicitly defining the message broker (e.g., Kafka, SQS) and event schema format (e.g., CloudEvents).
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
+
   - file_name: "04_api_architecture_integration.md"
     name: "API Architecture & Integration"
-    prompt: "Write a detailed API Architecture & Integration Guide markdown file. Define transport & protocol standards (e.g., RESTful naming, JSON-RPC, or gRPC), contract lifecycle management (API versioning, documentation policies), global payload serialization (data transforms, ISO 8601 datetimes, null handling, casing), and cross-cutting concerns (middleware layout, validation, idempotency, rate limiting, error responses). Use these facts:\n"
+    prompt: |
+      Write a detailed API Architecture & Integration Guide markdown file. 
+      
+      CRITICAL STANDARDS:
+      1. Responses: ALL non-empty responses MUST be wrapped in a standard JSON envelope (keys: 'data', 'error', 'meta'). Error payloads must strictly use 'code', 'message', and 'details'.
+      2. Data/State: Enforce cursor/offset pagination on list endpoints. Detail strict input validation rules mapping accurately to domain Value Objects.
+      3. Traffic/Security: Explicitly configure strict CORS policies (no wildcards) and API rate limiting algorithms to prevent DOS. 
+      4. Idempotency: Mandate client-provided Idempotency-Key headers for all state-mutating endpoints (POST, PUT, PATCH) to prevent duplicate processing.
+      5. Telemetry & Docs: Detail a Prometheus /metrics endpoint. Define Contract Lifecycle Management and mandate automated API schema validation testing.
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
+
   - file_name: "05_coding_standards_guidelines.md"
     name: "Coding Standards & Guidelines"
-    prompt: "Write a comprehensive Coding Standards & Guidelines markdown file. Include directory & module topography (directory map of logic, adapters, entry points, utilities), architectural pattern enforcement (e.g., Repository, CQRS, Dependency Injection), testing strategy & coverage gates (mock interfaces, integration boundaries, coverage percentages), and linting & static analysis rules (formatting, complexity, forbidden patterns). Use these facts:\n"
-  - file_name: "06_domain_model_use_cases.md"
-    name: "Domain Model & Use Cases"
-    prompt: "Write a comprehensive Domain Model & Use Cases markdown file. Detail bounded contexts, core domain entities, value objects, aggregates, and scenario walkthroughs (including actor, preconditions, triggers, main flow, and postconditions). Use these facts:\n"
+    prompt: |
+      Write a comprehensive Coding Standards & Guidelines markdown file. 
+      
+      CRITICAL STANDARDS: 
+      1. Structure: Include a visual directory topography mapping code domains. Explicitly mandate architectural patterns (e.g., Repository pattern, CQRS, DI). 
+      2. Documentation: Mandate standard inline code documentation formats for the chosen language (e.g., JSDoc, Python Docstrings). Mandate automated documentation testing (markdown linting, dead-link checking) in the CI/CD pipeline.
+      3. Testing: Detail a comprehensive testing strategy (unit, integration, mock) and mandate specific load testing tooling (e.g., k6, JMeter).
+      4. Supply Chain & CI/CD: Outline a pipeline detailing code linting, automated testing, static security scanning, automated dependency updates (e.g., Dependabot), and SBOM generation.
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
+
+  - file_name: "06_security_threat_model.md"
+    name: "Security & Threat Model"
+    prompt: |
+      Write a detailed Security & Threat Model markdown file. 
+      
+      CRITICAL STANDARDS:
+      1. STRIDE: Perform a STRIDE threat modeling analysis explicitly based on the scenario walkthroughs and actors defined in 01_domain_model_use_cases.md. Map at least 5 identified threats to mitigations in a clean markdown table. 
+      2. Boundaries: Detail input validation boundaries, timeout configurations, and cryptographic standards.
+      3. Privacy: Explicitly address PII handling, mandating encryption at rest and data redaction protocols.
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
+
   - file_name: "07_engineering_roadmap.md"
     name: "Engineering Roadmap"
-    prompt: "Write a comprehensive Engineering Roadmap markdown file. Detail phase-by-phase execution (e.g. Phase 1 MVP, Phase 2 Scale, Phase 3 Future), milestone definitions, task dependencies, and a Mermaid.js Gantt chart representing the timeline. Use these facts:\n"
+    prompt: |
+      Write a comprehensive Engineering Roadmap markdown file. 
+      
+      CRITICAL STANDARDS: 
+      1. You must specify at least 3 distinct delivery phases (MVP, Scaling, Future/Optimization) with clearly defined milestones for each. 
+      2. You must include a Mermaid.js Gantt chart depicting the phases, milestones, and task dependencies on a timeline. 
+      
+      OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
+      
+      Use these facts:
