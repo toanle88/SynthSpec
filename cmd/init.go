@@ -50,10 +50,35 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("project '%s' already exists. Use 'synthspec resume %s' to continue", projectName, projectName)
 		}
 
+		var initialFacts gateway.Facts
+		if blueprintFlag != "" {
+			blueprints, err := config.LoadBlueprints()
+			if err != nil {
+				return fmt.Errorf("failed to load blueprints: %w", err)
+			}
+			var found bool
+			for _, bp := range blueprints {
+				if bp.ID == blueprintFlag {
+					initialFacts = gateway.Facts{
+						Functional: bp.Facts.Functional,
+						Structural: bp.Facts.Structural,
+						Security:   bp.Facts.Security,
+						Compliance: bp.Facts.Compliance,
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("blueprint %q not found", blueprintFlag)
+			}
+		}
+
 		sess := state.Session{
 			ProjectName: projectName,
 			Provider:    cfg.Provider,
 			Model:       cfg.Model,
+			Facts:       initialFacts,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 		}
@@ -73,9 +98,13 @@ var initCmd = &cobra.Command{
 	},
 }
 
+var blueprintFlag string
+
 func init() {
+	initCmd.Flags().StringVarP(&blueprintFlag, "blueprint", "b", "", "Starting template/blueprint for project context (e.g. fintech-saas, internal-crud)")
 	rootCmd.AddCommand(initCmd)
 }
+
 
 // Helper to initialize gateway based on session state
 func getGatewayForSession(sess *state.Session, forceMock bool) (gateway.Gateway, error) {

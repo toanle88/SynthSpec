@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/toanle/synthspec/state"
@@ -118,3 +119,48 @@ func TestInitAndResumeCmd(t *testing.T) {
 		t.Fatalf("expected project directory to be deleted, but it still exists at %s", sessionPath)
 	}
 }
+
+func TestInitBlueprint(t *testing.T) {
+	// Create a temp directory for session isolation
+	tempDir, err := os.MkdirTemp("", "synthspec-blueprint-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working dir: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("failed to change working dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	mockFlag = true
+	
+	// Reset/clear flags
+	blueprintFlag = "" 
+
+	rootCmd.SetArgs([]string{"init", "bp-proj", "-b", "fintech-saas"})
+	err = rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("failed to execute init with blueprint: %v", err)
+	}
+
+	sess, err := state.LoadSession("bp-proj")
+	if err != nil {
+		t.Fatalf("failed to load session: %v", err)
+	}
+
+	if sess.Facts.Functional == "" {
+		t.Errorf("expected session facts to be pre-populated, but functional facts are empty")
+	}
+
+	if !strings.Contains(sess.Facts.Compliance, "PCI-DSS") {
+		t.Errorf("expected compliance facts to contain PCI-DSS, got: %s", sess.Facts.Compliance)
+	}
+}
+

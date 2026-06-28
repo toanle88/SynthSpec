@@ -36,6 +36,9 @@ var rootCmd = &cobra.Command{
 		welcomeModel := resModel.(tui.WelcomeModel)
 		switch welcomeModel.Action {
 		case tui.ActionCreate:
+			if welcomeModel.SelectedBlueprint != "" {
+				_ = initCmd.Flags().Set("blueprint", welcomeModel.SelectedBlueprint)
+			}
 			return initCmd.RunE(initCmd, []string{welcomeModel.ProjectName})
 		case tui.ActionResume:
 			return resumeCmd.RunE(resumeCmd, []string{welcomeModel.ProjectName})

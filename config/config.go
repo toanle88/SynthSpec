@@ -199,3 +199,52 @@ func LoadTemplates() ([]Template, error) {
 	return cfg.Templates, nil
 }
 
+//go:embed blueprints.yaml
+var defaultBlueprintsYAML []byte
+
+type BlueprintFacts struct {
+	Functional string `yaml:"functional" json:"functional"`
+	Structural string `yaml:"structural" json:"structural"`
+	Security   string `yaml:"security" json:"security"`
+	Compliance string `yaml:"compliance" json:"compliance"`
+}
+
+type Blueprint struct {
+	ID          string         `yaml:"id" json:"id"`
+	Name        string         `yaml:"name" json:"name"`
+	Description string         `yaml:"description" json:"description"`
+	Facts       BlueprintFacts `yaml:"facts" json:"facts"`
+}
+
+type BlueprintsConfig struct {
+	Blueprints []Blueprint `yaml:"blueprints"`
+}
+
+// LoadBlueprints loads the blueprints from a local override file or falls back to the embedded defaults.
+func LoadBlueprints() ([]Blueprint, error) {
+	data := defaultBlueprintsYAML
+
+	// Check for local overrides in order of preference
+	overridePaths := []string{
+		"blueprints.yaml",
+		".synthspec/blueprints.yaml",
+	}
+
+	for _, p := range overridePaths {
+		if _, err := os.Stat(p); err == nil {
+			if fileData, readErr := os.ReadFile(p); readErr == nil {
+				data = fileData
+				break
+			}
+		}
+	}
+
+	var cfg BlueprintsConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse blueprints configuration: %w", err)
+	}
+
+	return cfg.Blueprints, nil
+}
+
+

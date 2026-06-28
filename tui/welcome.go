@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/state"
 )
 
@@ -15,6 +16,7 @@ type WelcomePhase int
 const (
 	PhaseMenu WelcomePhase = iota
 	PhaseCreateInput
+	PhaseBlueprintSelect
 	PhaseResumeSelect
 	PhaseStatusAlert
 )
@@ -42,6 +44,11 @@ type WelcomeModel struct {
 	// TextInput for name
 	textInput textinput.Model
 
+	// Blueprint Selection
+	Blueprints        []config.Blueprint
+	SelectedBlueprint string
+	SelectedBPIdx     int
+
 	// Alerts
 	alertTitle   string
 	alertMessage string
@@ -58,12 +65,15 @@ func NewWelcomeModel() WelcomeModel {
 	ti.CharLimit = 64
 	ti.Width = 30
 
+	blueprints, _ := config.LoadBlueprints()
+
 	return WelcomeModel{
 		Phase:          PhaseMenu,
 		Action:         ActionNone,
 		Options:        []string{"Create New Project", "Resume Existing Project", "View Assets", "Audit Workspace", "Settings", "Exit"},
 		SelectedOption: 0,
 		textInput:      ti,
+		Blueprints:     blueprints,
 	}
 }
 
@@ -111,13 +121,36 @@ func (m WelcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				name := strings.TrimSpace(m.textInput.Value())
 				if name != "" {
 					m.ProjectName = name
-					m.Action = ActionCreate
-					return m, tea.Quit
+					m.Phase = PhaseBlueprintSelect
+					m.SelectedBPIdx = 0
+					return m, nil
 				}
 			case tea.KeyEsc:
 				m.Phase = PhaseMenu
 			default:
 				m.textInput, cmd = m.textInput.Update(msg)
+			}
+
+		case PhaseBlueprintSelect:
+			switch msg.String() {
+			case "up", "k":
+				if m.SelectedBPIdx > 0 {
+					m.SelectedBPIdx--
+				}
+			case "down", "j":
+				if m.SelectedBPIdx < len(m.Blueprints) {
+					m.SelectedBPIdx++
+				}
+			case "enter":
+				if m.SelectedBPIdx == 0 {
+					m.SelectedBlueprint = ""
+				} else {
+					m.SelectedBlueprint = m.Blueprints[m.SelectedBPIdx-1].ID
+				}
+				m.Action = ActionCreate
+				return m, tea.Quit
+			case "esc":
+				m.Phase = PhaseCreateInput
 			}
 
 		case PhaseResumeSelect:
@@ -244,7 +277,40 @@ func (m WelcomeModel) View() string {
 		lines = append(lines, "")
 		lines = append(lines, fmt.Sprintf("Project Name: %s", m.textInput.View()))
 		lines = append(lines, "")
-		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to initialize, Esc to return to menu"))
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to continue, Esc to return to menu"))
+		content = strings.Join(lines, "\n")
+
+	case PhaseBlueprintSelect:
+		var lines []string
+		lines = append(lines, "")
+		lines = append(lines, TitleStyle.Render("🌱 Choose a Starting Blueprint"))
+		lines = append(lines, "")
+
+		// None Option
+		indicator := " "
+		style := lipgloss.NewStyle().Foreground(ColorText)
+		if m.SelectedBPIdx == 0 {
+			indicator = "➔"
+			style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+		}
+		lines = append(lines, fmt.Sprintf(" %s %s", indicator, style.Render("None (Start from scratch)")))
+		lines = append(lines, fmt.Sprintf("     %s", lipgloss.NewStyle().Foreground(ColorMuted).Render("Start with an empty specification session.")))
+		lines = append(lines, "")
+
+		for i, bp := range m.Blueprints {
+			bpIdx := i + 1
+			indicator = " "
+			style = lipgloss.NewStyle().Foreground(ColorText)
+			if bpIdx == m.SelectedBPIdx {
+				indicator = "➔"
+				style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+			}
+			lines = append(lines, fmt.Sprintf(" %s %s (%s)", indicator, style.Render(bp.Name), bp.ID))
+			lines = append(lines, fmt.Sprintf("     %s", lipgloss.NewStyle().Foreground(ColorMuted).Render(bp.Description)))
+			lines = append(lines, "")
+		}
+
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to select blueprint, Esc to go back"))
 		content = strings.Join(lines, "\n")
 
 	case PhaseResumeSelect:
@@ -280,9 +346,14 @@ func (m WelcomeModel) View() string {
 
 	// Main frame
 	body := lipgloss.JoinVertical(lipgloss.Left, logoText, subTitle, content)
+	
+	h := 18
+	if m.Phase == PhaseBlueprintSelect {
+		h = 22
+	}
 	styledBody := MainPanelStyle.
 		Width(65).
-		Height(18).
+		Height(h).
 		Render(body)
 
 	return DocStyle.Render(styledBody)

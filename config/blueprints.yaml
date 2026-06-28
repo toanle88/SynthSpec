@@ -1,0 +1,17 @@
+blueprints:
+  - id: fintech-saas
+    name: Fintech SaaS (multi-tenant)
+    description: Pre-configured for high-compliance financial platforms with multi-tenancy, audit logs, and PCI-DSS.
+    facts:
+      functional: "A multi-tenant Fintech SaaS platform enabling payment processing, transaction histories, and user account management."
+      structural: "API-first microservices architecture. PostgreSQL with schema-based tenant isolation. Redis for caching. Event-driven message broker."
+      security: "Strict JWT authentication, encryption at rest and in transit, IP whitelisting, rate limiting, and RBAC (Admin, Developer, Auditor)."
+      compliance: "PCI-DSS Level 1 compliance requirements, SOC2 compliance targets, and automated audit logs tracking all write operations."
+  - id: internal-crud
+    name: Internal CRUD Application
+    description: Standard enterprise admin dashboard or back-office system with simple relational database and basic RBAC.
+    facts:
+      functional: "An internal CRUD tool for company database administration, managing users, inventories, and support tickets."
+      structural: "Monolithic architecture. PostgreSQL database. RESTful APIs with JSON payloads."
+      security: "SSO (OIDC) integration, basic rate limiting, session-based authentication, and RBAC (SuperAdmin, SupportAgent, Reader)."
+      compliance: "Internal compliance only. Basic change-log auditing and data retention policies."
