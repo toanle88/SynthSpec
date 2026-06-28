@@ -49,6 +49,7 @@ type contextPruneResultMsg struct {
 type thoughtTokenMsg string
 type streamDoneMsg struct{}
 type initQueryMsg struct{}
+type typingTickMsg struct{}
 
 // DashboardModel represents the TUI state
 type DashboardModel struct {
@@ -104,7 +105,9 @@ type DashboardModel struct {
 	// Thought stream state
 	thoughtChan     chan string
 	streamingTokens string
+	thoughtBuffer   string
 	isStreaming     bool // true from query start until thoughtChan is fully drained
+	isTyping        bool // true if typing tick loop is running
 
 	// Approval Gate state
 	approvalChan      chan struct{}
@@ -202,6 +205,8 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 		loading:           !completed && len(sess.History) == 0 && sess.LastQuestion == "",
 		thoughtChan:       make(chan string, 100),
 		streamingTokens:   "",
+		thoughtBuffer:     "",
+		isTyping:          false,
 		chatViewport:      viewport.New(0, 0),
 	}
 }
@@ -300,15 +305,54 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.startOracleQuery("")
 
 	case thoughtTokenMsg:
-		m.streamingTokens += string(msg)
-		m.updateChatViewport()
-		m.chatViewport.GotoBottom()
-		return m, m.recvThoughtCmd()
+		m.thoughtBuffer += string(msg)
+		var tickCmd tea.Cmd
+		if !m.isTyping && len(m.thoughtBuffer) > 0 {
+			m.isTyping = true
+			tickCmd = tea.Tick(35*time.Millisecond, func(t time.Time) tea.Msg {
+				return typingTickMsg{}
+			})
+		}
+		return m, tea.Batch(m.recvThoughtCmd(), tickCmd)
+
+	case typingTickMsg:
+		if len(m.thoughtBuffer) > 0 {
+			runes := []rune(m.thoughtBuffer)
+			// Adaptive typing speed: if the buffer is large, type out more characters
+			// per tick to avoid falling too far behind.
+			rChunkSize := len(runes) / 60
+			if rChunkSize < 1 {
+				rChunkSize = 1
+			}
+			if rChunkSize > len(runes) {
+				rChunkSize = len(runes)
+			}
+
+			chunk := string(runes[:rChunkSize])
+			m.streamingTokens += chunk
+			m.thoughtBuffer = string(runes[rChunkSize:])
+
+			m.updateChatViewport()
+			m.chatViewport.GotoBottom()
+
+			return m, tea.Tick(35*time.Millisecond, func(t time.Time) tea.Msg {
+				return typingTickMsg{}
+			})
+		} else {
+			m.isTyping = false
+			if !m.isStreaming {
+				m.updateChatViewport()
+				m.chatViewport.GotoBottom()
+			}
+			return m, nil
+		}
 
 	case streamDoneMsg:
 		m.isStreaming = false
-		m.updateChatViewport()
-		m.chatViewport.GotoBottom()
+		if !m.isTyping {
+			m.updateChatViewport()
+			m.chatViewport.GotoBottom()
+		}
 
 	case tea.MouseMsg:
 		if msg.Button == tea.MouseButtonWheelUp {
@@ -1276,17 +1320,15 @@ func (m DashboardModel) startOracleQuery(val string) (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.err = nil
 	m.streamingTokens = ""
+	m.thoughtBuffer = ""
 	m.isStreaming = true
+	m.isTyping = false
 	// Recreate thoughtChan fresh every query so we never close an already-closed channel
 	// and the streaming goroutine always writes into a live, empty channel.
 	m.thoughtChan = make(chan string, 200)
-	// Start multiple concurrent readers so tokens are consumed as they arrive
-	// (the thought box fills in real-time rather than staying empty).
+	// Start a single throttled reader to process incoming tokens in batches.
 	return m, tea.Batch(
 		m.queryOracleCmd(val),
-		m.recvThoughtCmd(),
-		m.recvThoughtCmd(),
-		m.recvThoughtCmd(),
 		m.recvThoughtCmd(),
 	)
 }
@@ -1297,7 +1339,25 @@ func (m DashboardModel) recvThoughtCmd() tea.Cmd {
 		if !ok {
 			return streamDoneMsg{}
 		}
-		return thoughtTokenMsg(token)
+
+		// Wait briefly to accumulate multiple incoming tokens that arrive in close succession
+		time.Sleep(50 * time.Millisecond)
+
+		var batch strings.Builder
+		batch.WriteString(token)
+
+		// Drain any other buffered tokens currently waiting in the channel (non-blocking)
+		for {
+			select {
+			case t, open := <-m.thoughtChan:
+				if !open {
+					return thoughtTokenMsg(batch.String())
+				}
+				batch.WriteString(t)
+			default:
+				return thoughtTokenMsg(batch.String())
+			}
+		}
 	}
 }
 

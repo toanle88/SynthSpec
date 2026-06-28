@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/generator"
 	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
 )
@@ -25,6 +28,10 @@ const (
 	PhaseViewAssets
 	PhaseAuditWorkspace
 	PhaseExportSelect
+	PhaseProjectMenu
+	PhaseProjectViewFiles
+	PhaseFileContentViewer
+	PhaseDeleteConfirm
 )
 
 type WelcomeAction int
@@ -38,9 +45,11 @@ const (
 )
 
 const (
-	keyCtrlP    = "ctrl+p"
-	keyCtrlN    = "ctrl+n"
-	keyShiftTab = "shift+tab"
+	keyCtrlP       = "ctrl+p"
+	keyCtrlN       = "ctrl+n"
+	keyShiftTab    = "shift+tab"
+	cancelLiteral  = "[ Cancel ]"
+	noFilesLiteral = "No Files"
 )
 
 func maxInt(a, b int) int {
@@ -64,11 +73,20 @@ type WelcomeModel struct {
 	SelectedOption int
 	Options        []string
 
-	// Project Resume Selection
-	Projects         []string
-	FilteredProjects []string
-	SelectedProject  int
-	filterInput      textinput.Model
+	// Project Resume/Menu Selection
+	Projects              []string
+	FilteredProjects      []string
+	SelectedProject       int
+	filterInput           textinput.Model
+	IsNewProject          bool
+	ProjectOptions        []string
+	SelectedProjectOption int
+
+	// Project File Viewer
+	ProjectFiles        []string
+	SelectedProjectFile int
+	ViewerLines         []string
+	ViewerScrollOffset  int
 
 	// TextInput for name
 	textInput textinput.Model
@@ -81,6 +99,7 @@ type WelcomeModel struct {
 	// Alerts
 	alertTitle   string
 	alertMessage string
+	alertNext    WelcomePhase // phase to go to after closing the alert
 
 	// Global Settings Phase Fields
 	Settings           *config.Settings
@@ -130,15 +149,17 @@ func NewWelcomeModel() WelcomeModel {
 	oInput.Width = 30
 
 	return WelcomeModel{
-		Phase:          PhaseMenu,
-		Action:         ActionNone,
-		Options:        []string{"Create New Project", "Resume Existing Project", "Export to Static HTML", "View Assets", "Audit Workspace", "Settings", "Exit"},
-		SelectedOption: 0,
-		textInput:      ti,
-		filterInput:    fi,
-		Blueprints:     blueprints,
-		Settings:       settings,
-		settingInputs:  []textinput.Model{tInput, rInput, oInput},
+		Phase:                 PhaseMenu,
+		Action:                ActionNone,
+		Options:               []string{"Create New Project", "Resume Existing Project", "Export to Static HTML", "View Assets", "Audit Workspace", "Settings", "Exit"},
+		SelectedOption:        0,
+		ProjectOptions:        []string{"Start/Resume Specification", "View Generated Files", "Export to Static HTML", "Delete Project", "Back to Main Menu"},
+		SelectedProjectOption: 0,
+		textInput:             ti,
+		filterInput:           fi,
+		Blueprints:            blueprints,
+		Settings:              settings,
+		settingInputs:         []textinput.Model{tInput, rInput, oInput},
 	}
 }
 
@@ -163,143 +184,256 @@ func (m WelcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyMsg(msg)
 
 	case tea.MouseMsg:
-		if msg.Button == tea.MouseButtonWheelUp {
-			switch m.Phase {
-			case PhaseMenu:
-				m.SelectedOption = maxInt(0, m.SelectedOption-1)
-			case PhaseBlueprintSelect:
-				m.SelectedBPIdx = maxInt(0, m.SelectedBPIdx-1)
-			case PhaseResumeSelect:
-				m.SelectedProject = maxInt(0, m.SelectedProject-1)
-			case PhaseExportSelect:
-				m.SelectedProject = maxInt(0, m.SelectedProject-1)
-			case PhaseSettings:
-				// Blur current setting input
-				if m.SelectedSettingIdx < len(m.settingInputs) {
-					m.settingInputs[m.SelectedSettingIdx].Blur()
-				}
-				m.SelectedSettingIdx = maxInt(0, m.SelectedSettingIdx-1)
-				// Focus new setting input if it's a text input
-				if m.SelectedSettingIdx < len(m.settingInputs) {
-					m.settingInputs[m.SelectedSettingIdx].Focus()
-				}
-			}
-			return m, nil
-		}
-		if msg.Button == tea.MouseButtonWheelDown {
-			switch m.Phase {
-			case PhaseMenu:
-				m.SelectedOption = minInt(len(m.Options)-1, m.SelectedOption+1)
-			case PhaseBlueprintSelect:
-				m.SelectedBPIdx = minInt(len(m.Blueprints), m.SelectedBPIdx+1)
-			case PhaseResumeSelect:
-				m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
-			case PhaseExportSelect:
-				m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
-			case PhaseSettings:
-				// Blur current setting input
-				if m.SelectedSettingIdx < len(m.settingInputs) {
-					m.settingInputs[m.SelectedSettingIdx].Blur()
-				}
-				m.SelectedSettingIdx = minInt(4, m.SelectedSettingIdx+1)
-				// Focus new setting input if it's a text input
-				if m.SelectedSettingIdx < len(m.settingInputs) {
-					m.settingInputs[m.SelectedSettingIdx].Focus()
-				}
-			}
-			return m, nil
-		}
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			rendered := stripANSI(m.View())
-			lines := strings.Split(rendered, "\n")
-			if msg.Y >= 0 && msg.Y < len(lines) {
-				line := lines[msg.Y]
-				switch m.Phase {
-				case PhaseMenu:
-					for i, opt := range m.Options {
-						if strings.Contains(line, opt) {
-							m.SelectedOption = i
-							m.handleMenuSelection()
-							return m, nil
-						}
-					}
-				case PhaseBlueprintSelect:
-					if strings.Contains(line, "None (Start from scratch)") || strings.Contains(line, "Start with an empty specification session") {
-						m.SelectedBPIdx = 0
-						m.SelectedBlueprint = ""
-						m.Action = ActionCreate
-						return m, tea.Quit
-					}
-					for i, bp := range m.Blueprints {
-						if strings.Contains(line, bp.Name) || (bp.Description != "" && strings.Contains(line, bp.Description)) {
-							m.SelectedBPIdx = i + 1
-							m.SelectedBlueprint = bp.ID
-							m.Action = ActionCreate
-							return m, tea.Quit
-						}
-					}
-				case PhaseResumeSelect:
-					if strings.Contains(line, "Search:") {
-						m.filterInput.Focus()
-						return m, nil
-					}
-					for i, proj := range m.FilteredProjects {
-						if strings.Contains(line, proj) {
-							m.SelectedProject = i
-							m.ProjectName = proj
-							m.Action = ActionResume
-							return m, tea.Quit
-						}
-					}
-				case PhaseExportSelect:
-					if strings.Contains(line, "Search:") {
-						m.filterInput.Focus()
-						return m, nil
-					}
-					for i, proj := range m.FilteredProjects {
-						if strings.Contains(line, proj) {
-							m.SelectedProject = i
-							m.ProjectName = proj
-							m.Action = ActionExport
-							return m, tea.Quit
-						}
-					}
-				case PhaseSettings:
-					settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Debug Logging (opt-in)", "Vim Keybindings (hjkl)"}
-					for i, field := range settingFields {
-						if strings.Contains(line, field) {
-							// Blur current setting input
-							if m.SelectedSettingIdx < len(m.settingInputs) {
-								m.settingInputs[m.SelectedSettingIdx].Blur()
-							}
-							m.SelectedSettingIdx = i
-							// Focus new setting input if it's a text input
-							if i < len(m.settingInputs) {
-								m.settingInputs[i].Focus()
-							}
-							if i == 3 {
-								m.Settings.Debug = !m.Settings.Debug
-								logger.LogEvent("TUI", fmt.Sprintf("Debug logging toggled via click: %t", m.Settings.Debug))
-							} else if i == 4 {
-								m.Settings.VimMode = !m.Settings.VimMode
-								logger.LogEvent("TUI", fmt.Sprintf("Vim mode toggled via click: %t", m.Settings.VimMode))
-							}
-							return m, nil
-						}
-					}
-					if strings.Contains(line, "[ Save Settings ]") {
-						m.saveSettingsFromInputs()
-						return m, nil
-					}
-					if strings.Contains(line, "[ Cancel ]") {
-						m.Phase = PhaseMenu
-						return m, nil
-					}
-				}
-			}
-		}
+		return m.handleMouseMsg(msg)
 	}
 
+	return m, nil
+}
+
+func (m WelcomeModel) handleMouseMsg(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Button == tea.MouseButtonWheelUp {
+		return m.handleMouseWheelUp(), nil
+	}
+	if msg.Button == tea.MouseButtonWheelDown {
+		return m.handleMouseWheelDown(), nil
+	}
+	if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		return m.handleMouseLeftClick(msg)
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleMouseWheelUp() WelcomeModel {
+	switch m.Phase {
+	case PhaseMenu:
+		m.SelectedOption = maxInt(0, m.SelectedOption-1)
+	case PhaseBlueprintSelect:
+		m.SelectedBPIdx = maxInt(0, m.SelectedBPIdx-1)
+	case PhaseResumeSelect:
+		m.SelectedProject = maxInt(0, m.SelectedProject-1)
+	case PhaseExportSelect:
+		m.SelectedProject = maxInt(0, m.SelectedProject-1)
+	case PhaseProjectMenu:
+		m.SelectedProjectOption = maxInt(0, m.SelectedProjectOption-1)
+	case PhaseProjectViewFiles:
+		m.SelectedProjectFile = maxInt(0, m.SelectedProjectFile-1)
+	case PhaseFileContentViewer:
+		m.ViewerScrollOffset = maxInt(0, m.ViewerScrollOffset-1)
+	case PhaseSettings:
+		if m.SelectedSettingIdx < len(m.settingInputs) {
+			m.settingInputs[m.SelectedSettingIdx].Blur()
+		}
+		m.SelectedSettingIdx = maxInt(0, m.SelectedSettingIdx-1)
+		if m.SelectedSettingIdx < len(m.settingInputs) {
+			m.settingInputs[m.SelectedSettingIdx].Focus()
+		}
+	}
+	return m
+}
+
+func (m WelcomeModel) handleMouseWheelDown() WelcomeModel {
+	switch m.Phase {
+	case PhaseMenu:
+		m.SelectedOption = minInt(len(m.Options)-1, m.SelectedOption+1)
+	case PhaseBlueprintSelect:
+		m.SelectedBPIdx = minInt(len(m.Blueprints), m.SelectedBPIdx+1)
+	case PhaseResumeSelect:
+		m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+	case PhaseExportSelect:
+		m.SelectedProject = minInt(len(m.FilteredProjects)-1, m.SelectedProject+1)
+	case PhaseProjectMenu:
+		m.SelectedProjectOption = minInt(len(m.ProjectOptions)-1, m.SelectedProjectOption+1)
+	case PhaseProjectViewFiles:
+		m.SelectedProjectFile = minInt(len(m.ProjectFiles)-1, m.SelectedProjectFile+1)
+	case PhaseFileContentViewer:
+		pageSize := 10
+		if m.height > 12 {
+			pageSize = m.height - 12
+		}
+		maxScroll := maxInt(0, len(m.ViewerLines)-pageSize)
+		m.ViewerScrollOffset = minInt(maxScroll, m.ViewerScrollOffset+1)
+	case PhaseSettings:
+		if m.SelectedSettingIdx < len(m.settingInputs) {
+			m.settingInputs[m.SelectedSettingIdx].Blur()
+		}
+		m.SelectedSettingIdx = minInt(4, m.SelectedSettingIdx+1)
+		if m.SelectedSettingIdx < len(m.settingInputs) {
+			m.settingInputs[m.SelectedSettingIdx].Focus()
+		}
+	}
+	return m
+}
+
+func (m WelcomeModel) handleMouseLeftClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	rendered := stripANSI(m.View())
+	lines := strings.Split(rendered, "\n")
+	if msg.Y < 0 || msg.Y >= len(lines) {
+		return m, nil
+	}
+	line := lines[msg.Y]
+	switch m.Phase {
+	case PhaseMenu:
+		return m.handleMenuClick(line)
+	case PhaseBlueprintSelect:
+		return m.handleBlueprintClick(line)
+	case PhaseResumeSelect:
+		return m.handleResumeClick(line)
+	case PhaseExportSelect:
+		return m.handleExportClick(line)
+	case PhaseProjectMenu:
+		return m.handleProjectMenuClick(line)
+	case PhaseProjectViewFiles:
+		return m.handleProjectViewFilesClick(line)
+	case PhaseDeleteConfirm:
+		return m.handleDeleteConfirmClick(line)
+	case PhaseSettings:
+		return m.handleSettingsClick(line)
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleMenuClick(line string) (tea.Model, tea.Cmd) {
+	for i, opt := range m.Options {
+		if strings.Contains(line, opt) {
+			m.SelectedOption = i
+			m.handleMenuSelection()
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleBlueprintClick(line string) (tea.Model, tea.Cmd) {
+	if strings.Contains(line, "None (Start from scratch)") || strings.Contains(line, "Start with an empty specification session") {
+		m.SelectedBPIdx = 0
+		m.SelectedBlueprint = ""
+		m.IsNewProject = true
+		m.SelectedProjectOption = 0
+		m.Phase = PhaseProjectMenu
+		return m, nil
+	}
+	for i, bp := range m.Blueprints {
+		if strings.Contains(line, bp.Name) || (bp.Description != "" && strings.Contains(line, bp.Description)) {
+			m.SelectedBPIdx = i + 1
+			m.SelectedBlueprint = bp.ID
+			m.IsNewProject = true
+			m.SelectedProjectOption = 0
+			m.Phase = PhaseProjectMenu
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleResumeClick(line string) (tea.Model, tea.Cmd) {
+	if strings.Contains(line, "Search:") {
+		m.filterInput.Focus()
+		return m, nil
+	}
+	for i, proj := range m.FilteredProjects {
+		if strings.Contains(line, proj) {
+			m.SelectedProject = i
+			m.ProjectName = proj
+			m.IsNewProject = false
+			m.SelectedProjectOption = 0
+			m.Phase = PhaseProjectMenu
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleExportClick(line string) (tea.Model, tea.Cmd) {
+	if strings.Contains(line, "Search:") {
+		m.filterInput.Focus()
+		return m, nil
+	}
+	for i, proj := range m.FilteredProjects {
+		if strings.Contains(line, proj) {
+			m.SelectedProject = i
+			m.ProjectName = proj
+			m.IsNewProject = false
+			m.SelectedProjectOption = 2 // default to export
+			m.Phase = PhaseProjectMenu
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleProjectMenuClick(line string) (tea.Model, tea.Cmd) {
+	for i, opt := range m.ProjectOptions {
+		if strings.Contains(line, opt) {
+			m.SelectedProjectOption = i
+			return m.handleProjectMenuSelection()
+		}
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleProjectViewFilesClick(line string) (tea.Model, tea.Cmd) {
+	for i, fName := range m.ProjectFiles {
+		if strings.Contains(line, fName) {
+			m.SelectedProjectFile = i
+			filePath := filepath.Join(state.GetSessionDir(m.ProjectName), "output", fName)
+			contentBytes, err := os.ReadFile(filePath)
+			if err != nil {
+				m.alertTitle = "Error Reading File"
+				m.alertMessage = fmt.Sprintf("Could not read file: %v", err)
+				m.alertNext = PhaseProjectViewFiles
+				m.Phase = PhaseStatusAlert
+				return m, nil
+			}
+			highlighted := HighlightMarkdown(string(contentBytes))
+			m.ViewerLines = strings.Split(highlighted, "\n")
+			m.ViewerScrollOffset = 0
+			m.Phase = PhaseFileContentViewer
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleDeleteConfirmClick(line string) (tea.Model, tea.Cmd) {
+	if strings.Contains(line, "[ Yes, Delete ]") {
+		return m.updateDeleteConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	}
+	if strings.Contains(line, cancelLiteral) {
+		return m.updateDeleteConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleSettingsClick(line string) (tea.Model, tea.Cmd) {
+	settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Debug Logging (opt-in)", "Vim Keybindings (hjkl)"}
+	for i, field := range settingFields {
+		if strings.Contains(line, field) {
+			if m.SelectedSettingIdx < len(m.settingInputs) {
+				m.settingInputs[m.SelectedSettingIdx].Blur()
+			}
+			m.SelectedSettingIdx = i
+			if i < len(m.settingInputs) {
+				m.settingInputs[i].Focus()
+			}
+			switch i {
+			case 3:
+				m.Settings.Debug = !m.Settings.Debug
+				logger.LogEvent("TUI", fmt.Sprintf("Debug logging toggled via click: %t", m.Settings.Debug))
+			case 4:
+				m.Settings.VimMode = !m.Settings.VimMode
+				logger.LogEvent("TUI", fmt.Sprintf("Vim mode toggled via click: %t", m.Settings.VimMode))
+			}
+			return m, nil
+		}
+	}
+	if strings.Contains(line, "[ Save Settings ]") {
+		m.saveSettingsFromInputs()
+		return m, nil
+	}
+	if strings.Contains(line, cancelLiteral) {
+		m.Phase = PhaseMenu
+		return m, nil
+	}
 	return m, nil
 }
 
@@ -315,8 +449,21 @@ func (m WelcomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateResumeSelect(msg)
 	case PhaseExportSelect:
 		return m.updateExportSelect(msg)
+	case PhaseProjectMenu:
+		return m.updateProjectMenu(msg)
+	case PhaseProjectViewFiles:
+		return m.updateProjectViewFiles(msg)
+	case PhaseFileContentViewer:
+		return m.updateFileContentViewer(msg)
+	case PhaseDeleteConfirm:
+		return m.updateDeleteConfirm(msg)
 	case PhaseStatusAlert:
-		m.Phase = PhaseMenu
+		if m.alertNext != PhaseMenu {
+			m.Phase = m.alertNext
+			m.alertNext = PhaseMenu
+		} else {
+			m.Phase = PhaseMenu
+		}
 		return m, nil
 	case PhaseSettings:
 		return m.updateSettings(msg)
@@ -398,8 +545,10 @@ func (m WelcomeModel) updateBlueprintSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		} else {
 			m.SelectedBlueprint = m.Blueprints[m.SelectedBPIdx-1].ID
 		}
-		m.Action = ActionCreate
-		return m, tea.Quit
+		m.IsNewProject = true
+		m.SelectedProjectOption = 0
+		m.Phase = PhaseProjectMenu
+		return m, nil
 	case "esc":
 		m.Phase = PhaseCreateInput
 	}
@@ -432,8 +581,10 @@ func (m WelcomeModel) updateResumeSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.FilteredProjects) > 0 && m.SelectedProject >= 0 && m.SelectedProject < len(m.FilteredProjects) {
 			m.ProjectName = m.FilteredProjects[m.SelectedProject]
-			m.Action = ActionResume
-			return m, tea.Quit
+			m.IsNewProject = false
+			m.SelectedProjectOption = 0
+			m.Phase = PhaseProjectMenu
+			return m, nil
 		}
 	case "esc":
 		m.Phase = PhaseMenu
@@ -470,8 +621,10 @@ func (m WelcomeModel) updateExportSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.FilteredProjects) > 0 && m.SelectedProject >= 0 && m.SelectedProject < len(m.FilteredProjects) {
 			m.ProjectName = m.FilteredProjects[m.SelectedProject]
-			m.Action = ActionExport
-			return m, tea.Quit
+			m.IsNewProject = false
+			m.SelectedProjectOption = 2 // default to export
+			m.Phase = PhaseProjectMenu
+			return m, nil
 		}
 	case "esc":
 		m.Phase = PhaseMenu
@@ -480,6 +633,201 @@ func (m WelcomeModel) updateExportSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.runFuzzyFiltering()
 	}
 	return m, cmd
+}
+
+func (m WelcomeModel) updateProjectMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", keyCtrlP:
+		m.SelectedProjectOption = maxInt(0, m.SelectedProjectOption-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.SelectedProjectOption = maxInt(0, m.SelectedProjectOption-1)
+		}
+	case "down", keyCtrlN:
+		m.SelectedProjectOption = minInt(len(m.ProjectOptions)-1, m.SelectedProjectOption+1)
+	case "j":
+		if m.Settings.VimMode {
+			m.SelectedProjectOption = minInt(len(m.ProjectOptions)-1, m.SelectedProjectOption+1)
+		}
+	case "tab":
+		m.SelectedProjectOption = (m.SelectedProjectOption + 1) % len(m.ProjectOptions)
+	case keyShiftTab:
+		m.SelectedProjectOption = (m.SelectedProjectOption - 1 + len(m.ProjectOptions)) % len(m.ProjectOptions)
+	case "enter":
+		return m.handleProjectMenuSelection()
+	case "esc", "q":
+		m.Phase = PhaseMenu
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleProjectMenuSelection() (tea.Model, tea.Cmd) {
+	switch m.SelectedProjectOption {
+	case 0: // Start/Resume Specification
+		if m.IsNewProject {
+			m.Action = ActionCreate
+		} else {
+			m.Action = ActionResume
+		}
+		return m, tea.Quit
+
+	case 1: // View Generated Files
+		return m.handleProjectMenuSelectionViewFiles()
+
+	case 2: // Export to Static HTML
+		return m.handleProjectMenuSelectionExport()
+
+	case 3: // Delete Project
+		m.Phase = PhaseDeleteConfirm
+		return m, nil
+
+	case 4: // Back to Main Menu
+		m.Phase = PhaseMenu
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) handleProjectMenuSelectionViewFiles() (tea.Model, tea.Cmd) {
+	if m.IsNewProject {
+		m.alertTitle = noFilesLiteral
+		m.alertMessage = "This is a new project. No specifications have been generated yet."
+		m.alertNext = PhaseProjectMenu
+		m.Phase = PhaseStatusAlert
+		return m, nil
+	}
+	outDir := filepath.Join(state.GetSessionDir(m.ProjectName), "output")
+	files, err := os.ReadDir(outDir)
+	if err != nil || len(files) == 0 {
+		m.alertTitle = noFilesLiteral
+		m.alertMessage = "No generated markdown specifications were found for this project."
+		m.alertNext = PhaseProjectMenu
+		m.Phase = PhaseStatusAlert
+		return m, nil
+	}
+
+	var mdFiles []string
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(strings.ToLower(f.Name()), ".md") {
+			mdFiles = append(mdFiles, f.Name())
+		}
+	}
+	if len(mdFiles) == 0 {
+		m.alertTitle = noFilesLiteral
+		m.alertMessage = "No generated markdown specifications were found for this project."
+		m.alertNext = PhaseProjectMenu
+		m.Phase = PhaseStatusAlert
+		return m, nil
+	}
+	m.ProjectFiles = mdFiles
+	m.SelectedProjectFile = 0
+	m.Phase = PhaseProjectViewFiles
+	return m, nil
+}
+
+func (m WelcomeModel) handleProjectMenuSelectionExport() (tea.Model, tea.Cmd) {
+	if m.IsNewProject {
+		m.alertTitle = "No Specifications"
+		m.alertMessage = "This is a new project. Start specification generation before exporting."
+		m.alertNext = PhaseProjectMenu
+		m.Phase = PhaseStatusAlert
+		return m, nil
+	}
+	projDir := state.GetSessionDir(m.ProjectName)
+	outputDir := filepath.Join(projDir, "output")
+	distDir := filepath.Join(projDir, "dist")
+
+	indexPath, err := generator.ExportToHTML(m.ProjectName, outputDir, distDir)
+	if err != nil {
+		m.alertTitle = "Export Failed"
+		m.alertMessage = fmt.Sprintf("Failed to export: %v", err)
+	} else {
+		m.alertTitle = "Export Successful"
+		m.alertMessage = fmt.Sprintf("HTML exported successfully to:\n%s", indexPath)
+	}
+	m.alertNext = PhaseProjectMenu
+	m.Phase = PhaseStatusAlert
+	return m, nil
+}
+
+func (m WelcomeModel) updateProjectViewFiles(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", keyCtrlP:
+		m.SelectedProjectFile = maxInt(0, m.SelectedProjectFile-1)
+	case "k":
+		if m.Settings.VimMode {
+			m.SelectedProjectFile = maxInt(0, m.SelectedProjectFile-1)
+		}
+	case "down", keyCtrlN:
+		m.SelectedProjectFile = minInt(len(m.ProjectFiles)-1, m.SelectedProjectFile+1)
+	case "j":
+		if m.Settings.VimMode {
+			m.SelectedProjectFile = minInt(len(m.ProjectFiles)-1, m.SelectedProjectFile+1)
+		}
+	case "tab":
+		m.SelectedProjectFile = (m.SelectedProjectFile + 1) % len(m.ProjectFiles)
+	case keyShiftTab:
+		m.SelectedProjectFile = (m.SelectedProjectFile - 1 + len(m.ProjectFiles)) % len(m.ProjectFiles)
+	case "enter":
+		if len(m.ProjectFiles) > 0 && m.SelectedProjectFile >= 0 && m.SelectedProjectFile < len(m.ProjectFiles) {
+			fileName := m.ProjectFiles[m.SelectedProjectFile]
+			filePath := filepath.Join(state.GetSessionDir(m.ProjectName), "output", fileName)
+			contentBytes, err := os.ReadFile(filePath)
+			if err != nil {
+				m.alertTitle = "Error Reading File"
+				m.alertMessage = fmt.Sprintf("Could not read file: %v", err)
+				m.alertNext = PhaseProjectViewFiles
+				m.Phase = PhaseStatusAlert
+				return m, nil
+			}
+			highlighted := HighlightMarkdown(string(contentBytes))
+			m.ViewerLines = strings.Split(highlighted, "\n")
+			m.ViewerScrollOffset = 0
+			m.Phase = PhaseFileContentViewer
+		}
+	case "esc", "q":
+		m.Phase = PhaseProjectMenu
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) updateFileContentViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pageSize := 10
+	if m.height > 12 {
+		pageSize = m.height - 12
+	}
+	maxScroll := maxInt(0, len(m.ViewerLines)-pageSize)
+
+	switch msg.String() {
+	case "up", "k":
+		m.ViewerScrollOffset = maxInt(0, m.ViewerScrollOffset-1)
+	case "down", "j":
+		m.ViewerScrollOffset = minInt(maxScroll, m.ViewerScrollOffset+1)
+	case "pgup":
+		m.ViewerScrollOffset = maxInt(0, m.ViewerScrollOffset-pageSize)
+	case "pgdown", " ":
+		m.ViewerScrollOffset = minInt(maxScroll, m.ViewerScrollOffset+pageSize)
+	case "esc", "q":
+		m.Phase = PhaseProjectViewFiles
+	}
+	return m, nil
+}
+
+func (m WelcomeModel) updateDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch strings.ToLower(msg.String()) {
+	case "y", "yes", "enter":
+		if !m.IsNewProject {
+			dir := state.GetSessionDir(m.ProjectName)
+			_ = os.RemoveAll(dir)
+		}
+		m.alertTitle = "Project Deleted"
+		m.alertMessage = fmt.Sprintf("Project '%s' and all its files have been deleted.", m.ProjectName)
+		m.alertNext = PhaseMenu
+		m.Phase = PhaseStatusAlert
+	case "n", "no", "esc":
+		m.Phase = PhaseProjectMenu
+	}
+	return m, nil
 }
 
 func (m *WelcomeModel) runFuzzyFiltering() {
@@ -678,14 +1026,31 @@ func (m WelcomeModel) View() string {
 		content = m.viewViewAssets()
 	case PhaseAuditWorkspace:
 		content = m.viewAuditWorkspace()
+	case PhaseProjectMenu:
+		content = m.viewProjectMenu()
+	case PhaseProjectViewFiles:
+		content = m.viewProjectViewFiles()
+	case PhaseFileContentViewer:
+		content = m.viewFileContentViewer()
+	case PhaseDeleteConfirm:
+		content = m.viewDeleteConfirm()
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, logoText, subTitle, content)
 	h := 18
-	if m.Phase == PhaseBlueprintSelect || m.Phase == PhaseSettings {
+	w := 65
+	switch m.Phase {
+	case PhaseBlueprintSelect, PhaseSettings:
 		h = 22
+	case PhaseFileContentViewer:
+		if m.height > 6 {
+			h = m.height - 4
+		}
+		if m.width > 8 {
+			w = m.width - 6
+		}
 	}
-	styledBody := MainPanelStyle.Width(65).Height(h).Render(body)
+	styledBody := MainPanelStyle.Width(w).Height(h).Render(body)
 	return DocStyle.Render(styledBody)
 }
 
@@ -832,7 +1197,7 @@ func (m WelcomeModel) viewSettings() string {
 	lines = append(lines, "",
 		fmt.Sprintf("  %s    %s",
 			lipgloss.NewStyle().Background(ColorSuccess).Foreground(ColorBg).Padding(0, 1).Bold(true).Render("[ Save Settings ]"),
-			lipgloss.NewStyle().Background(ColorBorder).Foreground(ColorText).Padding(0, 1).Render("[ Cancel ]"),
+			lipgloss.NewStyle().Background(ColorBorder).Foreground(ColorText).Padding(0, 1).Render(cancelLiteral),
 		),
 		"",
 		lipgloss.NewStyle().Foreground(ColorMuted).Render("Or use keyboard: Enter to Save, Esc to cancel"),
@@ -857,6 +1222,90 @@ func (m WelcomeModel) viewAuditWorkspace() string {
 	lines = append(lines, "against the established spec to flag interface drift or security violations.")
 	lines = append(lines, "This compliance enforcement engine is planned for later Milestone 11.", "")
 	lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Esc or q to return to the main menu."))
+	return strings.Join(lines, "\n")
+}
+
+func (m WelcomeModel) viewProjectMenu() string {
+	var lines []string
+	status := "(Existing)"
+	if m.IsNewProject {
+		status = "(New)"
+	}
+	lines = append(lines, "", TitleStyle.Render(fmt.Sprintf("📂 Project: %s %s", m.ProjectName, status)), "")
+	for i, opt := range m.ProjectOptions {
+		indicator := " "
+		style := lipgloss.NewStyle().Foreground(ColorText)
+		if i == m.SelectedProjectOption {
+			indicator = "➔"
+			style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+		}
+		lines = append(lines, fmt.Sprintf(selectionFormat, indicator, style.Render(opt)))
+	}
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to select, Esc to return to main menu"))
+	return strings.Join(lines, "\n")
+}
+
+func (m WelcomeModel) viewProjectViewFiles() string {
+	var lines []string
+	lines = append(lines, "", TitleStyle.Render(fmt.Sprintf("📂 Project Files: %s", m.ProjectName)), "")
+	for i, fName := range m.ProjectFiles {
+		indicator := " "
+		style := lipgloss.NewStyle().Foreground(ColorText)
+		if i == m.SelectedProjectFile {
+			indicator = "➔"
+			style = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+		}
+		lines = append(lines, fmt.Sprintf(selectionFormat, indicator, style.Render(fName)))
+	}
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(ColorMuted).Render("Press Enter to view, Esc to return to project menu"))
+	return strings.Join(lines, "\n")
+}
+
+func (m WelcomeModel) viewFileContentViewer() string {
+	pageSize := 10
+	if m.height > 12 {
+		pageSize = m.height - 12
+	}
+
+	var lines []string
+	fileName := ""
+	if m.SelectedProjectFile >= 0 && m.SelectedProjectFile < len(m.ProjectFiles) {
+		fileName = m.ProjectFiles[m.SelectedProjectFile]
+	}
+	lines = append(lines, TitleStyle.Render(fmt.Sprintf("📄 Viewing: %s", fileName)), "")
+
+	start := m.ViewerScrollOffset
+	end := start + pageSize
+	if end > len(m.ViewerLines) {
+		end = len(m.ViewerLines)
+	}
+
+	for i := start; i < end; i++ {
+		lines = append(lines, m.ViewerLines[i])
+	}
+
+	lines = append(lines, "")
+	pct := 0
+	if len(m.ViewerLines) > 0 {
+		pct = (end * 100) / len(m.ViewerLines)
+	}
+	scrollBar := RenderProgressBar(30, pct)
+	lines = append(lines, fmt.Sprintf("Scroll: %s | Press Esc to exit viewer", scrollBar))
+	return strings.Join(lines, "\n")
+}
+
+func (m WelcomeModel) viewDeleteConfirm() string {
+	var lines []string
+	lines = append(lines, "", TitleStyle.Foreground(ColorWarning).Render(fmt.Sprintf("⚠️ Delete Project: %s", m.ProjectName)), "")
+	lines = append(lines, "Are you sure you want to permanently delete this project", "and all of its generated files? This action cannot be undone.", "")
+	lines = append(lines, 
+		fmt.Sprintf("  %s    %s",
+			lipgloss.NewStyle().Background(lipgloss.Color("#ef4444")).Foreground(ColorBg).Padding(0, 1).Bold(true).Render("[ Yes, Delete ]"),
+			lipgloss.NewStyle().Background(ColorBorder).Foreground(ColorText).Padding(0, 1).Render(cancelLiteral),
+		),
+		"",
+		lipgloss.NewStyle().Foreground(ColorMuted).Render("Or use keyboard: Y to Delete, N/Esc to cancel"),
+	)
 	return strings.Join(lines, "\n")
 }
 
