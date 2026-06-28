@@ -32,13 +32,18 @@ This document tracks current priorities, upcoming milestones, and development st
 
 ### Milestone 5: Interactive Boot Menu & Project Manager (v0.5.0) ── [ ] Planned
 - [ ] **Welcome Screen**: Implement an interactive selection menu on boot using a TUI component library, removing the need to memorize CLI subcommands.
+- [ ] **Industry-Specific Blueprints**: Introduce starting templates (e.g., `fintech-saas`, `internal-crud`) during project initialization to pre-load context and accelerate the interrogation loop.
 - [ ] **Action Routing & Global Settings**: Provide global menu routes including "Create New Project", "Resume Existing", "View Assets", **"Audit Workspace (Drift Detection)"**, and a "Settings" configuration pane. 
 - [ ] **Configurable Application Parameters**: Allow users via the Settings pane to customize network constraints (API timeout limits and max retries) and set a default output folder for generated specifications.
+- [ ] **Ephemeral Debug Logging**: Add an opt-in `--debug` flag to write sanitized execution traces to `.synthspec/crash.log` for troubleshooting without violating the zero-data retention policy.
 - [ ] **Fuzzy Project Finder**: Build a dynamic directory scanner that populates a searchable, fuzzy-filtered list of existing projects.
 
 ### Milestone 6: In-App Document Viewer & UX Hardening (v0.6.0) ── [ ] Planned
 - [ ] Upgrade the "Document Synthesis Status" panel to support interactive file selection using keyboard arrows.
 - [ ] Implement an integrated split-pane or full-screen markdown viewer with ANSI syntax highlighting.
+- [ ] **Vim & Accessibility Keybindings**: Add a configuration toggle for Vim-style (hjkl) navigation and ensure TUI interactions support standard accessible key maps.
+- [ ] **Streaming Token Visualization**: Upgrade the static TUI spinner to a "Streaming Thought Box" that exposes raw reasoning tokens in a dimmed secondary panel to confirm responsiveness during long queries.
+- [ ] **The "I Don't Know" Fallback**: Map a hotkey (e.g., `Ctrl+K`) allowing users to request AI recommendations for highly specific compliance or architecture questions during the interrogation loop.
 - [ ] **The Domain Approval Gate**: Enforce a hard pause after generating `01_domain_model_use_cases.md`, presenting it in the viewer for explicit user sign-off (and editing) before unlocking the parallel generation of downstream documents.
 - [ ] **Static Site Generator (SSG) Export**: Add a compilation pipeline to build the generated Markdown workspace into a standalone, searchable static HTML site (e.g., via Docusaurus or MkDocs templates) for presentation to non-technical stakeholders.
 - [ ] Extend HTTP client timeouts and implement robust retry/error handling to resolve `context deadline exceeded` errors.
@@ -50,11 +55,14 @@ This document tracks current priorities, upcoming milestones, and development st
 - [ ] **Prompt Optimization**: Implement a backend routine to condense human-readable markdown files into absolute, imperative directives optimized for downstream coding LLMs.
 - [ ] **Live Token & Cost Estimation**: Track exact tokens consumed during the session and display a real-time estimated cost/burn-rate metric in the TUI header.
 - [ ] **Circuit Breakers & Hard Budgets**: Build a safety monitoring mechanism that allows users to configure a hard monetary cap (e.g., max $2.00 per execution) to automatically halt background API routines if a loop begins consuming excessive tokens.
+- [ ] **Pre-Flight Secret Scrubbing**: Integrate a local regex scanner (e.g., gitleaks logic) to intercept the prompt and block requests if a user accidentally pastes proprietary secrets (API keys, passwords) into the TUI.
 
 ### Milestone 8: Smart Diffing & Session State (v0.8.0) ── [ ] Planned
 - [ ] Implement `synthspec update` command (tied to the Boot Menu) to load existing `.synthspec-meta.json` and generated markdown files.
 - [ ] **Internal Consistency Auditor (Docs vs. Docs)**: Implement a verification sweep that cross-references generated JSON/YAML structural entities across all Markdown files to highlight manual editing discrepancies (e.g., flagging if an entity exists in the API spec but is missing from the Domain Model).
 - [ ] Build a structured diffing engine to calculate delta changes based on newly added requirements without overwriting manual developer edits.
+- [ ] **Colorblind-Safe Diffing**: Ensure the interactive Git-style diff viewer utilizes explicit ANSI symbols (+ / -) or high-contrast themes instead of relying solely on red/green color coding.
+- [ ] **Self-Healing Markdown Linting**: Add a post-generation validation step to parse and verify structural integrity (e.g., tables, code blocks). Automatically trigger a silent LLM repair loop for malformed syntax.
 - [ ] **Bi-Directional Architecture Updates**: Implement a retroactive feedback loop that detects when a downstream document (like API Architecture) identifies a required edge-case entity, and intelligently proposes an upstream update back to the root Domain Model without overwriting the entire file.
 - [ ] **Human-in-the-Loop (HITL) Confidence Override**: Introduce an escape hatch command (`:override` or `:bypass`) allowing engineers to manually fast-track lagging evaluation segments to 100% confidence, preventing deadlocks caused by pedantic LLM sub-queries.
 - [ ] Add an interactive Git-style diff viewer in the TUI for user approval before modifying physical files.
