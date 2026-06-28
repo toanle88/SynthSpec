@@ -255,7 +255,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return m.handleUpdateKeyMsg(msg)
+		var keyCmd tea.Cmd
+		var model tea.Model
+		model, keyCmd = m.handleUpdateKeyMsg(msg)
+		m = model.(DashboardModel)
+		if keyCmd != nil {
+			cmds = append(cmds, keyCmd)
+		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -264,6 +270,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		m.spinner, cmd = m.spinner.Update(msg)
+		m.updateChatViewport()
 		return m, cmd
 
 	case oracleResultMsg:
@@ -314,6 +321,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	m.updateChatViewport()
 	return m, tea.Batch(cmds...)
 }
 
