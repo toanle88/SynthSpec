@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/domain"
+	"github.com/toanle/synthspec/shared"
 )
 
 // MockGateway implements the Gateway interface for local testing
@@ -93,7 +94,7 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 		}
 	}
 
-	res.NextQuestion = SanitizeNextQuestion(res.NextQuestion)
+	res.NextQuestion = shared.SanitizeNextQuestion(res.NextQuestion)
 	return res, nil
 }
 
@@ -103,7 +104,7 @@ func (m *MockGateway) QueryOracleStream(ctx context.Context, facts Facts, histor
 		close(tokenChan)
 		return nil, err
 	}
-	StreamOracleResponse(res, tokenChan)
+	shared.StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 
@@ -238,7 +239,7 @@ gantt
 }
 
 // EvaluateCompliance returns mocked compliance scores matching the standards checklist
-func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
+func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []domain.Standard) ([]ComplianceResult, error) {
 	var results []ComplianceResult
 
 	for _, std := range standards {
@@ -293,7 +294,7 @@ func (m *MockGateway) EvaluateCompliance(ctx context.Context, fileName string, f
 	return results, nil
 }
 
-func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error) {
+func (m *MockGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []domain.Standard, referenceDoc string) (string, error) {
 	var ids []string
 	for _, std := range failedStandards {
 		ids = append(ids, std.ID)
@@ -325,4 +326,3 @@ func (m *MockGateway) VerifyConsistency(ctx context.Context, files map[string]st
 		Feedback:   make(map[string]string),
 	}, nil
 }
-

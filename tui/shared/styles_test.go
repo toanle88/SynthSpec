@@ -1,6 +1,7 @@
-package tui
+package shared
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -26,7 +27,6 @@ func TestRenderProgressBar(t *testing.T) {
 			if result == "" {
 				t.Error("expected non-empty progress bar string")
 			}
-			// Verify percentage text appears
 			expectedPct := tt.percentage
 			if expectedPct < 0 {
 				expectedPct = 0
@@ -34,14 +34,6 @@ func TestRenderProgressBar(t *testing.T) {
 			if expectedPct > 100 {
 				expectedPct = 100
 			}
-			// The bar should contain the numeric percentage
-			pctStr := string(rune('0'+expectedPct/10)) + string(rune('0'+expectedPct%10))
-			// Handle single digit
-			if expectedPct < 10 {
-				pctStr = " " + pctStr[1:]
-			}
-			// Just verify the string is non-empty and contains a % sign
-			// since exact ANSI formatting varies
 			if result == "" {
 				t.Error("expected non-empty result")
 			}
@@ -50,20 +42,41 @@ func TestRenderProgressBar(t *testing.T) {
 }
 
 func TestRenderProgressBar_WidthConsistency(t *testing.T) {
-	// A 100% bar should have all filled chars
 	result := RenderProgressBar(10, 100)
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
-	// A 50% bar should have mixed chars
 	result50 := RenderProgressBar(10, 50)
 	if result50 == "" {
 		t.Fatal("expected non-empty result")
 	}
-	// Different widths should produce different results
 	w10 := RenderProgressBar(10, 50)
 	w20 := RenderProgressBar(20, 50)
 	if w10 == w20 {
 		t.Log("note: 50% at width 10 and 20 produce identical output (may be same if truncated)")
+	}
+}
+
+func TestWrapText(t *testing.T) {
+	input := "this is a test of the text wrapping function it should split properly"
+	result := WrapText(input, 15)
+	lines := strings.Split(result, "\n")
+	if len(lines) < 2 {
+		t.Errorf("expected multiple lines wrapped at width 15, got %d: %s", len(lines), result)
+	}
+}
+
+func TestWrapText_Empty(t *testing.T) {
+	result := WrapText("", 10)
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result)
+	}
+}
+
+func TestWrapText_WidthZero(t *testing.T) {
+	input := "some text"
+	result := WrapText(input, 0)
+	if result != input {
+		t.Errorf("expected original text with width 0, got %q", result)
 	}
 }

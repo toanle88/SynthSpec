@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/shared"
 )
 
 func TestSanitizeNextQuestion(t *testing.T) {
@@ -63,9 +64,9 @@ func TestSanitizeNextQuestion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := SanitizeNextQuestion(tt.input)
+			actual := shared.SanitizeNextQuestion(tt.input)
 			if actual != tt.expected {
-				t.Errorf("SanitizeNextQuestion(%q) = %q; expected %q", tt.input, actual, tt.expected)
+				t.Errorf("shared.SanitizeNextQuestion(%q) = %q; expected %q", tt.input, actual, tt.expected)
 			}
 		})
 	}
@@ -127,7 +128,7 @@ func TestFilterApplicableStandards(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FilterApplicableStandards(standards, tt.fileName)
+			result := config.FilterApplicableStandards(standards, tt.fileName)
 			if len(result) != len(tt.wantIDs) {
 				t.Errorf("expected %d results, got %d", len(tt.wantIDs), len(result))
 				return
@@ -142,7 +143,7 @@ func TestFilterApplicableStandards(t *testing.T) {
 }
 
 func TestFilterApplicableStandards_EmptyStandards(t *testing.T) {
-	result := FilterApplicableStandards(nil, "any.md")
+	result := config.FilterApplicableStandards(nil, "any.md")
 	if result != nil {
 		t.Errorf("expected nil result for nil standards, got %v", result)
 	}
@@ -183,9 +184,9 @@ func TestSanitizeJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := sanitizeJSON(tt.input)
+			actual := shared.SanitizeJSON(tt.input)
 			if actual != tt.expected {
-				t.Errorf("sanitizeJSON(%q) = %q; expected %q", tt.input, actual, tt.expected)
+				t.Errorf("shared.SanitizeJSON(%q) = %q; expected %q", tt.input, actual, tt.expected)
 			}
 		})
 	}
@@ -200,7 +201,7 @@ func TestStreamOracleResponse(t *testing.T) {
 	}
 
 	tokenChan := make(chan string, 100)
-	StreamOracleResponse(res, tokenChan)
+	shared.StreamOracleResponse(res, tokenChan)
 
 	// Collect all chunks
 	var received strings.Builder
@@ -221,7 +222,7 @@ func TestStreamOracleResponse(t *testing.T) {
 func TestStreamOracleResponse_EmptyResponse(t *testing.T) {
 	res := &OracleResponse{}
 	tokenChan := make(chan string, 100)
-	StreamOracleResponse(res, tokenChan)
+	shared.StreamOracleResponse(res, tokenChan)
 
 	var received strings.Builder
 	for chunk := range tokenChan {

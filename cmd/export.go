@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/toanle/synthspec/generator"
+	"github.com/toanle/synthspec/generator/export"
 	"github.com/toanle/synthspec/state"
 )
 
@@ -18,30 +18,9 @@ var exportCmd = &cobra.Command{
 	Long:    `Compiles all markdown documents and metadata from the specified project output directory into a responsive, self-contained HTML page with fuzzy search and Mermaid layout.`,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var projectName string
-
-		if len(args) == 0 {
-			// Auto-detect projects
-			projects, err := state.ListProjects()
-			if err != nil {
-				return fmt.Errorf("failed to scan for projects: %w", err)
-			}
-
-			if len(projects) == 0 {
-				return fmt.Errorf("no active projects found to export. Start one using 'synthspec init <project_name>'")
-			}
-
-			if len(projects) > 1 {
-				fmt.Fprintln(cmd.OutOrStdout(), "Multiple active projects found. Please select one to export:")
-				for _, p := range projects {
-					fmt.Printf(" - %s\n", p)
-				}
-				return fmt.Errorf("use 'synthspec export [project_name]' to specify which project to export")
-			}
-
-			projectName = projects[0]
-		} else {
-			projectName = args[0]
+		projectName, err := resolveProjectName(args, "export")
+		if err != nil {
+			return err
 		}
 
 		// 1. Verify session exists
@@ -53,7 +32,7 @@ var exportCmd = &cobra.Command{
 		// 2. Determine target directories
 		projDir := state.GetSessionDir(sess.ProjectName)
 		outputDir := filepath.Join(projDir, "output")
-		
+
 		distDir := exportDestFlag
 		if distDir == "" {
 			distDir = filepath.Join(projDir, "dist")
@@ -61,7 +40,7 @@ var exportCmd = &cobra.Command{
 
 		// 3. Export to HTML
 		fmt.Fprintf(cmd.OutOrStdout(), "Exporting specifications for project '%s'...\n", projectName)
-		indexPath, err := generator.ExportToHTML(projectName, outputDir, distDir)
+		indexPath, err := export.ExportToHTML(projectName, outputDir, distDir)
 		if err != nil {
 			state.LogError(projectName, err)
 			return fmt.Errorf("export failed: %w", err)

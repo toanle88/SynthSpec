@@ -14,7 +14,8 @@ import (
 
 func TestSessionSaveAndLoad(t *testing.T) {
 	projectName := "test-session-project"
-	defer os.RemoveAll(filepath.Join("synthspec", projectName)) // Clean up
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, projectName)) // Clean up
 
 	sess := Session{
 		ProjectName: projectName,
@@ -59,9 +60,10 @@ func TestSessionSaveAndLoad(t *testing.T) {
 func TestListProjects(t *testing.T) {
 	project1 := "proj-1"
 	project2 := "proj-2"
+	root := getSynthspecRoot()
 
-	defer os.RemoveAll(filepath.Join("synthspec", project1))
-	defer os.RemoveAll(filepath.Join("synthspec", project2))
+	defer os.RemoveAll(filepath.Join(root, project1))
+	defer os.RemoveAll(filepath.Join(root, project2))
 
 	s1 := Session{ProjectName: project1}
 	s2 := Session{ProjectName: project2}
@@ -96,14 +98,15 @@ func TestListProjects(t *testing.T) {
 
 func TestLogError(t *testing.T) {
 	projectName := "test-error-log-project"
-	defer os.RemoveAll(filepath.Join("synthspec", projectName))
-	defer os.Remove(filepath.Join("synthspec", "errors.log"))
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, projectName))
+	defer os.Remove(filepath.Join(root, "errors.log"))
 
 	// Test project-specific error logging
 	errSample := fmt.Errorf("sample error description")
 	LogError(projectName, errSample)
 
-	logPath := filepath.Join("synthspec", projectName, "errors.log")
+	logPath := filepath.Join(root, projectName, "errors.log")
 	content, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("failed to read project log file: %v", err)
@@ -117,7 +120,7 @@ func TestLogError(t *testing.T) {
 	errGlobalSample := fmt.Errorf("global sample error description")
 	LogError("", errGlobalSample)
 
-	globalLogPath := filepath.Join("synthspec", "errors.log")
+	globalLogPath := filepath.Join(root, "errors.log")
 	globalContent, err := os.ReadFile(globalLogPath)
 	if err != nil {
 		t.Fatalf("failed to read global log file: %v", err)
@@ -136,17 +139,15 @@ func TestLogError_NilError(t *testing.T) {
 
 func TestGetSessionDir(t *testing.T) {
 	dir := GetSessionDir("my-project")
-	expected := filepath.Join("synthspec", "my-project")
-	if dir != expected {
-		t.Errorf("GetSessionDir('my-project') = %q, want %q", dir, expected)
+	if !strings.HasSuffix(dir, filepath.Join("synthspec", "my-project")) {
+		t.Errorf("GetSessionDir('my-project') = %q, expected suffix %q", dir, filepath.Join("synthspec", "my-project"))
 	}
 }
 
 func TestGetSessionPath(t *testing.T) {
 	path := GetSessionPath("my-project")
-	expected := filepath.Join("synthspec", "my-project", "session.json")
-	if path != expected {
-		t.Errorf("GetSessionPath('my-project') = %q, want %q", path, expected)
+	if !strings.HasSuffix(path, filepath.Join("synthspec", "my-project", "session.json")) {
+		t.Errorf("GetSessionPath('my-project') = %q, expected suffix %q", path, filepath.Join("synthspec", "my-project", "session.json"))
 	}
 }
 
@@ -170,13 +171,13 @@ func TestAddTurn(t *testing.T) {
 		t.Errorf("expected TotalTokensUsed 150, got %d", s.TotalTokensUsed)
 	}
 
-	// Add another turn — verify history grows
+	// Add another turn — verify history grows and tokens accumulate
 	s.AddTurn("user msg 2", "assistant msg 2", 10, 20)
 	if len(s.History) != 4 {
 		t.Errorf("expected 4 history entries after second turn, got %d", len(s.History))
 	}
-	if s.TotalTokensUsed != 30 {
-		t.Errorf("expected TotalTokensUsed 30, got %d", s.TotalTokensUsed)
+	if s.TotalTokensUsed != 180 {
+		t.Errorf("expected TotalTokensUsed 180 (150+30), got %d", s.TotalTokensUsed)
 	}
 }
 
@@ -201,7 +202,8 @@ func TestCheckAndPruneContext_BelowThreshold(t *testing.T) {
 		Model:           "mock-model",
 		TotalTokensUsed: 100, // far below 75% of 10000
 	}
-	defer os.RemoveAll(filepath.Join("synthspec", sess.ProjectName))
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	pruned, err := sess.CheckAndPruneContext(context.Background(), &mockGatewayCheckContext{})
 	if err != nil {
@@ -227,7 +229,8 @@ func TestCheckAndPruneContext_AboveThreshold(t *testing.T) {
 			Functional: "test",
 		},
 	}
-	defer os.RemoveAll(filepath.Join("synthspec", sess.ProjectName))
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	pruned, err := sess.CheckAndPruneContext(context.Background(), &mockGatewayCheckContext{})
 	if err != nil {
@@ -248,7 +251,8 @@ func TestCheckAndPruneContext_UnknownModel(t *testing.T) {
 		Model:           "unknown-model",
 		TotalTokensUsed: 80000, // above 75% of default 100000
 	}
-	defer os.RemoveAll(filepath.Join("synthspec", sess.ProjectName))
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	pruned, err := sess.CheckAndPruneContext(context.Background(), &mockGatewayCheckContext{})
 	if err != nil {
@@ -265,7 +269,8 @@ func TestSave_ErrorMarshaling(t *testing.T) {
 	sess := &Session{
 		ProjectName: "test-marshal-error",
 	}
-	defer os.RemoveAll(filepath.Join("synthspec", sess.ProjectName))
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	// Save should succeed since Session marshals fine
 	err := sess.Save()
@@ -277,7 +282,7 @@ func TestSave_ErrorMarshaling(t *testing.T) {
 	badPath := GetSessionPath("test-bad-session")
 	os.MkdirAll(filepath.Dir(badPath), 0755)
 	os.WriteFile(badPath, []byte("{invalid json"), 0644)
-	defer os.RemoveAll(filepath.Join("synthspec", "test-bad-session"))
+	defer os.RemoveAll(filepath.Join(root, "test-bad-session"))
 
 	_, err = LoadSession("test-bad-session")
 	if err == nil {
@@ -312,7 +317,8 @@ func TestSave_WriteError(t *testing.T) {
 	sess := &Session{
 		ProjectName: "test-write-error",
 	}
-	defer os.RemoveAll(filepath.Join("synthspec", "test-write-error"))
+	root := getSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, "test-write-error"))
 
 	err := sess.Save()
 	if err != nil {

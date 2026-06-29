@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/logger"
@@ -30,7 +30,10 @@ var rootCmd = &cobra.Command{
 	Short: "SynthSpec: Open-Source BYOK AI Solution Architect CLI",
 	Long:  `SynthSpec is a privacy-first, open-source command-line utility that transforms vague application ideas into production-ready, enterprise-grade engineering specifications.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		s, _ := config.LoadSettings()
+		s, err := config.LoadSettings()
+		if err != nil {
+			logger.Log("WARN: failed to load settings: %v", err)
+		}
 		settingsDebug := false
 		if s != nil {
 			settingsDebug = s.Debug

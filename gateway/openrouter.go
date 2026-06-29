@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/logger"
+	"github.com/toanle/synthspec/shared"
 )
 
 const (
@@ -79,46 +81,7 @@ type openRouterChatResponse struct {
 }
 
 func (o *OpenRouterGateway) QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error) {
-	systemPrompt := `You are SynthSpec, an expert AI Solution Architect. Your goal is to help the user build an enterprise-grade engineering specification.
-You operate in a strict single-question interrogation loop, cross-examining the user.
-
-Your response MUST be a single valid JSON object matching the following structure:
-{
-  "facts": {
-    "functional": "Detailed summary of all functional features, workflows, and user roles agreed on so far.",
-    "structural": "Detailed summary of structural/architectural preferences (e.g. database, language, communication protocols).",
-    "security": "Detailed summary of security constraints (e.g. authentication, JWT, encryption, threat limits).",
-    "compliance": "Detailed summary of compliance rules (e.g. tenancy model, GDPR, data retention)."
-  },
-  "confidence_scores": {
-    "functional": 0 to 100 integer,
-    "structural": 0 to 100 integer,
-    "security": 0 to 100 integer,
-    "compliance": 0 to 100 integer
-  },
-  "next_question": "Exactly ONE question targeting missing details. Leave empty if ALL scores are 100.",
-  "next_choices": ["Option 1", "Option 2", "Option 3"],
-  "dimension_rationales": {
-    "functional": "Why did you assign this functional score?",
-    "structural": "Why did you assign this structural score?",
-    "security": "Why did you assign this security score?",
-    "compliance": "Why did you assign this compliance score?"
-  }
-}
-
-Guidelines for next_choices:
-- Under "next_choices", provide a JSON array of 3-5 concise, specific choice options that directly answer "next_question".
-- Put the most recommended or industry-standard option as the first item in the array.
-- Leave this array empty if "next_question" is empty.
-
-Guidelines for evaluation:
-- Be strict. Do not give 100% confidence on any dimension until the specific requirements are clear and complete.
-- Functional is complete when user roles, core workflows, and at least 3-4 key features are clarified.
-- Structural is complete when the database choice, API schema, backend/frontend stacks are specified.
-- Security is complete when authentication, authorization (RBAC), and encryption methods are defined.
-- Compliance is complete when tenancy model (multi-tenant vs single-tenant), GDPR/data-handling, and backup strategies are set.
-- Under NO circumstances ask more than ONE question at a time. Do not use bullets or lists for questions; ask a single clear question.
-- Do NOT output any markdown backticks wrapper (like ` + "```json" + `). Output ONLY the raw JSON string.`
+	systemPrompt := OracleSystemPrompt
 
 	messages := []openRouterChatMessage{
 		{Role: "system", Content: systemPrompt},
@@ -194,7 +157,7 @@ Guidelines for evaluation:
 		logger.LogAPI(config.ProviderOpenRouter, o.model, duration, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, errEmpty)
 		return nil, errEmpty
 	}
-	contentStr = sanitizeJSON(contentStr)
+	contentStr = shared.SanitizeJSON(contentStr)
 	if err := json.Unmarshal([]byte(contentStr), &oracleResp); err != nil {
 		errInvalidJSON := fmt.Errorf("LLM returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
 		logger.LogAPI(config.ProviderOpenRouter, o.model, duration, chatResp.Usage.PromptTokens, chatResp.Usage.CompletionTokens, errInvalidJSON)
@@ -205,7 +168,7 @@ Guidelines for evaluation:
 
 	oracleResp.TokensPrompt = chatResp.Usage.PromptTokens
 	oracleResp.TokensCompletion = chatResp.Usage.CompletionTokens
-	oracleResp.NextQuestion = SanitizeNextQuestion(oracleResp.NextQuestion)
+	oracleResp.NextQuestion = shared.SanitizeNextQuestion(oracleResp.NextQuestion)
 
 	return &oracleResp, nil
 }
@@ -216,13 +179,13 @@ func (o *OpenRouterGateway) QueryOracleStream(ctx context.Context, facts Facts, 
 		close(tokenChan)
 		return nil, err
 	}
-	StreamOracleResponse(res, tokenChan)
+	shared.StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 
 func (o *OpenRouterGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
 	messages := []openRouterChatMessage{
-		{Role: "system", Content: "You are a senior solutions architect. Write detailed, enterprise-grade specification files based on the facts provided. Return the exact file content and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."},
+		{Role: "system", Content: GenerateSpecSystemPrompt},
 		{Role: "user", Content: promptTemplate},
 	}
 
@@ -262,8 +225,8 @@ func (o *OpenRouterGateway) GenerateSpecFile(ctx context.Context, facts Facts, f
 	return chatResp.Choices[0].Message.Content, nil
 }
 
-func (o *OpenRouterGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []config.Standard) ([]ComplianceResult, error) {
-	var applicableStandards []config.Standard
+func (o *OpenRouterGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []domain.Standard) ([]ComplianceResult, error) {
+	var applicableStandards []domain.Standard
 	for _, std := range standards {
 		for _, tf := range std.TargetFiles {
 			if tf == fileName {
@@ -277,31 +240,12 @@ func (o *OpenRouterGateway) EvaluateCompliance(ctx context.Context, fileName str
 		return nil, nil
 	}
 
-	systemPrompt := `You are an expert software engineering auditor. Your job is to evaluate if a generated specification file complies with specific architectural and software development standards.
-For each standard provided, evaluate the file content and return a JSON object with a root key "results" containing an array of evaluation objects.
-Each evaluation object must contain:
-1. "standard_id": the ID of the standard being evaluated.
-2. "score": an integer from 0 to 100 indicating compliance (0 for completely absent/fails, 100 for fully compliant).
-3. "compliant": a boolean indicating if it meets the minimum threshold or is acceptable.
-4. "feedback": a concise explanation of the score and specific details of what is missing or incorrect.
-
-Your response MUST be a JSON object matching this structure:
-{
-  "results": [
-    {
-      "standard_id": "clean_architecture",
-      "score": 75,
-      "compliant": true,
-      "feedback": "Decoupling is partially complete..."
-    }
-  ]
-}
-Output only the raw JSON string.`
+	systemPrompt := ComplianceSystemPrompt
 
 	type auditPayload struct {
 		FileName    string            `json:"file_name"`
 		FileContent string            `json:"file_content"`
-		Standards   []config.Standard `json:"standards"`
+		Standards   []domain.Standard `json:"standards"`
 	}
 
 	payloadStruct := auditPayload{
@@ -362,7 +306,7 @@ Output only the raw JSON string.`
 	return envelope.Results, nil
 }
 
-func (o *OpenRouterGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []config.Standard, referenceDoc string) (string, error) {
+func (o *OpenRouterGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []domain.Standard, referenceDoc string) (string, error) {
 	systemPrompt := "You are a senior solutions architect. Your job is to modify an existing specification file to fix quality standards violations. Return only the updated file contents and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."
 
 	var criteriaLines []string
@@ -382,7 +326,7 @@ Reference source document:
 %s
 
 Original File Content:
-%s
+%sRefineSystemPrompt
 
 CRITICAL: When rewriting this file to fix the audit failures, do not abbreviate, truncate, or omit any existing sections that are already passing. You must maintain or improve the detail level of the entire document.
 
@@ -435,20 +379,7 @@ Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks li
 }
 
 func (o *OpenRouterGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error) {
-	systemPrompt := `You are an expert software engineering auditor. Your job is to verify that all generated specification files are logically consistent with one another.
-Compare functional requirements, API endpoints, data models, compliance specifications, and system architectures.
-Analyze the provided documents and output:
-1. "consistent": a boolean indicating whether all files are fully consistent with zero contradictions.
-2. "feedback": a map of filename key to string value detailing the discrepancy/correction instructions. Only include files in this map that have errors/inconsistencies. If consistent is true, this map must be empty.
-
-Your response MUST be a JSON object, like this:
-{
-  "consistent": false,
-  "feedback": {
-    "04_api_architecture_integration.md": "Rename the /users endpoint to /accounts to match the system architecture document."
-  }
-}
-Do NOT return markdown code block backticks. Output only the raw JSON string.`
+	systemPrompt := ConsistencySystemPrompt
 
 	type consistencyPayload struct {
 		Files map[string]string `json:"files"`
@@ -499,7 +430,7 @@ Do NOT return markdown code block backticks. Output only the raw JSON string.`
 	}
 
 	contentStr := chatResp.Choices[0].Message.Content
-	contentStr = sanitizeJSON(contentStr)
+	contentStr = shared.SanitizeJSON(contentStr)
 
 	var report ConsistencyReport
 	if err := json.Unmarshal([]byte(contentStr), &report); err != nil {
@@ -508,4 +439,3 @@ Do NOT return markdown code block backticks. Output only the raw JSON string.`
 
 	return &report, nil
 }
-

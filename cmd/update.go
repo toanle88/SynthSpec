@@ -14,30 +14,9 @@ var updateCmd = &cobra.Command{
 	Long:  `Loads a saved project session and prompts directly in the TUI to input new requirements or modifications.`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var projectName string
-
-		if len(args) == 0 {
-			// Auto-detect projects
-			projects, err := state.ListProjects()
-			if err != nil {
-				return fmt.Errorf("failed to scan for projects: %w", err)
-			}
-
-			if len(projects) == 0 {
-				return fmt.Errorf("no active projects found to update. Start one using 'synthspec init <project_name>'")
-			}
-
-			if len(projects) > 1 {
-				fmt.Println("Multiple active projects found. Please select one to update:")
-				for _, p := range projects {
-					fmt.Printf(" - %s\n", p)
-				}
-				return fmt.Errorf("use 'synthspec update [project_name]' to specify which project to load")
-			}
-
-			projectName = projects[0]
-		} else {
-			projectName = args[0]
+		projectName, err := resolveProjectName(args, "update")
+		if err != nil {
+			return err
 		}
 
 		// 1. Load session progress
@@ -55,7 +34,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		// 2. Setup Gateway
-		gw, err := getGatewayForSession(sess, mockFlag)
+		gw, err := NewGatewayForSession(sess, mockFlag)
 		if err != nil {
 			return err
 		}

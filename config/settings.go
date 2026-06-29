@@ -16,9 +16,9 @@ type Settings struct {
 }
 
 const (
-	DefaultTimeoutSeconds      = 300
-	DefaultMaxRetries          = 10
-	DefaultOutputFolderValue   = "./output"
+	DefaultTimeoutSeconds    = 300
+	DefaultMaxRetries        = 10
+	DefaultOutputFolderValue = "./output"
 )
 
 // GetGlobalSettingsPath returns the global settings file path (e.g. ~/.synthspec/settings.json)
@@ -77,7 +77,7 @@ func mergeSettingsFromFile(s *Settings, path string) {
 	if loaded.DefaultOutputFolder != "" {
 		s.DefaultOutputFolder = loaded.DefaultOutputFolder
 	}
-	
+
 	// Only override debug/vim_mode if they are explicitly present in JSON
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err == nil {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
 	"github.com/toanle/synthspec/tui"
 )
@@ -29,20 +29,9 @@ var initCmd = &cobra.Command{
 		}
 
 		// 2. Setup Gateway
-		var gw gateway.Gateway
-		switch cfg.Provider {
-		case config.ProviderMock:
-			gw = gateway.NewMockGateway()
-		case config.ProviderGemini:
-			gw = gateway.NewGeminiGateway(cfg.APIKey, cfg.Model)
-		case config.ProviderOpenAI:
-			gw = gateway.NewOpenAIGateway(cfg.APIKey, cfg.Model)
-		case config.ProviderAnthropic:
-			gw = gateway.NewAnthropicGateway(cfg.APIKey, cfg.Model)
-		case config.ProviderOpenRouter:
-			gw = gateway.NewOpenRouterGateway(cfg.APIKey, cfg.Model)
-		default:
-			return fmt.Errorf("unrecognized provider: %s", cfg.Provider)
+		gw, err := gateway.NewGateway(cfg.Provider, cfg.APIKey, cfg.Model)
+		if err != nil {
+			return err
 		}
 
 		// 3. Create Session File
@@ -89,7 +78,11 @@ var initCmd = &cobra.Command{
 		}
 
 		// 4. Run TUI Dashboard
-		settings, _ := config.LoadSettings()
+		loadSettings, err := config.LoadSettings()
+		if err != nil {
+			logger.Log("WARN: failed to load settings: %v", err)
+		}
+		settings := loadSettings
 		outDir := outputFlag
 		if outDir == "" && settings != nil {
 			outDir = settings.DefaultOutputFolder
@@ -114,29 +107,4 @@ var blueprintFlag string
 func init() {
 	initCmd.Flags().StringVarP(&blueprintFlag, "blueprint", "b", "", "Starting template/blueprint for project context (e.g. fintech-saas, internal-crud)")
 	rootCmd.AddCommand(initCmd)
-}
-
-// Helper to initialize gateway based on session state
-func getGatewayForSession(sess *state.Session, forceMock bool) (gateway.Gateway, error) {
-	if forceMock || sess.Provider == config.ProviderMock {
-		return gateway.NewMockGateway(), nil
-	}
-
-	cfg, err := config.LoadConfig(sess.Provider, sess.Model, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve credentials: %w", err)
-	}
-
-	switch cfg.Provider {
-	case config.ProviderGemini:
-		return gateway.NewGeminiGateway(cfg.APIKey, cfg.Model), nil
-	case config.ProviderOpenAI:
-		return gateway.NewOpenAIGateway(cfg.APIKey, cfg.Model), nil
-	case config.ProviderAnthropic:
-		return gateway.NewAnthropicGateway(cfg.APIKey, cfg.Model), nil
-	case config.ProviderOpenRouter:
-		return gateway.NewOpenRouterGateway(cfg.APIKey, cfg.Model), nil
-	default:
-		return nil, errors.New("unsupported provider in session")
-	}
 }

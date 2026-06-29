@@ -44,7 +44,7 @@ func Init(cliDebug, settingsDebug bool) error {
 	}
 
 	logFile = file
-	
+
 	// Write a startup marker
 	timestamp := time.Now().Format(timeFormat)
 	fmt.Fprintf(logFile, "\n[%s] [SYSTEM] --- SynthSpec Session Started (CLI Debug: %t, Settings Debug: %t) ---\n", timestamp, cliDebug, settingsDebug)

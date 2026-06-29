@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
 	"github.com/toanle/synthspec/tui"
 )
@@ -16,30 +17,9 @@ var resumeCmd = &cobra.Command{
 	Long:  `Loads a saved project session from disk and returns to the interactive TUI interrogation dashboard.`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var projectName string
-
-		if len(args) == 0 {
-			// Auto-detect projects
-			projects, err := state.ListProjects()
-			if err != nil {
-				return fmt.Errorf("failed to scan for projects: %w", err)
-			}
-
-			if len(projects) == 0 {
-				return fmt.Errorf("no active projects found to resume. Start one using 'synthspec init <project_name>'")
-			}
-
-			if len(projects) > 1 {
-				fmt.Println("Multiple active projects found. Please select one to resume:")
-				for _, p := range projects {
-					fmt.Printf(" - %s\n", p)
-				}
-				return fmt.Errorf("use 'synthspec resume [project_name]' to specify which project to load")
-			}
-
-			projectName = projects[0]
-		} else {
-			projectName = args[0]
+		projectName, err := resolveProjectName(args, "resume")
+		if err != nil {
+			return err
 		}
 
 		// 1. Load session progress
@@ -57,19 +37,23 @@ var resumeCmd = &cobra.Command{
 		}
 
 		// 2. Setup Gateway
-		gw, err := getGatewayForSession(sess, mockFlag)
+		gw, err := NewGatewayForSession(sess, mockFlag)
 		if err != nil {
 			return err
 		}
 
 		// 3. Boot Dashboard
-		settings, _ := config.LoadSettings()
+		loadSettings, err := config.LoadSettings()
+		if err != nil {
+			logger.Log("WARN: failed to load settings: %v", err)
+		}
+		settings := loadSettings
 		outDir := outputFlag
 		if outDir == "" && settings != nil {
 			outDir = settings.DefaultOutputFolder
 		}
 		// Default to project-specific output directory if not explicitly set
-		if outDir == "" || outDir == "./output" || outDir == config.DefaultOutputFolderValue {
+		if outDir == "" || outDir == config.DefaultOutputFolderValue {
 			outDir = filepath.Join(state.GetSessionDir(projectName), "output")
 		}
 

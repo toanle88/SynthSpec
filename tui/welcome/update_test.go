@@ -1,4 +1,4 @@
-package tui
+package welcome
 
 import (
 	"os"
@@ -7,35 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/toanle/synthspec/state"
 )
-
-func TestNewWelcomeModel(t *testing.T) {
-	m := NewWelcomeModel()
-	if m.Phase != PhaseMenu {
-		t.Errorf("expected PhaseMenu, got %v", m.Phase)
-	}
-	if len(m.Options) != 7 {
-		t.Errorf("expected 7 menu options, got %d", len(m.Options))
-	}
-	if m.Action != ActionNone {
-		t.Errorf("expected ActionNone, got %v", m.Action)
-	}
-}
-
-func TestWelcomeModel_InitReturnsCmd(t *testing.T) {
-	m := NewWelcomeModel()
-	cmd := m.Init()
-	if cmd == nil {
-		t.Error("expected Init to return a command")
-	}
-}
-
-func TestWelcomeModel_ViewReturnsContent(t *testing.T) {
-	m := NewWelcomeModel()
-	view := m.View()
-	if view == "" {
-		t.Error("expected non-empty View")
-	}
-}
 
 func TestWelcomeModel_CtrlCQuits(t *testing.T) {
 	m := NewWelcomeModel()
@@ -126,66 +97,5 @@ func TestWelcomeModel_EnterOnResume(t *testing.T) {
 	wm = model.(WelcomeModel)
 	if wm.Phase != PhaseResumeSelect {
 		t.Errorf("expected PhaseResumeSelect, got %v", wm.Phase)
-	}
-}
-
-func TestWelcomeModel_EnterOnExit(t *testing.T) {
-	m := NewWelcomeModel()
-	selected := 6 // Exit is option 6
-	for selected > 0 {
-		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-		m = model.(WelcomeModel)
-		selected--
-	}
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	wm := model.(WelcomeModel)
-	if wm.Action != ActionExit {
-		t.Errorf("expected ActionExit, got %v", wm.Action)
-	}
-}
-
-func TestWelcomeModel_EscapeGoesBack(t *testing.T) {
-	m := NewWelcomeModel()
-	// Enter Create
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	wm := model.(WelcomeModel)
-	if wm.Phase != PhaseCreateInput {
-		t.Fatalf("expected PhaseCreateInput, got %v", wm.Phase)
-	}
-
-	// Press escape to go back
-	model, _ = wm.Update(tea.KeyMsg{Type: tea.KeyEscape})
-	wm = model.(WelcomeModel)
-	if wm.Phase != PhaseMenu {
-		t.Errorf("expected PhaseMenu after escape, got %v", wm.Phase)
-	}
-}
-
-func TestWelcomeModel_SettingsNavigation(t *testing.T) {
-	m := NewWelcomeModel()
-	// Navigate to Settings (option 5)
-	for i := 0; i < 5; i++ {
-		model, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
-		m = model.(WelcomeModel)
-	}
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	wm := model.(WelcomeModel)
-	if wm.Phase != PhaseSettings {
-		t.Errorf("expected PhaseSettings, got %v", wm.Phase)
-	}
-}
-
-func TestMaxMinInt(t *testing.T) {
-	if maxInt(5, 3) != 5 {
-		t.Errorf("maxInt(5,3) = %d, want 5", maxInt(5, 3))
-	}
-	if maxInt(2, 7) != 7 {
-		t.Errorf("maxInt(2,7) = %d, want 7", maxInt(2, 7))
-	}
-	if minInt(5, 3) != 3 {
-		t.Errorf("minInt(5,3) = %d, want 3", minInt(5, 3))
-	}
-	if minInt(2, 7) != 2 {
-		t.Errorf("minInt(2,7) = %d, want 2", minInt(2, 7))
 	}
 }

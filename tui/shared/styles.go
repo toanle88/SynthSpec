@@ -1,4 +1,4 @@
-package tui
+package shared
 
 import (
 	"fmt"
@@ -59,15 +59,15 @@ var (
 			Bold(true)
 
 	ThoughtBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorMuted).
-			Foreground(ColorMuted).
-			Padding(0, 1).
-			Italic(true)
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorMuted).
+				Foreground(ColorMuted).
+				Padding(0, 1).
+				Italic(true)
 
 	ThoughtTitleStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Bold(true)
+				Foreground(ColorMuted).
+				Bold(true)
 )
 
 // Specific UI Text Styles
@@ -132,4 +132,59 @@ func RenderProgressBar(width int, percentage int) string {
 		lipgloss.NewStyle().Foreground(ColorBorder).Render(emptyStr),
 		scoreStyle.Render(fmt.Sprintf("%3d%%", percentage)),
 	)
+}
+
+var (
+	StyleSuccess = lipgloss.NewStyle().Foreground(ColorSuccess)
+	StyleWarning = lipgloss.NewStyle().Foreground(ColorWarning)
+	StyleInfo    = lipgloss.NewStyle().Foreground(ColorInfo)
+	StyleMuted   = lipgloss.NewStyle().Foreground(ColorMuted)
+	StyleError   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")) // Vibrant Red
+)
+
+func wrapSingleLine(line string, width int) []string {
+	if len(line) <= width {
+		return []string{line}
+	}
+
+	indent := ""
+	for _, c := range line {
+		if c == ' ' || c == '\t' {
+			indent += string(c)
+		} else {
+			break
+		}
+	}
+
+	trimmed := strings.TrimSpace(line)
+	words := strings.Fields(trimmed)
+	if len(words) == 0 {
+		return []string{indent}
+	}
+
+	var result []string
+	currentLine := indent + words[0]
+	for _, word := range words[1:] {
+		if len(currentLine)+1+len(word) > width {
+			result = append(result, currentLine)
+			currentLine = indent + word
+		} else {
+			currentLine += " " + word
+		}
+	}
+	result = append(result, currentLine)
+	return result
+}
+
+// WrapText is a simple text wrapping helper
+func WrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	var result []string
+	for _, line := range lines {
+		result = append(result, wrapSingleLine(line, width)...)
+	}
+	return strings.Join(result, "\n")
 }

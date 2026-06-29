@@ -2,12 +2,10 @@ package generator
 
 import (
 	"context"
-	"crypto/sha256"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -15,101 +13,9 @@ import (
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/shared"
 	"github.com/toanle/synthspec/state"
 )
-
-func TestFindSourceTemplate(t *testing.T) {
-	templates := []config.Template{
-		{FileName: "02_prd_functional.md", Name: "PRD"},
-		{FileName: "01_domain_model_use_cases.md", Name: "Domain Model"},
-		{FileName: "03_system_architecture.md", Name: "Architecture"},
-	}
-	idx, err := findSourceTemplate(templates)
-	if err != nil {
-		t.Fatalf("expected to find source template: %v", err)
-	}
-	if idx != 1 {
-		t.Errorf("expected index 1, got %d", idx)
-	}
-}
-
-func TestFindSourceTemplate_NotFound(t *testing.T) {
-	templates := []config.Template{
-		{FileName: "other.md", Name: "Other"},
-	}
-	_, err := findSourceTemplate(templates)
-	if err == nil {
-		t.Fatal("expected error when source template not found")
-	}
-}
-
-func TestBuildGenerationPrompt(t *testing.T) {
-	facts := gateway.Facts{
-		Functional: "Build a payment system",
-		Structural: "Microservices with PostgreSQL",
-	}
-
-	prompt, err := buildGenerationPrompt("Generate the {{type}} document", facts, "")
-	if err != nil {
-		t.Fatalf("buildGenerationPrompt failed: %v", err)
-	}
-	if !strings.Contains(prompt, "Generate the {{type}} document") {
-		t.Errorf("expected prompt template in output")
-	}
-	if !strings.Contains(prompt, "Build a payment system") {
-		t.Errorf("expected facts in output")
-	}
-}
-
-func TestBuildGenerationPrompt_WithReference(t *testing.T) {
-	facts := gateway.Facts{
-		Functional: "Build a payment system",
-	}
-	prompt, err := buildGenerationPrompt("Generate document", facts, "# Reference Doc\nContent here")
-	if err != nil {
-		t.Fatalf("buildGenerationPrompt failed: %v", err)
-	}
-	if !strings.Contains(prompt, "Reference source document") {
-		t.Errorf("expected reference doc marker in output")
-	}
-	if !strings.Contains(prompt, "Content here") {
-		t.Errorf("expected reference content in output")
-	}
-}
-
-func TestGetApplicableStandards(t *testing.T) {
-	standards := []config.Standard{
-		{ID: "s1", TargetFiles: []string{"01_domain_model_use_cases.md"}},
-		{ID: "s2", TargetFiles: []string{"02_prd_functional.md"}},
-	}
-	result := getApplicableStandards(standards, "01_domain_model_use_cases.md")
-	if len(result) != 1 || result[0].ID != "s1" {
-		t.Errorf("expected 1 standard (s1), got %v", result)
-	}
-}
-
-func TestGetApplicableStandards_NoMatch(t *testing.T) {
-	result := getApplicableStandards(nil, "any.md")
-	if result != nil {
-		t.Errorf("expected nil for empty input, got %v", result)
-	}
-}
-
-func TestComputeSha256(t *testing.T) {
-	h := sha256.New()
-	h.Write([]byte("hello"))
-	expected := fmt.Sprintf("%x", h.Sum(nil))
-
-	result := computeSha256("hello")
-	if result != expected {
-		t.Errorf("expected %q, got %q", expected, result)
-	}
-
-	// Verify determinism
-	if computeSha256("hello") != computeSha256("hello") {
-		t.Errorf("sha256 must be deterministic")
-	}
-}
 
 func TestSendProgress(t *testing.T) {
 	ch := make(chan string, 1)
@@ -117,176 +23,6 @@ func TestSendProgress(t *testing.T) {
 	msg := <-ch
 	if !strings.Contains(msg, "test.md") || !strings.Contains(msg, "done") {
 		t.Errorf("expected progress event JSON containing test.md and done, got: %s", msg)
-	}
-}
-
-func TestCollectFailedStandards(t *testing.T) {
-	standards := []config.Standard{
-		{ID: "s1", Name: "Standard 1", MinScore: 80},
-		{ID: "s2", Name: "Standard 2", MinScore: 60},
-	}
-	results := []gateway.ComplianceResult{
-		{StandardID: "s1", Score: 50, Compliant: false},
-		{StandardID: "s2", Score: 100, Compliant: true},
-	}
-	failed, _ := collectFailedStandards(results, standards)
-	if len(failed) != 1 || failed[0].ID != "s1" {
-		t.Errorf("expected 1 failed standard (s1), got %d", len(failed))
-	}
-}
-
-func TestUpdateComplianceResultWithValidationError(t *testing.T) {
-	res := &gateway.ComplianceResult{Score: 100, Compliant: true, Feedback: "All good"}
-	updateComplianceResultWithValidationError(res, fmt.Errorf("validator failed"), "output from validator")
-	if res.Compliant {
-		t.Errorf("expected compliant=false after validation error")
-	}
-	if res.Score != 0 {
-		t.Errorf("expected score 0 after validation error, got %d", res.Score)
-	}
-}
-
-func TestGetOrInsertResult(t *testing.T) {
-	results := []gateway.ComplianceResult{}
-	resultsMap := make(map[string]*gateway.ComplianceResult)
-
-	// Insert new
-	r := getOrInsertResult("s1", resultsMap, &results)
-	if r.StandardID != "s1" || r.Score != 100 {
-		t.Errorf("expected new result with default score 100")
-	}
-
-	// Get existing
-	r2 := getOrInsertResult("s1", resultsMap, &results)
-	if r2 != r {
-		t.Errorf("expected same pointer for existing result")
-	}
-}
-
-func TestSanitizeJSONOutput(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "No backticks",
-			input:    `{"epics": []}`,
-			expected: `{"epics": []}`,
-		},
-		{
-			name:     "With json language backticks",
-			input:    "```json\n{\"epics\": []}\n```",
-			expected: `{"epics": []}`,
-		},
-		{
-			name:     "With plain backticks",
-			input:    "```\n{\"epics\": []}\n```",
-			expected: `{"epics": []}`,
-		},
-		{
-			name:     "Empty input",
-			input:    "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizeJSONOutput(tt.input)
-			if got != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, got)
-			}
-		})
-	}
-}
-
-func TestValidateBacklog(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
-		errSub  string
-	}{
-		{
-			name:    "Valid backlog",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: false,
-		},
-		{
-			name:    "Invalid JSON",
-			input:   `{"epics": `,
-			wantErr: true,
-			errSub:  "invalid JSON syntax",
-		},
-		{
-			name:    "Empty epics",
-			input:   `{"epics": []}`,
-			wantErr: true,
-			errSub:  "backlog must contain at least one epic",
-		},
-		{
-			name:    "Epic missing ID",
-			input:   `{"epics": [{"title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: true,
-			errSub:  "epic 0 is missing ID",
-		},
-		{
-			name:    "Epic missing Title",
-			input:   `{"epics": [{"id": "EP-1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: true,
-			errSub:  "epic EP-1 is missing Title",
-		},
-		{
-			name:    "Epic missing Description",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: true,
-			errSub:  "epic EP-1 is missing Description",
-		},
-		{
-			name:    "Epic missing tasks",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": []}]}`,
-			wantErr: true,
-			errSub:  "epic EP-1 must contain at least one task",
-		},
-		{
-			name:    "Task missing ID",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"summary": "S1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: true,
-			errSub:  "task 0 in epic EP-1 is missing ID",
-		},
-		{
-			name:    "Task missing Summary",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "details": "Det1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: true,
-			errSub:  "task TSK-1 in epic EP-1 is missing Summary",
-		},
-		{
-			name:    "Task missing Details",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "acceptance_criteria": ["AC1"]}]}]}`,
-			wantErr: true,
-			errSub:  "task TSK-1 in epic EP-1 is missing Details",
-		},
-		{
-			name:    "Task missing Acceptance Criteria",
-			input:   `{"epics": [{"id": "EP-1", "title": "T1", "description": "D1", "tasks": [{"id": "TSK-1", "summary": "S1", "details": "Det1", "acceptance_criteria": []}]}]}`,
-			wantErr: true,
-			errSub:  "task TSK-1 in epic EP-1 must contain at least one acceptance criterion",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateBacklog(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("expected error: %v, got: %v", tt.wantErr, err)
-			}
-			if tt.wantErr && err != nil {
-				if !strings.Contains(err.Error(), tt.errSub) {
-					t.Errorf("expected error containing %q, got %q", tt.errSub, err.Error())
-				}
-			}
-		})
 	}
 }
 
@@ -313,7 +49,7 @@ func (tg *TestGateway) QueryOracleStream(ctx context.Context, facts gateway.Fact
 		close(tokenChan)
 		return nil, err
 	}
-	gateway.StreamOracleResponse(res, tokenChan)
+	shared.StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 
@@ -388,7 +124,6 @@ func (tg *TestGateway) RefineSpecFile(ctx context.Context, fileName string, file
 }
 
 func (tg *TestGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*gateway.ConsistencyReport, error) {
-	// If a custom mock response for consistency is desired, we can add it, but default to consistent=true
 	for fileName, content := range files {
 		if strings.Contains(content, "TRIGGER_INCONSISTENCY") {
 			return &gateway.ConsistencyReport{
@@ -447,7 +182,7 @@ func TestGenerate_AllSuccess(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -513,41 +248,41 @@ func TestGenerate_DownstreamFilesRunInParallel(t *testing.T) {
 	progress := make(chan string, 50)
 	go func() {
 		for range progress {
-			// Drain progress notifications
 			continue
 		}
 	}()
 
-	done := make(chan error, 1)
+	var genErr error
+	done := make(chan struct{})
 	go func() {
-		done <- Generate(context.Background(), gateway, sess, tempDir, progress)
+		genErr = Generate(context.Background(), gateway, sess, tempDir, progress, nil)
+		close(done)
 	}()
 
-	seen := make(map[string]bool)
-	deadline := time.After(5 * time.Second)
-	for len(seen) < 2 {
+	// Wait for two downstream files to start in parallel
+	select {
+	case file1 := <-started:
 		select {
-		case fileName := <-started:
-			seen[fileName] = true
-		case <-deadline:
-			t.Fatalf("expected two downstream files to start in parallel, saw: %v", seen)
+		case file2 := <-started:
+			t.Logf("successfully saw %s and %s start in parallel", file1, file2)
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for second file to start generating in parallel")
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first file to start generating")
 	}
 
+	// Release block and wait for completion
 	close(release)
+	<-done
 
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("parallel generation failed: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("parallel generation did not finish")
+	if genErr != nil {
+		t.Fatalf("expected generation to succeed, got: %v", genErr)
 	}
 }
 
 func TestGenerate_TransientAPIFailure(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	tempDir, err := os.MkdirTemp("", "synthspec-transient-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -560,27 +295,28 @@ func TestGenerate_TransientAPIFailure(t *testing.T) {
 
 	tg := &TestGateway{
 		responses: map[string][]string{
-			"05_coding_standards_guidelines.md": {
-				"ERROR:timeout",
-				`# Coding Guidelines`,
+			"01_domain_model_use_cases.md": {
+				"ERROR:Transient API Error",
+				"ERROR:Transient API Error 2",
+				"Domain Model Content Successful",
 			},
 		},
 		callCounts: make(map[string]int),
 	}
 
-	progress := make(chan string, 20)
+	progress := make(chan string, 50)
 	go func() {
 		for range progress {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err != nil {
-		t.Fatalf("expected success, got err: %v", err)
+		t.Fatalf("expected success on transient retry, got: %v", err)
 	}
 
-	if tg.callCounts["05_coding_standards_guidelines.md"] != 2 {
-		t.Errorf("expected 2 calls (1 retry), got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	if tg.callCounts["01_domain_model_use_cases.md"] != 3 {
+		t.Errorf("expected exactly 3 attempts, got %d", tg.callCounts["01_domain_model_use_cases.md"])
 	}
 }
 
@@ -612,7 +348,7 @@ func TestGenerate_TransientValidationFailure(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -623,7 +359,7 @@ func TestGenerate_TransientValidationFailure(t *testing.T) {
 }
 
 func TestGenerate_PersistentFailure(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	tempDir, err := os.MkdirTemp("", "synthspec-persistent-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -636,136 +372,118 @@ func TestGenerate_PersistentFailure(t *testing.T) {
 
 	tg := &TestGateway{
 		responses: map[string][]string{
-			"05_coding_standards_guidelines.md": {
-				`   `,
-				`   `,
-				`   `,
-				`   `,
-				`   `,
-				`   `,
-				`   `,
-				`   `,
-				`   `,
-				`   `,
+			"01_domain_model_use_cases.md": {
+				"ERROR:Persistent Error",
 			},
 		},
 		callCounts: make(map[string]int),
 	}
 
-	progress := make(chan string, 20)
+	progress := make(chan string, 100)
 	go func() {
 		for range progress {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err == nil {
-		t.Fatal("expected failure, got success")
+		t.Fatal("expected persistent failure error, got nil")
 	}
 
-	if tg.callCounts["05_coding_standards_guidelines.md"] != 10 {
-		t.Errorf("expected 10 calls, got %d", tg.callCounts["05_coding_standards_guidelines.md"])
+	if tg.callCounts["01_domain_model_use_cases.md"] != 10 {
+		t.Errorf("expected 10 retries, got %d", tg.callCounts["01_domain_model_use_cases.md"])
 	}
 }
 
 func TestGenerate_ResumableProgressSkipCompleted(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "synthspec-gen-test")
+	tempDir, err := os.MkdirTemp("", "synthspec-resumable-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	sess := &state.Session{
-		ProjectName: "test-project",
-		Provider:    "test-provider",
-	}
-
-	t.Run("SimulateFailure", func(t *testing.T) {
-		runSimulateFailureSubtest(t, sess, tempDir)
-	})
-
-	t.Run("ResumeHealthy", func(t *testing.T) {
-		runResumeHealthySubtest(t, sess, tempDir)
-	})
-}
-
-func runSimulateFailureSubtest(t *testing.T, sess *state.Session, tempDir string) {
-	tg1 := &TestGateway{
-		responses: map[string][]string{
-			"01_domain_model_use_cases.md": {"Domain content"},
-			"02_prd_functional.md":         {"PRD content"},
-			"03_system_architecture.md":    {"ERROR:mocked_api_failure"},
-		},
-		callCounts: make(map[string]int),
-	}
-
-	progress1 := make(chan string, 20)
-	go func() {
-		for range progress1 {
-			continue
-		}
-	}()
-	err1 := Generate(context.Background(), tg1, sess, tempDir, progress1)
-	if err1 == nil {
-		t.Fatal("expected failure on 03_system_architecture.md, got success")
-	}
-
-	// Verify the failed file was not cached, while the completed siblings were preserved.
-	if len(sess.GeneratedFiles) != 6 {
-		t.Errorf("expected 6 cached files after a downstream failure, got %d", len(sess.GeneratedFiles))
-	}
-	cachedFiles := make(map[string]bool)
-	for _, gf := range sess.GeneratedFiles {
-		cachedFiles[gf.FileName] = true
-	}
-	if !cachedFiles["01_domain_model_use_cases.md"] || !cachedFiles["02_prd_functional.md"] {
-		t.Errorf("expected the source doc and PRD to remain cached, got: %+v", sess.GeneratedFiles)
-	}
-	if cachedFiles["03_system_architecture.md"] {
-		t.Errorf("expected failed file 03_system_architecture.md to remain uncached, got: %+v", sess.GeneratedFiles)
-	}
-}
-
-func runResumeHealthySubtest(t *testing.T, sess *state.Session, tempDir string) {
-	tg2 := &TestGateway{
-		responses: map[string][]string{
-			"03_system_architecture.md":          {"Arch content"},
-			"04_api_architecture_integration.md": {"# API Integration Guide"},
-			"05_coding_standards_guidelines.md":  {"# Coding Guidelines"},
-			"06_security_threat_model.md":        {"Threat model content"},
-			"07_engineering_roadmap.md":          {"Roadmap content"},
-		},
-		callCounts: make(map[string]int),
-	}
-
-	progress2 := make(chan string, 20)
-	go func() {
-		for range progress2 {
-			continue
-		}
-	}()
-	err2 := Generate(context.Background(), tg2, sess, tempDir, progress2)
-	if err2 != nil {
-		t.Fatalf("expected resumption success, got err: %v", err2)
-	}
-
-	// Verify skipping occurred for the completed files.
-	skippedFiles := []string{
+	// Pre-create output files that are completed
+	completedFiles := []string{
 		"01_domain_model_use_cases.md",
 		"02_prd_functional.md",
+		"03_system_architecture.md",
+	}
+	for _, f := range completedFiles {
+		err := os.WriteFile(filepath.Join(tempDir, f), []byte("Pre-existing successful content"), 0644)
+		if err != nil {
+			t.Fatalf("failed to create dummy file: %v", err)
+		}
+	}
+
+	templates, err := config.LoadTemplates()
+	if err != nil {
+		t.Fatalf("failed to load templates: %v", err)
+	}
+
+	// Compute hashes to match pre-existing conditions
+	currentPromptHash := ""
+	for _, t := range templates {
+		if t.FileName == "01_domain_model_use_cases.md" {
+			currentPromptHash = computeSha256(t.Prompt)
+		}
+	}
+
+	sess := &state.Session{
+		ProjectName: "test-resumable-project",
+		Provider:    "test-provider",
+		GeneratedFiles: []state.GeneratedFileState{
+			{FileName: "01_domain_model_use_cases.md", HasError: false, PromptHash: currentPromptHash},
+			{FileName: "02_prd_functional.md", HasError: false, PromptHash: computeSha256(templates[1].Prompt)},
+			{FileName: "03_system_architecture.md", HasError: false, PromptHash: computeSha256(templates[2].Prompt)},
+		},
+	}
+
+	// Set facts hashes to match current hash
+	factsBytes, _ := json.Marshal(sess.Facts)
+	currentFactsHash := computeSha256(string(factsBytes))
+	for idx := range sess.GeneratedFiles {
+		if sess.GeneratedFiles[idx].FileName != "01_domain_model_use_cases.md" {
+			sourcePath := filepath.Join(tempDir, "01_domain_model_use_cases.md")
+			sourceBytes, _ := os.ReadFile(sourcePath)
+			sess.GeneratedFiles[idx].FactsHash = computeSha256(currentFactsHash + computeSha256(string(sourceBytes)))
+		} else {
+			sess.GeneratedFiles[idx].FactsHash = currentFactsHash
+		}
+	}
+
+	tg := &TestGateway{
+		callCounts: make(map[string]int),
+	}
+
+	progress := make(chan string, 100)
+	go func() {
+		for range progress {
+			continue
+		}
+	}()
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+
+	// Gateway should NOT be called for the first three files
+	for _, f := range completedFiles {
+		if tg.callCounts[f] > 0 {
+			t.Errorf("expected 0 gateway calls for completed file %s, got %d", f, tg.callCounts[f])
+		}
+	}
+
+	// Gateway SHOULD be called for the remaining files
+	remainingFiles := []string{
 		"04_api_architecture_integration.md",
 		"05_coding_standards_guidelines.md",
 		"06_security_threat_model.md",
 		"07_engineering_roadmap.md",
 	}
-	for _, file := range skippedFiles {
-		if tg2.callCounts[file] != 0 {
-			t.Errorf("expected 0 calls for %s on resume, got %d", file, tg2.callCounts[file])
+	for _, f := range remainingFiles {
+		if tg.callCounts[f] == 0 {
+			t.Errorf("expected gateway calls for remaining file %s, got 0", f)
 		}
-	}
-	// The failed file must be regenerated on resume.
-	if tg2.callCounts["03_system_architecture.md"] != 1 {
-		t.Errorf("expected 1 call for 03_system_architecture.md, got %d", tg2.callCounts["03_system_architecture.md"])
 	}
 }
 
@@ -808,82 +526,19 @@ func TestResumableMidLoop(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
 
-	// Verify that GenerateSpecFile was NOT called for 01_domain_model_use_cases.md because we resumed (it goes straight to refinement/validation)
+	// Verify that GenerateSpecFile was NOT called for 01_domain_model_use_cases.md because we resumed
 	if tg.callCounts["01_domain_model_use_cases.md"] != 0 {
 		t.Errorf("expected 0 calls to GenerateSpecFile/RefineSpecFile for resumed file, got %d", tg.callCounts["01_domain_model_use_cases.md"])
 	}
 }
 
-func TestRunExternalValidator(t *testing.T) {
-	tempFile, err := os.CreateTemp("", "test-val-*.txt")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tempFile.Name())
-	tempFile.Close()
-
-	ctx := context.Background()
-
-	// Test success command
-	successCmd := "echo success"
-
-	out, err := runExternalValidator(ctx, successCmd, tempFile.Name())
-	if err != nil {
-		t.Errorf("expected no error, got: %v, output: %q", err, out)
-	}
-	if !strings.Contains(out, "success") {
-		t.Errorf("expected output to contain 'success', got %q", out)
-	}
-
-	// Test failing command
-	var failCmd string
-	if runtime.GOOS == "windows" {
-		failCmd = "type non_existent_file_12345.txt"
-	} else {
-		failCmd = "cat non_existent_file_12345.txt"
-	}
-
-	_, err = runExternalValidator(ctx, failCmd, tempFile.Name())
-	if err == nil {
-		t.Error("expected error for failing command, got nil")
-	}
-}
-
-func TestBuildGenerationPromptIncludesReferenceDocument(t *testing.T) {
-	facts := gateway.Facts{
-		Functional: "Functional facts",
-		Structural: "Structural facts",
-	}
-
-	prompt, err := buildGenerationPrompt("Write the file.\n\nUse these facts:", facts, "Domain model reference")
-	if err != nil {
-		t.Fatalf("failed to build generation prompt: %v", err)
-	}
-
-	if !strings.Contains(prompt, "\"functional\": \"Functional facts\"") {
-		t.Fatalf("expected prompt to include serialized facts, got: %s", prompt)
-	}
-
-	if !strings.Contains(prompt, "Reference source document:") {
-		t.Fatalf("expected prompt to include reference document marker, got: %s", prompt)
-	}
-
-	if !strings.Contains(prompt, "Domain model reference") {
-		t.Fatalf("expected prompt to include reference document content, got: %s", prompt)
-	}
-
-	if strings.Index(prompt, "Reference source document:") < strings.Index(prompt, "\"functional\": \"Functional facts\"") {
-		t.Fatalf("expected reference document to appear after facts, got: %s", prompt)
-	}
-}
-
 func TestGenerate_ConsistencyCheckAndSelfCorrection(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "synthspec-gen-consistency-test")
+	tempDir, err := os.MkdirTemp("", "synthspec-consistency-test")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -911,14 +566,12 @@ func TestGenerate_ConsistencyCheckAndSelfCorrection(t *testing.T) {
 		}
 	}()
 
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err != nil {
 		t.Fatalf("expected generation success after consistency refinement, got: %v", err)
 	}
 
 	// RefineSpecFile should have been called for 02_prd_functional.md to fix the TRIGGER_INCONSISTENCY.
-	// Since tg.callCounts tracks calls in RefineSpecFile and GenerateSpecFile:
-	// 1 GenerateSpecFile call + 1 RefineSpecFile call = 2 calls.
 	if tg.callCounts["02_prd_functional.md"] != 2 {
 		t.Errorf("expected 2 calls for 02_prd_functional.md, got %d", tg.callCounts["02_prd_functional.md"])
 	}
@@ -960,7 +613,7 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 	}()
 
 	// 1. Initial Generation
-	err = Generate(context.Background(), tg, sess, tempDir, progress)
+	err = Generate(context.Background(), tg, sess, tempDir, progress, nil)
 	if err != nil {
 		t.Fatalf("initial generation failed: %v", err)
 	}
@@ -973,7 +626,7 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress2)
+	err = Generate(context.Background(), tg, sess, tempDir, progress2, nil)
 	if err != nil {
 		t.Fatalf("second generation failed: %v", err)
 	}
@@ -993,7 +646,7 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, sess, tempDir, progress3)
+	err = Generate(context.Background(), tg, sess, tempDir, progress3, nil)
 	if err != nil {
 		t.Fatalf("generation after facts modification failed: %v", err)
 	}

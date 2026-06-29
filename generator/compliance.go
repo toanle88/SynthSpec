@@ -20,7 +20,6 @@ type FileCompliance struct {
 }
 
 // GenerateComplianceReport compiles all results into a markdown format audit document
-// GenerateComplianceReport compiles all results into a markdown format audit document
 func GenerateComplianceReport(projectName string, fileAudits []FileCompliance, standards []config.Standard, consistencyReport *gateway.ConsistencyReport) string {
 	var sb strings.Builder
 

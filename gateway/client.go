@@ -110,10 +110,10 @@ func NewAPIError(statusCode int, bodyBytes []byte) error {
 
 	var payload struct {
 		Error *struct {
-			Message string `json:"message"`
-			Status  string `json:"status"`
-			Code    any    `json:"code"`
-			Type    string `json:"type"`
+			Message string           `json:"message"`
+			Status  string           `json:"status"`
+			Code    any              `json:"code"`
+			Type    string           `json:"type"`
 			Details []map[string]any `json:"details"`
 		} `json:"error"`
 		Type    string `json:"type"`

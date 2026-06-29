@@ -8,11 +8,12 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/gateway"
 )
 
 // GetEditorCommand prepares the temp file and returns the exec.Cmd to be run by Bubble Tea.
-func GetEditorCommand(projectName string, facts gateway.Facts) (*exec.Cmd, string, error) {
+func GetEditorCommand(projectName string, facts domain.Facts) (*exec.Cmd, string, error) {
 	dir := GetSessionDir(projectName)
 	filePath := filepath.Join(dir, "facts_edit.json")
 
@@ -75,4 +76,3 @@ func GetFileEditorCommand(filePath string) (*exec.Cmd, error) {
 	editorCmd, editorArgs := resolveEditor(filePath)
 	return exec.Command(editorCmd, editorArgs...), nil
 }
-

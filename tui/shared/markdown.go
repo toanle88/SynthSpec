@@ -1,4 +1,4 @@
-package tui
+package shared
 
 import (
 	"regexp"
@@ -205,7 +205,7 @@ func highlightGo(line string) string {
 	}
 
 	// Highlight string literals in Go
-	reStr := regexp.MustCompile(`"([^"]*)"|'([^']*)'`)
+	reStr := regexp.MustCompile(`"([^"]*)"`)
 	codePart = reStr.ReplaceAllStringFunc(codePart, func(m string) string {
 		return styleString.Render(m)
 	})
@@ -221,7 +221,7 @@ func highlightJSONYAML(line string) string {
 
 	// JSON / YAML key highlighting
 	// Match "key": or key:
-	reKey := regexp.MustCompile(`^(\s*)"?([a-zA-Z0-9_\-\./]+)"?\s*:\s*`)
+	reKey := regexp.MustCompile(`^(\s*)"?([a-zA-Z0-9_\-\.\/]+)"?\s*:\s*`)
 	if reKey.MatchString(line) {
 		matches := reKey.FindStringSubmatch(line)
 		indent := matches[1]

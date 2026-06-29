@@ -1,49 +1,57 @@
 package state
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/logger"
 )
 
 // GeneratedFileState represents the status and compliance audit of a generated file
 type GeneratedFileState struct {
-	FileName       string                     `json:"file_name"`
-	Results        []gateway.ComplianceResult `json:"results"`
-	HasError       bool                       `json:"has_error"`
-	ErrorStr       string                     `json:"error_str,omitempty"`
-	InProgressText string                     `json:"in_progress_text,omitempty"`
-	CurrentAttempt int                        `json:"current_attempt,omitempty"`
-	PromptHash     string                     `json:"prompt_hash,omitempty"`
-	FactsHash      string                     `json:"facts_hash,omitempty"`
+	FileName       string                    `json:"file_name"`
+	Results        []domain.ComplianceResult `json:"results"`
+	HasError       bool                      `json:"has_error"`
+	ErrMsg         string                    `json:"error_str,omitempty"`
+	InProgressText string                    `json:"in_progress_text,omitempty"`
+	CurrentAttempt int                       `json:"current_attempt,omitempty"`
+	PromptHash     string                    `json:"prompt_hash,omitempty"`
+	FactsHash      string                    `json:"facts_hash,omitempty"`
 }
 
 // Session represents a project session state
 type Session struct {
-	ProjectName     string                      `json:"project_name"`
-	Provider        string                      `json:"provider"`
-	Model           string                      `json:"model"`
-	CreatedAt       time.Time                   `json:"created_at"`
-	UpdatedAt       time.Time                   `json:"updated_at"`
-	History         []gateway.Message           `json:"history"`
-	Facts           gateway.Facts               `json:"facts"`
-	Scores          gateway.ConfidenceScores    `json:"scores"`
-	Rationales      gateway.DimensionRationales `json:"rationales"`
-	LastQuestion    string                      `json:"last_question"`
-	LastChoices     []string                    `json:"last_choices"`
-	TotalTokensUsed int                         `json:"total_tokens_used"`
-	GeneratedFiles  []GeneratedFileState        `json:"generated_files,omitempty"`
+	ProjectName     string                     `json:"project_name"`
+	Provider        string                     `json:"provider"`
+	Model           string                     `json:"model"`
+	CreatedAt       time.Time                  `json:"created_at"`
+	UpdatedAt       time.Time                  `json:"updated_at"`
+	History         []domain.Message           `json:"history"`
+	Facts           domain.Facts               `json:"facts"`
+	Scores          domain.ConfidenceScores    `json:"scores"`
+	Rationales      domain.DimensionRationales `json:"rationales"`
+	LastQuestion    string                     `json:"last_question"`
+	LastChoices     []string                   `json:"last_choices"`
+	TotalTokensUsed int                        `json:"total_tokens_used"`
+	GeneratedFiles  []GeneratedFileState       `json:"generated_files,omitempty"`
+}
+
+// getSynthspecRoot returns the base directory for SynthSpec data.
+// It prefers the user's config directory with a fallback to the current working directory.
+func getSynthspecRoot() string {
+	if configDir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(configDir, "synthspec")
+	}
+	return "synthspec"
 }
 
 // GetSessionDir returns the project directory path
 func GetSessionDir(projectName string) string {
-	return filepath.Join("synthspec", projectName)
+	return filepath.Join(getSynthspecRoot(), projectName)
 }
 
 // GetSessionPath returns the project session.json file path
@@ -99,7 +107,8 @@ func LoadSession(projectName string) (*Session, error) {
 
 // ListProjects scans the local directory for active SynthSpec projects
 func ListProjects() ([]string, error) {
-	entries, err := os.ReadDir("synthspec")
+	root := getSynthspecRoot()
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -110,7 +119,7 @@ func ListProjects() ([]string, error) {
 	var projects []string
 	for _, entry := range entries {
 		if entry.IsDir() {
-			sessionPath := filepath.Join("synthspec", entry.Name(), "session.json")
+			sessionPath := filepath.Join(root, entry.Name(), "session.json")
 			if _, err := os.Stat(sessionPath); err == nil {
 				projects = append(projects, entry.Name())
 			}
@@ -119,78 +128,26 @@ func ListProjects() ([]string, error) {
 	return projects, nil
 }
 
-// Model Limits (context window size in tokens)
-var modelLimits = map[string]int{
-	"gemini-2.5-pro":     2000000,
-	"gemini-1.5-pro":     2000000,
-	"gemini-1.5-flash":   1000000,
-	"gpt-4o":             128000,
-	"o3-mini":            200000,
-	"claude-3-5-sonnet":  200000,
-	"mock-model":         10000,
-}
-
-// CheckAndPruneContext evaluates total tokens and runs summarization if over 75% capacity
-func (s *Session) CheckAndPruneContext(ctx context.Context, gw gateway.Gateway) (bool, error) {
-	limit, exists := modelLimits[s.Model]
-	if !exists {
-		// Default conservative limit
-		limit = 100000
-	}
-
-	threshold := int(float64(limit) * 0.75)
-	if s.TotalTokensUsed <= threshold {
-		return false, nil
-	}
-
-	// Summarize conversation history
-	summaryPrompt := "Summarize the key architectural choices, user preferences, and engineering requirements established in this chat history. Compress it into a clear, single paragraph summarizing the consensus."
-	
-	// Create a temporary history for summarization
-	sumHistory := append(s.History, gateway.Message{Role: "user", Content: summaryPrompt})
-	
-	resp, err := gw.QueryOracle(ctx, s.Facts, sumHistory, "")
-	if err != nil {
-		return false, fmt.Errorf("summarization call failed: %w", err)
-	}
-
-	// Reset conversation history to a single condensed context block
-	summaryText := "Summary of earlier conversation:\n" + resp.NextQuestion // Using next_question as the return channel in standard QueryOracle
-	if summaryText == "" {
-		summaryText = "Summarized historical progress."
-	}
-
-	s.History = []gateway.Message{
-		{Role: "user", Content: "Let's summarize our progress so far."},
-		{Role: "assistant", Content: summaryText},
-	}
-	s.TotalTokensUsed = resp.TokensPrompt + resp.TokensCompletion
-
-	if err := s.Save(); err != nil {
-		return true, fmt.Errorf("failed to save session after pruning: %w", err)
-	}
-
-	return true, nil
-}
-
 // AddTurn appends a conversation turn and updates the total tokens
 func (s *Session) AddTurn(userMsg, assistantMsg string, tokensPrompt, tokensCompletion int) {
-	s.History = append(s.History, gateway.Message{Role: "user", Content: userMsg})
-	s.History = append(s.History, gateway.Message{Role: "assistant", Content: assistantMsg})
-	s.TotalTokensUsed = tokensPrompt + tokensCompletion
+	s.History = append(s.History, domain.Message{Role: "user", Content: userMsg})
+	s.History = append(s.History, domain.Message{Role: "assistant", Content: assistantMsg})
+	s.TotalTokensUsed += tokensPrompt + tokensCompletion
 }
 
 const errorLogFile = "errors.log"
 
 // LogError writes an error message with a timestamp to the project's error log file.
-// If projectName is empty, it writes to the global "synthspec/errors.log" file.
+// If projectName is empty, it writes to the global error log file.
 func LogError(projectName string, err error) {
 	if err == nil {
 		return
 	}
 
-	// Create "synthspec" root directory if it doesn't exist
-	if errMk := os.MkdirAll("synthspec", 0755); errMk != nil {
+	root := getSynthspecRoot()
+
+	// Create root directory if it doesn't exist
+	if errMk := os.MkdirAll(root, 0755); errMk != nil {
 		return // Silently fail if we can't write to disk
 	}
 
@@ -200,10 +157,10 @@ func LogError(projectName string, err error) {
 		if errMk := os.MkdirAll(projDir, 0755); errMk == nil {
 			logPath = filepath.Join(projDir, errorLogFile)
 		} else {
-			logPath = filepath.Join("synthspec", errorLogFile)
+			logPath = filepath.Join(root, errorLogFile)
 		}
 	} else {
-		logPath = filepath.Join("synthspec", errorLogFile)
+		logPath = filepath.Join(root, errorLogFile)
 	}
 
 	f, errOpen := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -216,4 +173,3 @@ func LogError(projectName string, err error) {
 	logEntry := fmt.Sprintf("[%s] ERROR: %v\n", timestamp, err)
 	_, _ = f.WriteString(logEntry)
 }
-

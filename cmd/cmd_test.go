@@ -18,6 +18,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// cleanupProject removes a project from the session directory to ensure test isolation
+func cleanupProject(name string) {
+	path := state.GetSessionDir(name)
+	os.RemoveAll(path)
+}
+
 func TestInitAndResumeCmd(t *testing.T) {
 	// Create a temp directory for session isolation
 	tempDir, err := os.MkdirTemp("", "synthspec-cmd-test")
@@ -121,6 +127,9 @@ func TestInitAndResumeCmd(t *testing.T) {
 }
 
 func TestInitBlueprint(t *testing.T) {
+	// Clean up any leftover state from previous runs
+	cleanupProject("bp-proj")
+
 	// Create a temp directory for session isolation
 	tempDir, err := os.MkdirTemp("", "synthspec-blueprint-test")
 	if err != nil {
@@ -170,7 +179,7 @@ func TestGetGatewayForSession_Mock(t *testing.T) {
 		Provider:    "mock",
 		Model:       "mock-model",
 	}
-	gw, err := getGatewayForSession(sess, false)
+	gw, err := NewGatewayForSession(sess, false)
 	if err != nil {
 		t.Fatalf("expected success with mock provider, got: %v", err)
 	}
@@ -185,7 +194,7 @@ func TestGetGatewayForSession_ForceMock(t *testing.T) {
 		Provider:    "anthropic",
 		Model:       "claude-3-5-sonnet",
 	}
-	gw, err := getGatewayForSession(sess, true)
+	gw, err := NewGatewayForSession(sess, true)
 	if err != nil {
 		t.Fatalf("expected success with forceMock=true, got: %v", err)
 	}
