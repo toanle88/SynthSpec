@@ -5,19 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
-	"github.com/toanle/synthspec/state"
 )
-
-const maxRetries = 10
 
 // EngineVersion is the version of the generation engine, set at build time via ldflags.
 var EngineVersion = "dev"
+
+const maxRetries = 10
 
 // GenerationMetadata represents the .synthspec-meta.json structure
 type GenerationMetadata struct {
@@ -56,7 +54,7 @@ func sendProgress(progress chan<- string, event ProgressEvent) {
 type fileGenerator struct {
 	ctx            context.Context
 	gw             gateway.Gateway
-	sess           *state.Session
+	persistence    SessionPersistence
 	outputDir      string
 	progress       chan<- string
 	approvalChan   chan struct{}
@@ -65,7 +63,7 @@ type fileGenerator struct {
 }
 
 // Generate runs sequential spec generation for all files
-func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outputDir string, progress chan<- string, approvalChan chan struct{}) error {
+func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersistence, outputDir string, progress chan<- string, approvalChan chan struct{}) error {
 	defer close(progress)
 
 	// Load templates
@@ -82,7 +80,9 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 
 	// Ensure output directory exists
 	if outputDir == "" {
-		outputDir = filepath.Join(state.GetSessionDir(sess.ProjectName), "output")
+		// We need to get project name from persistence - for now use a default
+		// The caller should provide a proper outputDir
+		outputDir = "output"
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -98,7 +98,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, sess *state.Session, outp
 	fg := &fileGenerator{
 		ctx:          ctx,
 		gw:           gw,
-		sess:         sess,
+		persistence:  persistence,
 		outputDir:    outputDir,
 		progress:     progress,
 		approvalChan: approvalChan,

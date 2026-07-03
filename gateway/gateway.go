@@ -53,4 +53,7 @@ type Gateway interface {
 
 	// VerifyConsistency checks consistency across all generated documents
 	VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error)
+
+	// Summarize generates a concise summary of the conversation history.
+	Summarize(ctx context.Context, history []Message) (string, error)
 }

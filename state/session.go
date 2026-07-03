@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/domain"
+	"github.com/toanle/synthspec/generator"
 	"github.com/toanle/synthspec/logger"
 )
 
@@ -126,6 +127,111 @@ func ListProjects() ([]string, error) {
 		}
 	}
 	return projects, nil
+}
+
+// SessionPersistence implementation for generator.SessionPersistence interface
+
+// SaveGeneratedFile persists a generated file's state
+func (s *Session) SaveGeneratedFile(state generator.GeneratedFileState) error {
+	// Convert generator.GeneratedFileState to state.GeneratedFileState
+	genState := GeneratedFileState{
+		FileName:       state.FileName,
+		Results:        state.Results,
+		HasError:       state.HasError,
+		ErrMsg:         state.ErrMsg,
+		InProgressText: state.InProgressText,
+		CurrentAttempt: state.CurrentAttempt,
+		PromptHash:     state.PromptHash,
+		FactsHash:      state.FactsHash,
+	}
+
+	found := false
+	for idx, gf := range s.GeneratedFiles {
+		if gf.FileName == state.FileName {
+			s.GeneratedFiles[idx] = genState
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.GeneratedFiles = append(s.GeneratedFiles, genState)
+	}
+
+	return s.Save()
+}
+
+// LoadGeneratedFile retrieves a generated file's state
+func (s *Session) LoadGeneratedFile(fileName string) (generator.GeneratedFileState, bool) {
+	for _, gf := range s.GeneratedFiles {
+		if gf.FileName == fileName {
+			return generator.GeneratedFileState{
+				FileName:       gf.FileName,
+				Results:        gf.Results,
+				HasError:       gf.HasError,
+				ErrMsg:         gf.ErrMsg,
+				InProgressText: gf.InProgressText,
+				CurrentAttempt: gf.CurrentAttempt,
+				PromptHash:     gf.PromptHash,
+				FactsHash:      gf.FactsHash,
+			}, true
+		}
+	}
+	return generator.GeneratedFileState{}, false
+}
+
+// UpdateFacts updates the compiled facts
+func (s *Session) UpdateFacts(facts domain.Facts) error {
+	s.Facts = facts
+	return s.Save()
+}
+
+// UpdateScores updates confidence scores
+func (s *Session) UpdateScores(scores domain.ConfidenceScores, rationales domain.DimensionRationales) error {
+	s.Scores = scores
+	s.Rationales = rationales
+	return s.Save()
+}
+
+// UpdateHistory appends to conversation history
+func (s *Session) UpdateHistory(history []domain.Message) error {
+	s.History = history
+	return s.Save()
+}
+
+// UpdateTokens increments token usage
+func (s *Session) UpdateTokens(prompt, completion int) error {
+	s.TotalTokensUsed += prompt + completion
+	return s.Save()
+}
+
+// SaveSession persists the entire session
+func (s *Session) SaveSession() error {
+	return s.Save()
+}
+
+// GetProjectName returns the project name
+func (s *Session) GetProjectName() string {
+	return s.ProjectName
+}
+
+// GetProvider returns the provider name
+func (s *Session) GetProvider() string {
+	return s.Provider
+}
+
+// GetHistory returns the conversation history
+func (s *Session) GetHistory() []domain.Message {
+	return s.History
+}
+
+// GetTotalTokens returns the total tokens used
+func (s *Session) GetTotalTokens() int {
+	return s.TotalTokensUsed
+}
+
+// GetFacts returns the current facts
+func (s *Session) GetFacts() domain.Facts {
+	return s.Facts
 }
 
 // AddTurn appends a conversation turn and updates the total tokens

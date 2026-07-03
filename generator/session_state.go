@@ -8,34 +8,30 @@ import (
 	"path/filepath"
 
 	"github.com/toanle/synthspec/gateway"
-	"github.com/toanle/synthspec/state"
 )
 
-func (fg *fileGenerator) getCachedFileState(fileName string) (state.GeneratedFileState, bool) {
+func (fg *fileGenerator) getCachedFileState(fileName string) (GeneratedFileState, bool) {
 	fg.sessionMu.Lock()
 	defer fg.sessionMu.Unlock()
 
-	for _, gf := range fg.sess.GeneratedFiles {
-		if gf.FileName == fileName {
-			return gf, true
-		}
+	state, found := fg.persistence.LoadGeneratedFile(fileName)
+	if !found {
+		return GeneratedFileState{}, false
 	}
-	return state.GeneratedFileState{}, false
+	return state, true
 }
 
 func (fg *fileGenerator) updateComplianceAndSession(fileName string, refined string, evalResults []gateway.ComplianceResult, fileCompliances []FileCompliance) {
 	for idx, fc := range fileCompliances {
 		if fc.FileName == fileName {
 			fileCompliances[idx].Results = evalResults
-			fg.sessionMu.Lock()
-			for sIdx, gf := range fg.sess.GeneratedFiles {
-				if gf.FileName == fileName {
-					fg.sess.GeneratedFiles[sIdx].Results = evalResults
-					fg.sess.GeneratedFiles[sIdx].InProgressText = refined
-					break
-				}
+			// Update persistence
+			state, found := fg.persistence.LoadGeneratedFile(fileName)
+			if found {
+				state.Results = evalResults
+				state.InProgressText = refined
+				_ = fg.persistence.SaveGeneratedFile(state)
 			}
-			fg.sessionMu.Unlock()
 			break
 		}
 	}
@@ -45,7 +41,7 @@ func (fg *fileGenerator) updateSessionProgress(fileName string, promptTemplate s
 	currentPromptHash := computeSha256(promptTemplate)
 	currentFactsHash := fg.computeFactsHash(fileName)
 
-	newGenState := state.GeneratedFileState{
+	newGenState := GeneratedFileState{
 		FileName:   fileName,
 		Results:    complianceResults,
 		HasError:   checkErr != nil,
@@ -59,19 +55,14 @@ func (fg *fileGenerator) updateSessionProgress(fileName string, promptTemplate s
 	fg.sessionMu.Lock()
 	defer fg.sessionMu.Unlock()
 
-	found := false
-	for idx, gf := range fg.sess.GeneratedFiles {
-		if gf.FileName == fileName {
-			fg.sess.GeneratedFiles[idx] = newGenState
-			found = true
-			break
-		}
-	}
-	if !found {
-		fg.sess.GeneratedFiles = append(fg.sess.GeneratedFiles, newGenState)
+	// Load existing state if any
+	existingState, found := fg.persistence.LoadGeneratedFile(fileName)
+	if found {
+		newGenState.Results = existingState.Results
+		newGenState.ErrMsg = existingState.ErrMsg
 	}
 
-	if err := fg.sess.Save(); err != nil {
+	if err := fg.persistence.SaveGeneratedFile(newGenState); err != nil {
 		return fmt.Errorf("failed to save session state after generating %s: %w", fileName, err)
 	}
 	return nil
@@ -81,7 +72,7 @@ func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt
 	currentPromptHash := computeSha256(promptTemplate)
 	currentFactsHash := fg.computeFactsHash(fileName)
 
-	newGenState := state.GeneratedFileState{
+	newGenState := GeneratedFileState{
 		FileName:       fileName,
 		InProgressText: content,
 		CurrentAttempt: attempt,
@@ -92,24 +83,21 @@ func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt
 	fg.sessionMu.Lock()
 	defer fg.sessionMu.Unlock()
 
-	found := false
-	for idx, gf := range fg.sess.GeneratedFiles {
-		if gf.FileName == fileName {
-			newGenState.Results = gf.Results
-			newGenState.ErrMsg = gf.ErrMsg
-			fg.sess.GeneratedFiles[idx] = newGenState
-			found = true
-			break
-		}
+	// Load existing state if any
+	existingState, found := fg.persistence.LoadGeneratedFile(fileName)
+	if found {
+		newGenState.Results = existingState.Results
+		newGenState.ErrMsg = existingState.ErrMsg
 	}
-	if !found {
-		fg.sess.GeneratedFiles = append(fg.sess.GeneratedFiles, newGenState)
+
+	if err := fg.persistence.SaveGeneratedFile(newGenState); err != nil {
+		return fmt.Errorf("failed to save in-progress state for %s: %w", fileName, err)
 	}
-	return fg.sess.Save()
+	return nil
 }
 
 func (fg *fileGenerator) computeFactsHash(fileName string) string {
-	factsBytes, _ := json.Marshal(fg.sess.Facts)
+	factsBytes, _ := json.Marshal(fg.persistence.GetFacts())
 	hash := computeSha256(string(factsBytes))
 
 	if fileName != fg.sourceFileName {

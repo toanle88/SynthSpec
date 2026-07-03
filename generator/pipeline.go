@@ -213,7 +213,7 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 		Status:  "compiling_report",
 		Message: "Compiling compliance report (00_compliance_report.md)...",
 	})
-	reportContent := GenerateComplianceReport(fg.sess.ProjectName, fileCompliances, standards, consistencyReport)
+	reportContent := GenerateComplianceReport(fg.persistence.GetProjectName(), fileCompliances, standards, consistencyReport)
 	reportPath := filepath.Join(fg.outputDir, "00_compliance_report.md")
 	if err := os.WriteFile(reportPath, []byte(reportContent), 0644); err != nil {
 		return fmt.Errorf("failed to write 00_compliance_report.md: %w", err)
@@ -231,14 +231,20 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 		Message: "Compiling solution metadata (.synthspec-meta.json)...",
 	})
 
+	// Get session info from persistence
+	projectName := fg.persistence.GetProjectName()
+	provider := fg.persistence.GetProvider()
+	history := fg.persistence.GetHistory()
+	totalTokens := fg.persistence.GetTotalTokens()
+
 	meta := GenerationMetadata{
-		ProjectName:         fg.sess.ProjectName,
+		ProjectName:         projectName,
 		GenerationTimestamp: time.Now().Format(time.RFC3339),
 		EngineVersion:       EngineVersion,
-		ProviderUsed:        fg.sess.Provider,
+		ProviderUsed:        provider,
 		CompletionMetrics: CompletionMetrics{
-			TotalTurns:     len(fg.sess.History) / 2,
-			TokensConsumed: fg.sess.TotalTokensUsed,
+			TotalTurns:     len(history) / 2,
+			TokensConsumed: totalTokens,
 		},
 		ComplianceSummary: complianceSummary,
 	}

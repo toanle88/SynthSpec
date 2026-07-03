@@ -453,3 +453,68 @@ func (a *AnthropicGateway) VerifyConsistency(ctx context.Context, files map[stri
 
 	return &report, nil
 }
+
+// Summarize generates a concise summary of the conversation history using the Anthropic model.
+func (a *AnthropicGateway) Summarize(ctx context.Context, history []Message) (string, error) {
+	systemPrompt := "You are a technical summarizer. Compress the conversation history into a single clear paragraph summarizing the key architectural decisions, user preferences, and engineering requirements established. Focus on consensus outcomes, not the back-and-forth dialogue."
+
+	var messages []anthropicMessage
+
+	// Add conversation history
+	for _, msg := range history {
+		role := "user"
+		if msg.Role == "assistant" {
+			role = "assistant"
+		}
+		messages = append(messages, anthropicMessage{
+			Role: role,
+			Content: []anthropicContentPart{
+				{Type: "text", Text: msg.Content},
+			},
+		})
+	}
+
+	// Add summarization instruction
+	messages = append(messages, anthropicMessage{
+		Role: "user",
+		Content: []anthropicContentPart{
+			{Type: "text", Text: "Summarize the above conversation into a single paragraph capturing the key decisions and requirements."},
+		},
+	})
+
+	reqBody := anthropicRequest{
+		Model:     a.model,
+		System:    systemPrompt,
+		Messages:  messages,
+		MaxTokens: 1000,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set(authApiKeyHeader, a.apiKey)
+	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
+
+	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
+	if err != nil {
+		return "", err
+	}
+
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
+		return "", fmt.Errorf(errParseAnthropicResponse, err)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		return "", fmt.Errorf(errEmptyContentAnthropic)
+	}
+
+	return anthropicResp.Content[0].Text, nil
+}

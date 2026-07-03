@@ -20,28 +20,22 @@ func (s *Session) CheckAndPruneContext(ctx context.Context, gw gateway.Gateway) 
 		return false, nil
 	}
 
-	// Summarize conversation history
-	summaryPrompt := "Summarize the key architectural choices, user preferences, and engineering requirements established in this chat history. Compress it into a clear, single paragraph summarizing the consensus."
-
-	// Create a temporary history for summarization
-	sumHistory := append(s.History, gateway.Message{Role: "user", Content: summaryPrompt})
-
-	resp, err := gw.QueryOracle(ctx, s.Facts, sumHistory, "")
+	// Summarize conversation history using dedicated Summarize method
+	summaryText, err := gw.Summarize(ctx, s.History)
 	if err != nil {
 		return false, fmt.Errorf("summarization call failed: %w", err)
 	}
 
 	// Reset conversation history to a single condensed context block
-	summaryText := "Summary of earlier conversation:\n" + resp.NextQuestion // Using next_question as the return channel in standard QueryOracle
 	if summaryText == "" {
 		summaryText = "Summarized historical progress."
 	}
 
 	s.History = []gateway.Message{
 		{Role: "user", Content: "Let's summarize our progress so far."},
-		{Role: "assistant", Content: summaryText},
+		{Role: "assistant", Content: "Summary of earlier conversation:\n" + summaryText},
 	}
-	s.TotalTokensUsed += resp.TokensPrompt + resp.TokensCompletion
+	// Note: We don't add tokens for summarization since it's a separate call
 
 	if err := s.Save(); err != nil {
 		return true, fmt.Errorf("failed to save session after pruning: %w", err)

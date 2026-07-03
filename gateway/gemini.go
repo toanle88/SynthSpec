@@ -459,3 +459,63 @@ func (g *GeminiGateway) VerifyConsistency(ctx context.Context, files map[string]
 
 	return &report, nil
 }
+
+// Summarize generates a concise summary of the conversation history using the Gemini model.
+func (g *GeminiGateway) Summarize(ctx context.Context, history []Message) (string, error) {
+	systemPrompt := "You are a technical summarizer. Compress the conversation history into a single clear paragraph summarizing the key architectural decisions, user preferences, and engineering requirements established. Focus on consensus outcomes, not the back-and-forth dialogue."
+
+	contents := []geminiContent{}
+
+	// Add conversation history
+	for _, msg := range history {
+		role := "user"
+		if msg.Role == "assistant" {
+			role = "model"
+		}
+		contents = append(contents, geminiContent{
+			Role:  role,
+			Parts: []geminiPart{{Text: msg.Content}},
+		})
+	}
+
+	// Add summarization instruction
+	contents = append(contents, geminiContent{
+		Role:  "user",
+		Parts: []geminiPart{{Text: "Summarize the above conversation into a single paragraph capturing the key decisions and requirements."}},
+	})
+
+	reqBody := geminiRequest{
+		SystemInstruction: &geminiInstruction{
+			Parts: []geminiPart{{Text: systemPrompt}},
+		},
+		Contents: contents,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set(contentTypeHeader, applicationJSON)
+
+	respBytes, err := SendWithRetry(ctx, g.client, req, g.maxRetries)
+	if err != nil {
+		return "", err
+	}
+
+	var geminiResp geminiResponse
+	if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+		return "", fmt.Errorf(errParseGeminiResponse, err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf(errEmptyCandidateGemini)
+	}
+
+	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+}

@@ -417,3 +417,63 @@ func (o *OpenAIGateway) VerifyConsistency(ctx context.Context, files map[string]
 
 	return &report, nil
 }
+
+// Summarize generates a concise summary of the conversation history using the OpenAI model.
+func (o *OpenAIGateway) Summarize(ctx context.Context, history []Message) (string, error) {
+	systemPrompt := "You are a technical summarizer. Compress the conversation history into a single clear paragraph summarizing the key architectural decisions, user preferences, and engineering requirements established. Focus on consensus outcomes, not the back-and-forth dialogue."
+
+	messages := []openAIChatMessage{
+		{Role: "system", Content: systemPrompt},
+	}
+
+	// Add conversation history
+	for _, msg := range history {
+		role := "user"
+		if msg.Role == "assistant" {
+			role = "assistant"
+		}
+		messages = append(messages, openAIChatMessage{
+			Role:    role,
+			Content: msg.Content,
+		})
+	}
+
+	// Add summarization instruction
+	messages = append(messages, openAIChatMessage{
+		Role:    "user",
+		Content: "Summarize the above conversation into a single paragraph capturing the key decisions and requirements.",
+	})
+
+	reqBody := openAIChatRequest{
+		Model:    o.model,
+		Messages: messages,
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", openaiChatURL, bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set(contentTypeHeader, applicationJSON)
+	req.Header.Set("Authorization", authBearerPrefix+o.apiKey)
+
+	respBytes, err := SendWithRetry(ctx, o.client, req, o.maxRetries)
+	if err != nil {
+		return "", err
+	}
+
+	var chatResp openAIChatResponse
+	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
+		return "", fmt.Errorf(errParseOpenAIResponse, err)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf(errEmptyChoiceOpenAI)
+	}
+
+	return chatResp.Choices[0].Message.Content, nil
+}

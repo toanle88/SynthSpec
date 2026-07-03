@@ -100,11 +100,11 @@ func (fg *fileGenerator) getInitialContentOrResume(fileName string, promptTempla
 	var content string
 	var err error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		fullPrompt, buildErr := buildGenerationPrompt(promptTemplate, fg.sess.Facts, referenceDoc)
+		fullPrompt, buildErr := buildGenerationPrompt(promptTemplate, fg.persistence.GetFacts(), referenceDoc)
 		if buildErr != nil {
 			return "", 0, buildErr
 		}
-		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.sess.Facts, fileName, fullPrompt)
+		content, err = fg.gw.GenerateSpecFile(fg.ctx, fg.persistence.GetFacts(), fileName, fullPrompt)
 		if err == nil {
 			break
 		}

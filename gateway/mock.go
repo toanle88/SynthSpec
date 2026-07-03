@@ -326,3 +326,30 @@ func (m *MockGateway) VerifyConsistency(ctx context.Context, files map[string]st
 		Feedback:   make(map[string]string),
 	}, nil
 }
+
+// Summarize generates a concise summary of the conversation history for the mock gateway.
+func (m *MockGateway) Summarize(ctx context.Context, history []Message) (string, error) {
+	if len(history) == 0 {
+		return "No conversation history to summarize.", nil
+	}
+
+	var summary strings.Builder
+	summary.WriteString("Mock summary of conversation:\n")
+
+	userTurns := 0
+	for _, msg := range history {
+		if msg.Role == "user" {
+			userTurns++
+			if userTurns <= 3 { // Only summarize first 3 user turns
+				summary.WriteString(fmt.Sprintf("- User: %s\n", msg.Content))
+			}
+		}
+	}
+
+	if userTurns > 3 {
+		summary.WriteString(fmt.Sprintf("- ... and %d more user messages\n", userTurns-3))
+	}
+
+	summary.WriteString(fmt.Sprintf("\nTotal turns: %d", len(history)))
+	return summary.String(), nil
+}

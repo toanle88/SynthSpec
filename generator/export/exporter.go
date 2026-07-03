@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/toanle/synthspec/generator"
 )
 
 // DocumentData holds a single specification document's name, title, and content
@@ -99,13 +102,9 @@ func ExportToHTML(projectName string, outputDir string, distDir string) (string,
 	}
 
 	// Sort documents by file name
-	for i := 0; i < len(documents); i++ {
-		for j := i + 1; j < len(documents); j++ {
-			if documents[i].FileName > documents[j].FileName {
-				documents[i], documents[j] = documents[j], documents[i]
-			}
-		}
-	}
+	sort.Slice(documents, func(i, j int) bool {
+		return documents[i].FileName < documents[j].FileName
+	})
 
 	// 3. Compile metadata
 	var tMeta telemetryMeta
@@ -113,14 +112,10 @@ func ExportToHTML(projectName string, outputDir string, distDir string) (string,
 		_ = json.Unmarshal(metaData, &tMeta)
 	}
 
-	// Default version used when EngineVersion is not injected via ldflags.
-	// The cmd package should ideally override this at build time.
-	var ExportedVersion = "dev"
-
 	exportMeta := ExportMetadata{
 		ProjectName: projectName,
 		ExportTime:  time.Now().Format("2006-01-02 15:04:05"),
-		Version:     ExportedVersion,
+		Version:     generator.EngineVersion,
 	}
 	if tMeta.ProjectName != "" {
 		exportMeta.Scores = tMeta.ComplianceSummary

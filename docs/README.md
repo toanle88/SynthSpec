@@ -2,7 +2,7 @@
 
 Welcome to the SynthSpec project documentation. This workspace contains technical specifications, architecture diagrams, guidelines, and standards for developers and maintainers of the SynthSpec CLI tool.
 
-- **[Product Requirements Document (PRD)](PRODUCT.md)**: Product requirements, functional requirements matrix, STRIDE threat modeling analysis, and output schemas.
+- **[Product Requirements Document (PRD)](spec/product.md)**: Product requirements, functional requirements matrix, STRIDE threat modeling analysis, and output schemas.
 
 ## Directory Map
 
