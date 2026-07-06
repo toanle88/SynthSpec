@@ -59,6 +59,7 @@ type fileGenerator struct {
 	progress       chan<- string
 	approvalChan   chan struct{}
 	sourceFileName string
+	templates      []config.Template
 	sessionMu      sync.Mutex
 }
 
@@ -102,6 +103,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 		outputDir:    outputDir,
 		progress:     progress,
 		approvalChan: approvalChan,
+		templates:    templates,
 	}
 
 	fileCompliances := make([]FileCompliance, len(templates))

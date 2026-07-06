@@ -10,9 +10,14 @@ import (
 )
 
 func TestPerformStaticValidation(t *testing.T) {
+	templates := []config.Template{
+		{FileName: "04_api_architecture_integration.md", RequiresNonEmpty: true},
+		{FileName: "05_coding_standards_guidelines.md", RequiresNonEmpty: true},
+	}
+
 	t.Run("Valid non-empty Markdown", func(t *testing.T) {
 		content := "# API Guide"
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err != nil {
 			t.Errorf("expected no error, got: %v", err)
 		}
@@ -20,7 +25,7 @@ func TestPerformStaticValidation(t *testing.T) {
 
 	t.Run("Invalid empty Markdown", func(t *testing.T) {
 		content := "   "
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err == nil {
 			t.Error("expected empty content error, got nil")
 		}
@@ -47,7 +52,7 @@ paths:
       summary: List users
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err != nil {
 			t.Errorf("expected valid markdown with code blocks to pass, got error: %v", err)
 		}
@@ -65,7 +70,7 @@ paths:
 }
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err == nil {
 			t.Error("expected syntax error on malformed JSON block, got nil")
 		}
@@ -79,7 +84,7 @@ paths:
   /users: "unclosed string
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err == nil {
 			t.Error("expected syntax error on malformed YAML block, got nil")
 		}
@@ -103,7 +108,7 @@ gantt
   API setup with database : active, m3_3, 2026-06-28, 30d
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err != nil {
 			t.Errorf("expected valid Mermaid diagram to pass, got error: %v", err)
 		}
@@ -117,7 +122,7 @@ sequenceDiagram
   Alice->>Audit Log: Log event
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err == nil {
 			t.Error("expected syntax error for unquoted participant name with spaces, got nil")
 		}
@@ -131,7 +136,7 @@ gantt
   API setup with database active, m3_3, 30d
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err == nil {
 			t.Error("expected syntax error for missing colon on Gantt task line, got nil")
 		}
@@ -145,7 +150,7 @@ sequenceDiagram
   participant "Alice
 ` + "```" + `
 `
-		err := PerformStaticValidation("04_api_architecture_integration.md", content)
+		err := PerformStaticValidation("04_api_architecture_integration.md", content, templates)
 		if err == nil {
 			t.Error("expected syntax error for unbalanced quotes in Mermaid block, got nil")
 		}

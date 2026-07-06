@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/toanle/synthspec/generator/export"
+	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
 )
 
@@ -42,7 +43,7 @@ var exportCmd = &cobra.Command{
 		fmt.Fprintf(cmd.OutOrStdout(), "Exporting specifications for project '%s'...\n", projectName)
 		indexPath, err := export.ExportToHTML(projectName, outputDir, distDir)
 		if err != nil {
-			state.LogError(projectName, err)
+			logger.LogError(projectName, "export", "ExportToHTML", err)
 			return fmt.Errorf("export failed: %w", err)
 		}
 

@@ -8,10 +8,11 @@ import (
 var defaultTemplatesYAML []byte
 
 type Template struct {
-	FileName string `yaml:"file_name"`
-	Name     string `yaml:"name"`
-	IsSource bool   `yaml:"is_source"`
-	Prompt   string `yaml:"prompt"`
+	FileName         string `yaml:"file_name"`
+	Name             string `yaml:"name"`
+	IsSource         bool   `yaml:"is_source"`
+	RequiresNonEmpty bool   `yaml:"requires_non_empty"`
+	Prompt           string `yaml:"prompt"`
 }
 
 type TemplatesConfig struct {

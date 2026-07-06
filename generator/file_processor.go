@@ -157,7 +157,7 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 	applicableStds := config.FilterApplicableStandards(standards, fileName)
 
 	for attempt := startAttempt; attempt < maxRetries; attempt++ {
-		checkErr = PerformStaticValidation(fileName, content)
+		checkErr = PerformStaticValidation(fileName, content, fg.templates)
 		if checkErr != nil {
 			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr, referenceDoc, promptTemplate)
 			continue
@@ -179,7 +179,7 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 		break
 	}
 
-	if staticErr := PerformStaticValidation(fileName, content); staticErr != nil {
+	if staticErr := PerformStaticValidation(fileName, content, fg.templates); staticErr != nil {
 		sendProgress(fg.progress, ProgressEvent{
 			File:    fileName,
 			Status:  "failed",

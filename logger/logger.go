@@ -16,6 +16,15 @@ var (
 	logFile *os.File
 )
 
+// getSynthspecRoot returns the base directory for SynthSpec data.
+// It prefers the user's config directory with a fallback to the current working directory.
+func getSynthspecRoot() string {
+	if configDir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(configDir, "synthspec")
+	}
+	return "synthspec"
+}
+
 // Init initializes the logging system. It enables logging if either the cli flag is true or settings show debug is true.
 func Init(cliDebug, settingsDebug bool) error {
 	mu.Lock()
@@ -32,7 +41,7 @@ func Init(cliDebug, settingsDebug bool) error {
 		return nil
 	}
 
-	dir := ".synthspec"
+	dir := filepath.Join(getSynthspecRoot(), ".synthspec")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
@@ -97,4 +106,45 @@ func LogAPI(provider, model string, duration time.Duration, promptTokens, comple
 
 	fmt.Fprintf(logFile, "[%s] [API] Provider: %s | Model: %s | Status: %s | Duration: %s | Tokens: Prompt=%d, Completion=%d%s\n",
 		timestamp, provider, model, status, duration.String(), promptTokens, completionTokens, errStr)
+}
+
+// LogError logs an error with context to the log file.
+// If projectName is provided, it logs to the project-specific error log.
+// If projectName is empty, it logs to the global error log.
+func LogError(projectName, component, operation string, err error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if err == nil {
+		return
+	}
+
+	// If logging is not enabled, we still want to log errors to a file
+	// Create a separate error log file
+	var logPath string
+	root := getSynthspecRoot()
+	if projectName != "" {
+		dir := filepath.Join(root, projectName)
+		if errMk := os.MkdirAll(dir, 0755); errMk == nil {
+			logPath = filepath.Join(dir, "errors.log")
+		} else {
+			logPath = filepath.Join(root, "errors.log")
+		}
+	} else {
+		dir := root
+		if errMk := os.MkdirAll(dir, 0755); errMk == nil {
+			logPath = filepath.Join(dir, "errors.log")
+		} else {
+			return
+		}
+	}
+
+	f, errOpen := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if errOpen != nil {
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logEntry := fmt.Sprintf("[%s] [ERROR] [%s] %s: %v\n", timestamp, component, operation, err)
+	_, _ = f.WriteString(logEntry)
 }

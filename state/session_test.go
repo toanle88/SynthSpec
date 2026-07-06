@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/logger"
 )
 
 func TestSessionSaveAndLoad(t *testing.T) {
@@ -102,9 +103,13 @@ func TestLogError(t *testing.T) {
 	defer os.RemoveAll(filepath.Join(root, projectName))
 	defer os.Remove(filepath.Join(root, "errors.log"))
 
+	// Initialize logger to enable error logging
+	logger.Init(true, false)
+	defer logger.Close()
+
 	// Test project-specific error logging
 	errSample := fmt.Errorf("sample error description")
-	LogError(projectName, errSample)
+	logger.LogError(projectName, "test", "TestLogError", errSample)
 
 	logPath := filepath.Join(root, projectName, "errors.log")
 	content, err := os.ReadFile(logPath)
@@ -112,13 +117,13 @@ func TestLogError(t *testing.T) {
 		t.Fatalf("failed to read project log file: %v", err)
 	}
 
-	if !strings.Contains(string(content), "ERROR: sample error description") {
+	if !strings.Contains(string(content), "ERROR") || !strings.Contains(string(content), "sample error description") {
 		t.Errorf("expected log file to contain error description, got: %s", string(content))
 	}
 
 	// Test global error logging
 	errGlobalSample := fmt.Errorf("global sample error description")
-	LogError("", errGlobalSample)
+	logger.LogError("", "test", "TestLogError", errGlobalSample)
 
 	globalLogPath := filepath.Join(root, "errors.log")
 	globalContent, err := os.ReadFile(globalLogPath)
@@ -126,15 +131,15 @@ func TestLogError(t *testing.T) {
 		t.Fatalf("failed to read global log file: %v", err)
 	}
 
-	if !strings.Contains(string(globalContent), "ERROR: global sample error description") {
+	if !strings.Contains(string(globalContent), "ERROR") || !strings.Contains(string(globalContent), "global sample error description") {
 		t.Errorf("expected global log file to contain error description, got: %s", string(globalContent))
 	}
 }
 
 func TestLogError_NilError(t *testing.T) {
 	// Should not panic or create files
-	LogError("test-project", nil)
-	LogError("", nil)
+	logger.LogError("test-project", "test", "TestLogError_NilError", nil)
+	logger.LogError("", "test", "TestLogError_NilError", nil)
 }
 
 func TestGetSessionDir(t *testing.T) {

@@ -154,9 +154,18 @@ func writeConsistencyCheck(sb *strings.Builder, consistencyReport *gateway.Consi
 var codeBlockRegex = regexp.MustCompile("(?s)```(json|yaml|yml)\n(.*?)(?:\n)?```")
 
 // PerformStaticValidation checks file syntax correctness
-func PerformStaticValidation(fileName string, content string) error {
-	switch fileName {
-	case "04_api_architecture_integration.md", "05_coding_standards_guidelines.md":
+func PerformStaticValidation(fileName string, content string, templates []config.Template) error {
+	// Find the template for this file
+	var template *config.Template
+	for _, t := range templates {
+		if t.FileName == fileName {
+			template = &t
+			break
+		}
+	}
+
+	// Check if template requires non-empty content
+	if template != nil && template.RequiresNonEmpty {
 		if strings.TrimSpace(content) == "" {
 			return fmt.Errorf("generated file content is empty")
 		}

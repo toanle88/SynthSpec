@@ -291,7 +291,7 @@ func (m *DashboardModel) setError(err error) {
 		if m.Session != nil {
 			projectName = m.Session.ProjectName
 		}
-		state.LogError(projectName, err)
+		logger.LogError(projectName, "tui", "setError", err)
 	}
 }
 

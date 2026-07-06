@@ -12,7 +12,7 @@ import (
 
 func TestLoggerInitializationAndLogging(t *testing.T) {
 	// Setup test environment
-	logDir := ".synthspec"
+	logDir := filepath.Join(getSynthspecRoot(), ".synthspec")
 	logPath := filepath.Join(logDir, "crash.log")
 
 	// Clean up any existing logs

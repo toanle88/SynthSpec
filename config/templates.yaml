@@ -45,6 +45,8 @@ templates:
 
   - file_name: "04_api_architecture_integration.md"
     name: "API Architecture & Integration"
+    is_source: false
+    requires_non_empty: true
     prompt: |
       Write a detailed API Architecture & Integration Guide markdown file. 
       
@@ -61,6 +63,8 @@ templates:
 
   - file_name: "05_coding_standards_guidelines.md"
     name: "Coding Standards & Guidelines"
+    is_source: false
+    requires_non_empty: true
     prompt: |
       Write a comprehensive Coding Standards & Guidelines markdown file. 
       
