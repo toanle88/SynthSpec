@@ -1,6 +1,7 @@
 package export
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,5 +79,107 @@ This is a test document about bounded contexts.`
 	}
 	if !strings.Contains(htmlStr, "This is a test document about bounded contexts.") {
 		t.Errorf("expected HTML to contain content")
+	}
+}
+
+func TestExportToExcalidraw(t *testing.T) {
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "output")
+	distDir := filepath.Join(tempDir, "dist")
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatalf("failed to create output dir: %v", err)
+	}
+
+	mockEntities := `{
+		"entities": [
+			{"name": "User", "attributes": ["id", "email"]}
+		],
+		"workflows": [
+			{"name": "Register", "steps": ["Enter details", "Verify"]}
+		],
+		"integrations": [
+			{"type": "database", "details": "PostgreSQL"}
+		]
+	}`
+
+	entitiesPath := filepath.Join(outputDir, ".synthspec-entities.json")
+	if err := os.WriteFile(entitiesPath, []byte(mockEntities), 0644); err != nil {
+		t.Fatalf("failed to write test entities: %v", err)
+	}
+
+	filePath, err := ExportToExcalidraw("TestProj", outputDir, distDir)
+	if err != nil {
+		t.Fatalf("ExportToExcalidraw failed: %v", err)
+	}
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		t.Errorf("expected excalidraw file to exist at %s", filePath)
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		t.Fatalf("failed to parse excalidraw JSON: %v", err)
+	}
+
+	if parsed["type"] != "excalidraw" {
+		t.Errorf("expected type to be 'excalidraw', got %v", parsed["type"])
+	}
+}
+
+func TestExportToStructurizr(t *testing.T) {
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "output")
+	distDir := filepath.Join(tempDir, "dist")
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatalf("failed to create output dir: %v", err)
+	}
+
+	mockEntities := `{
+		"entities": [
+			{"name": "User", "attributes": ["id", "email"]}
+		],
+		"workflows": [
+			{"name": "Register", "steps": ["Enter details", "Verify"]}
+		],
+		"integrations": [
+			{"type": "Database System", "details": "PostgreSQL"}
+		]
+	}`
+
+	entitiesPath := filepath.Join(outputDir, ".synthspec-entities.json")
+	if err := os.WriteFile(entitiesPath, []byte(mockEntities), 0644); err != nil {
+		t.Fatalf("failed to write test entities: %v", err)
+	}
+
+	filePath, err := ExportToStructurizr("TestProj", outputDir, distDir)
+	if err != nil {
+		t.Fatalf("ExportToStructurizr failed: %v", err)
+	}
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		t.Errorf("expected structurizr file to exist at %s", filePath)
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dslStr := string(content)
+	if !strings.Contains(dslStr, "workspace") {
+		t.Error("expected DSL to contain workspace definition")
+	}
+	if !strings.Contains(dslStr, "componentUser") {
+		t.Error("expected DSL to contain User component")
+	}
+	if !strings.Contains(dslStr, "containerDatabaseSystem") {
+		t.Error("expected DSL to contain Database System container")
 	}
 }

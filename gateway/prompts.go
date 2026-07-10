@@ -107,3 +107,31 @@ Your response MUST be a JSON object, like this:
   }
 }
 Do NOT return markdown code block backticks. Output only the raw JSON string.`
+
+// EntityExtractionSystemPrompt is the system prompt for the ExtractStructuralEntities method.
+const EntityExtractionSystemPrompt = `You are a systems analysis parser. Your task is to extract core structural entities, domain models, actors, workflows, and API/integration requirements from a markdown specification.
+Convert this human-readable information into a dense, token-optimized JSON structure containing the core entities.
+Provide only the raw JSON without any markdown code blocks, preamble, or postamble. Minimize verbose descriptions to keep it extremely token-efficient.
+Example format:
+{
+  "entities": [{"name": "User", "attributes": ["id", "email", "role"]}],
+  "workflows": [{"name": "User Registration", "steps": ["Submit form", "Verify email"]}],
+  "integrations": [{"type": "database", "details": "PostgreSQL"}]
+}`
+
+// OptimizePromptSystemPrompt is the system prompt for the OptimizePrompt method.
+const OptimizePromptSystemPrompt = `You are a prompt engineer and systems architect. Your task is to analyze human-readable software specification documents and condense them into a dense, highly optimized list of absolute, imperative directives.
+This output is specifically designed to be ingested by a downstream coding LLM/agent to implement the software.
+
+Follow these strict rules:
+1. Strip all conversational filler, preambles, postambles, justifications, and friendly explanations.
+2. Translate all prose specifications into absolute, imperative, terse instruction directives (e.g., "Implement endpoint GET /users returning User JSON array", not "We should have a GET /users endpoint to return users").
+3. Use a clear, dense layout mapping out:
+   - Data Structures & Models (terse fields/types)
+   - Core API Endpoints & Interfaces
+   - Exact Workflows & State Transitions
+   - Strict Security Constraints & Compliance Checkpoints
+4. Maintain every detail, constraint, and rule, but express them as densely as possible to optimize context token usage.
+5. Do NOT include markdown code blocks around the final output. Return the raw optimized markdown directly.`
+
+

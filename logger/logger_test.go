@@ -11,15 +11,22 @@ import (
 )
 
 func TestLoggerInitializationAndLogging(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "synthspec-logger-test")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	t.Setenv("SYNTHSPEC_ROOT", tempDir)
+
 	// Setup test environment
-	logDir := filepath.Join(getSynthspecRoot(), ".synthspec")
+	logDir := filepath.Join(tempDir, ".synthspec")
 	logPath := filepath.Join(logDir, "crash.log")
 
 	// Clean up any existing logs
 	_ = os.Remove(logPath)
 
 	// 1. Check disabled state
-	err := Init(false, false)
+	err = Init(false, false)
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}

@@ -8,7 +8,9 @@ import (
 
 func TestComputeSha256(t *testing.T) {
 	t.Run("deterministic", func(t *testing.T) {
-		if computeSha256("hello") != computeSha256("hello") {
+		h1 := computeSha256("hello")
+		h2 := computeSha256("hello")
+		if h1 != h2 {
 			t.Errorf("sha256 must be deterministic")
 		}
 	})

@@ -56,4 +56,19 @@ type Gateway interface {
 
 	// Summarize generates a concise summary of the conversation history.
 	Summarize(ctx context.Context, history []Message) (string, error)
+
+	// ExtractStructuralEntities converts a markdown document into a dense JSON payload
+	ExtractStructuralEntities(ctx context.Context, sourceDoc string) (string, error)
+
+	// OptimizePrompt condenses generated markdown documents into dense, absolute, imperative directives.
+	OptimizePrompt(ctx context.Context, files map[string]string) (string, error)
+
+	// GenerateEmbeddings calculates numeric vector embeddings for a slice of texts.
+	GenerateEmbeddings(ctx context.Context, texts []string) ([][]float32, error)
+
+	// RegisterTokenCounter registers a callback to be triggered when tokens are consumed.
+	RegisterTokenCounter(fn func(prompt, completion int))
+
+	// RegisterBudgetCheck registers a callback to verify if the budget allows further requests.
+	RegisterBudgetCheck(fn func() error)
 }

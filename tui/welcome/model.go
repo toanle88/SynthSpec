@@ -132,6 +132,11 @@ func NewWelcomeModel() WelcomeModel {
 	oInput.CharLimit = 256
 	oInput.Width = 30
 
+	cInput := textinput.New()
+	cInput.Placeholder = "0.00"
+	cInput.CharLimit = 10
+	cInput.Width = 10
+
 	return WelcomeModel{
 		Phase:                 PhaseMenu,
 		Action:                ActionNone,
@@ -143,7 +148,7 @@ func NewWelcomeModel() WelcomeModel {
 		filterInput:           fi,
 		Blueprints:            blueprints,
 		Settings:              settings,
-		settingInputs:         []textinput.Model{tInput, rInput, oInput},
+		settingInputs:         []textinput.Model{tInput, rInput, oInput, cInput},
 	}
 }
 

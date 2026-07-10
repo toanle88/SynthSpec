@@ -7,16 +7,17 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/gateway"
 )
 
-func (fg *fileGenerator) getCachedFileState(fileName string) (GeneratedFileState, bool) {
+func (fg *fileGenerator) getCachedFileState(fileName string) (domain.GeneratedFileState, bool) {
 	fg.sessionMu.Lock()
 	defer fg.sessionMu.Unlock()
 
 	state, found := fg.persistence.LoadGeneratedFile(fileName)
 	if !found {
-		return GeneratedFileState{}, false
+		return domain.GeneratedFileState{}, false
 	}
 	return state, true
 }
@@ -41,7 +42,7 @@ func (fg *fileGenerator) updateSessionProgress(fileName string, promptTemplate s
 	currentPromptHash := computeSha256(promptTemplate)
 	currentFactsHash := fg.computeFactsHash(fileName)
 
-	newGenState := GeneratedFileState{
+	newGenState := domain.GeneratedFileState{
 		FileName:   fileName,
 		Results:    complianceResults,
 		HasError:   checkErr != nil,
@@ -72,7 +73,7 @@ func (fg *fileGenerator) updateInProgressState(fileName, content string, attempt
 	currentPromptHash := computeSha256(promptTemplate)
 	currentFactsHash := fg.computeFactsHash(fileName)
 
-	newGenState := GeneratedFileState{
+	newGenState := domain.GeneratedFileState{
 		FileName:       fileName,
 		InProgressText: content,
 		CurrentAttempt: attempt,

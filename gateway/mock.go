@@ -3,14 +3,17 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/toanle/synthspec/domain"
-	"github.com/toanle/synthspec/shared"
 )
 
 // MockGateway implements the Gateway interface for local testing
-type MockGateway struct{}
+type MockGateway struct {
+	onTokenUsage func(prompt, completion int)
+	budgetCheck  func() error
+}
 
 func NewMockGateway() *MockGateway {
 	return &MockGateway{}
@@ -94,7 +97,7 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 		}
 	}
 
-	res.NextQuestion = shared.SanitizeNextQuestion(res.NextQuestion)
+	res.NextQuestion = SanitizeNextQuestion(res.NextQuestion)
 	return res, nil
 }
 
@@ -104,138 +107,12 @@ func (m *MockGateway) QueryOracleStream(ctx context.Context, facts Facts, histor
 		close(tokenChan)
 		return nil, err
 	}
-	shared.StreamOracleResponse(res, tokenChan)
+	domain.StreamOracleResponse(res, tokenChan)
 	return res, nil
 }
 
 func (m *MockGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
-	switch fileName {
-	case "01_domain_model_use_cases.md":
-		return `# Domain Model & Use Cases
-
-* **Status**: 🟢 Approved
-
-## 🗺️ Bounded Context Map
-Account Management Context, Spec Synthesis Context.
-
-## 🧱 Core Domain Entities & Value Objects
-Entities: Project, Requirement, Standard.
-Value Objects: Score, Rationale.
-
-## 🚀 Scenario Walkthroughs
-Primary use case scenario details.
-`, nil
-
-	case "02_prd_functional.md":
-		return fmt.Sprintf(`# Functional Requirements Document (PRD)
-
-* **Status**: 🟢 Approved
-* **Author**: SynthSpec (Mock Engine)
-
-## 🎯 Product Vision
-This specification outlines the functional features compiled during the interrogation loop.
-
-## 📋 Compiled User Input
-%s
-
-## ⚙️ Core Features
-1. **User Authentication & Management**: Role-based access control.
-2. **Interactive Workspace**: Local state and session caching.
-3. **Audit Trails**: Capture details of user operations.
-`, facts.Functional), nil
-
-	case "03_system_architecture.md":
-		return fmt.Sprintf(`# System Architecture Specification
-
-* **Status**: 🟢 Approved
-
-## 🏗️ Backend Topography
-Three-tier architecture with load balancer.
-
-## 📦 System Database Model
-%s
-
-## 🔀 API Routing Logic
-REST endpoints map to specific service controllers.
-`, facts.Structural), nil
-
-	case "04_api_architecture_integration.md":
-		return `# API Architecture & Integration Guide
-
-* **Status**: 🟢 Approved
-
-## 🌐 Transport & Protocol Standards
-RESTful routing over HTTPS. JSON payload format.
-
-## 🔄 Contract Lifecycle Management
-Semantic versioning inside URL prefix.
-
-## 📦 Global Payload Serialization
-ISO 8601 timestamps and camelCase naming conventions.
-
-## 🛠️ Cross-Cutting Concerns
-Validation and rate limiting enabled.
-`, nil
-
-	case "05_coding_standards_guidelines.md":
-		return `# Coding Standards & Guidelines
-
-* **Status**: 🟢 Approved
-
-## 📂 Directory & Module Topography
-Visual directory layout and layer division.
-
-## 🏗️ Architectural Pattern Enforcement
-Strict dependency injection and repository patterns.
-
-## 🧪 Testing Strategy & Coverage Gates
-Integration testing with mock interfaces. 80% code coverage gate.
-
-## 🧹 Linting & Static Analysis Rules
-Configured strict rules.
-`, nil
-
-	case "06_security_threat_model.md":
-		return fmt.Sprintf(`# Security & Threat Model
-
-* **Status**: 🟢 Approved
-
-## 🛡️ STRIDE Threat Assessment
-| Category | Vulnerability | Mitigation Strategy |
-|----------|---------------|---------------------|
-| **Spoofing** | Unauthorized API access | Cryptographic JWT claims and signature validation. |
-| **Information Disclosure** | Leakage of tenant data | Query-level row separation and parameter validation. |
-
-## 🔒 Compiled Security Facts
-%s
-`, facts.Security), nil
-
-	case "07_engineering_roadmap.md":
-		return `# Engineering Roadmap
-
-* **Status**: 🟢 Approved
-
-## 🗺️ Phase-by-Phase Execution
-- Phase 1 MVP: Basic CLI and Core Logic.
-- Phase 2 Scale: Additional Gateway APIs.
-- Phase 3 Future: Enterprise Web UI.
-
-## 📅 Milestones
-1. MVP release in Q3.
-2. Web UI beta in Q4.
-
-## 📊 Gantt Timeline
-` + "```mermaid" + `
-gantt
-    title Project Timeline
-    section Phase 1
-    MVP :active, 2026-07-01, 30d
-` + "```" + `
-`, nil
-
-	default:
-		return "", fmt.Errorf("unknown file: %s", fileName)
-	}
+	return getMockGenerateSpecContent(fileName, facts)
 }
 
 // EvaluateCompliance returns mocked compliance scores matching the standards checklist
@@ -352,4 +229,68 @@ func (m *MockGateway) Summarize(ctx context.Context, history []Message) (string,
 
 	summary.WriteString(fmt.Sprintf("\nTotal turns: %d", len(history)))
 	return summary.String(), nil
+}
+
+// ExtractStructuralEntities mock implementation
+func (m *MockGateway) ExtractStructuralEntities(ctx context.Context, sourceDoc string) (string, error) {
+	return `{"entities":[{"name":"MockEntity","attributes":["id","name"]}],"workflows":[{"name":"MockWorkflow","steps":["MockStep"]}],"integrations":[{"type":"MockIntegration","details":"MockDatabase"}]}`, nil
+}
+
+func (m *MockGateway) OptimizePrompt(ctx context.Context, files map[string]string) (string, error) {
+	var sb strings.Builder
+	sb.WriteString("# Mock Optimized Prompt\n\n")
+	sb.WriteString("This is a mock optimized prompt generated from the following files:\n")
+	for name := range files {
+		sb.WriteString(fmt.Sprintf("- %s\n", name))
+	}
+	sb.WriteString("\n## Directives\n")
+	sb.WriteString("1. Implement all features according to the specifications.\n")
+	return sb.String(), nil
+}
+
+// GenerateEmbeddings mock implementation using pseudoEmbed FNV-1a deterministic hashing
+func (m *MockGateway) GenerateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	res := make([][]float32, len(texts))
+	for i, txt := range texts {
+		vec := make([]float32, 128)
+		words := strings.Fields(strings.ToLower(txt))
+		if len(words) == 0 {
+			res[i] = vec
+			continue
+		}
+		for d := 0; d < 128; d++ {
+			var val float32
+			for _, word := range words {
+				h := uint32(2166136261)
+				for j := 0; j < len(word); j++ {
+					h = (h ^ uint32(word[j])) * 16777619
+				}
+				h = (h ^ uint32(d)) * 16777619
+				val += float32(h) / float32(0xFFFFFFFF)
+			}
+			vec[d] = val / float32(len(words))
+		}
+		
+		// Normalize
+		var norm float64
+		for _, v := range vec {
+			norm += float64(v * v)
+		}
+		norm = math.Sqrt(norm)
+		if norm > 0 {
+			for idx := range vec {
+				vec[idx] = float32(float64(vec[idx]) / norm)
+			}
+		}
+		res[i] = vec
+	}
+	return res, nil
+}
+
+func (m *MockGateway) RegisterTokenCounter(fn func(prompt, completion int)) {
+	m.onTokenUsage = fn
+}
+
+func (m *MockGateway) RegisterBudgetCheck(fn func() error) {
+	// MockGateway typically doesn't enforce budget limits unless specifically tested
 }

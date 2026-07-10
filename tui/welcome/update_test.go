@@ -99,3 +99,27 @@ func TestWelcomeModel_EnterOnResume(t *testing.T) {
 		t.Errorf("expected PhaseResumeSelect, got %v", wm.Phase)
 	}
 }
+
+func TestWelcomeModel_TypeProjectName(t *testing.T) {
+	m := NewWelcomeModel()
+	// Enter PhaseCreateInput by pressing Enter on option 0
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	wm := model.(WelcomeModel)
+
+	if wm.Phase != PhaseCreateInput {
+		t.Fatalf("expected PhaseCreateInput, got %v", wm.Phase)
+	}
+
+	if !wm.textInput.Focused() {
+		t.Fatal("expected textInput to be focused")
+	}
+
+	// Send key 'a'
+	model, _ = wm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	wm = model.(WelcomeModel)
+
+	if wm.textInput.Value() != "a" {
+		t.Errorf("expected textInput value 'a', got %q", wm.textInput.Value())
+	}
+}
+

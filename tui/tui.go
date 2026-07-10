@@ -13,7 +13,7 @@ import (
 type DashboardModel = dashboard.DashboardModel
 
 // NewDashboardModel creates a new DashboardModel
-func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
+func NewDashboardModel(sess state.SessionManager, gw gateway.Gateway, outputDir string) DashboardModel {
 	return dashboard.NewDashboardModel(sess, gw, outputDir)
 }
 
@@ -35,3 +35,5 @@ const (
 	ActionExport = welcome.ActionExport
 	ActionExit   = welcome.ActionExit
 )
+
+

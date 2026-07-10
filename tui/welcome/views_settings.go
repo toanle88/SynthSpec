@@ -11,7 +11,7 @@ import (
 func (m WelcomeModel) viewSettings() string {
 	var lines []string
 	lines = append(lines, "", shared.TitleStyle.Render("⚙️ Global & Workspace Settings"), "")
-	settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Debug Logging (opt-in)", "Vim Keybindings (hjkl)"}
+	settingFields := []string{"API Timeout (seconds)", "Max API Retries", "Default Output Folder", "Hard Budget Cap ($)", "Debug Logging (opt-in)", "Vim Keybindings (hjkl)"}
 	for i, field := range settingFields {
 		prefix := "  "
 		labelStyle := lipgloss.NewStyle().Foreground(shared.ColorText)

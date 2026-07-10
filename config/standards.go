@@ -19,9 +19,26 @@ type StandardsConfig struct {
 
 // LoadStandards loads the standards from a local override file or falls back to the embedded defaults.
 func LoadStandards() ([]Standard, error) {
-	cfg, err := loadYAML[StandardsConfig](defaultStandardsYAML, []string{
+	cfg, err := loadAndMergeYAML[StandardsConfig](defaultStandardsYAML, []string{
 		"standards.yaml",
 		".synthspec/standards.yaml",
+	}, func(base, override StandardsConfig) StandardsConfig {
+		// Map base standards by ID
+		m := make(map[string]int)
+		for i, std := range base.Standards {
+			m[std.ID] = i
+		}
+
+		for _, std := range override.Standards {
+			if idx, exists := m[std.ID]; exists {
+				// Override existing standard
+				base.Standards[idx] = std
+			} else {
+				// Append new standard
+				base.Standards = append(base.Standards, std)
+			}
+		}
+		return base
 	})
 	if err != nil {
 		return nil, err

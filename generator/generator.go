@@ -52,19 +52,22 @@ func sendProgress(progress chan<- string, event ProgressEvent) {
 
 // fileGenerator orchestrates the file generation pipeline
 type fileGenerator struct {
-	ctx            context.Context
-	gw             gateway.Gateway
-	persistence    SessionPersistence
-	outputDir      string
-	progress       chan<- string
-	approvalChan   chan struct{}
-	sourceFileName string
-	templates      []config.Template
-	sessionMu      sync.Mutex
+	ctx              context.Context
+	gw               gateway.Gateway
+	persistence      SessionPersistence
+	outputDir        string
+	progress         chan<- string
+	approvalChan     chan struct{}
+	diffApprovalChan chan struct{}
+	sourceFileName   string
+	templates        []config.Template
+	sessionMu        sync.Mutex
+	proposedContents map[string]string
+	proposedMu       sync.Mutex
 }
 
 // Generate runs sequential spec generation for all files
-func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersistence, outputDir string, progress chan<- string, approvalChan chan struct{}) error {
+func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersistence, outputDir string, progress chan<- string, approvalChan chan struct{}, diffApprovalChan chan struct{}) error {
 	defer close(progress)
 
 	// Load templates
@@ -97,13 +100,15 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 	sendProgress(progress, ProgressEvent{Status: "started", Phase: "source", Details: strings.Join(files, ","), Message: "Starting spec generation..."})
 
 	fg := &fileGenerator{
-		ctx:          ctx,
-		gw:           gw,
-		persistence:  persistence,
-		outputDir:    outputDir,
-		progress:     progress,
-		approvalChan: approvalChan,
-		templates:    templates,
+		ctx:              ctx,
+		gw:               gw,
+		persistence:      persistence,
+		outputDir:        outputDir,
+		progress:         progress,
+		approvalChan:     approvalChan,
+		diffApprovalChan: diffApprovalChan,
+		templates:        templates,
+		proposedContents: make(map[string]string),
 	}
 
 	fileCompliances := make([]FileCompliance, len(templates))
@@ -117,7 +122,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 	}
 	fg.sourceFileName = templates[sourceIdx].FileName
 
-	sourceCompliance, sourceDoc, err := fg.generateSourceDocument(templates[sourceIdx], standards)
+	sourceCompliance, _, denseEntities, err := fg.generateSourceDocument(templates[sourceIdx], standards)
 	if err != nil {
 		return err
 	}
@@ -130,7 +135,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 		Message: fmt.Sprintf("Source document locked. Starting parallel generation for %d downstream documents...", len(templates)-1),
 	})
 
-	if err := fg.generateDownstreamParallel(templates, sourceDoc, standards, fileCompliances); err != nil {
+	if err := fg.generateDownstreamParallel(templates, denseEntities, standards, fileCompliances); err != nil {
 		return err
 	}
 

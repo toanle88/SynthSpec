@@ -53,10 +53,10 @@ func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 
 		// If user answer was provided, append it to history beforehand
 		if latestInput != "" && latestInput != manualUpdateMsg {
-			m.Session.AddTurn(latestInput, m.Session.LastQuestion, m.Session.TotalTokensUsed, m.Session.TotalTokensUsed)
+			m.Session.AddTurn(latestInput, m.Session.GetLastQuestion(), 0, 0)
 		}
 
-		resp, err := m.Gateway.QueryOracleStream(ctx, m.Session.Facts, m.Session.History, latestInput, m.thoughtChan)
+		resp, err := m.Gateway.QueryOracleStream(ctx, m.Session.GetFacts(), m.Session.GetHistory(), latestInput, m.thoughtChan)
 		if err != nil {
 			return oracleResultMsg{err: err}
 		}
@@ -64,9 +64,9 @@ func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 		// Update tokens in session (will be saved in Update msg handler)
 		if latestInput != "" && latestInput != manualUpdateMsg {
 			// Back-fill actual assistant response
-			m.Session.History[len(m.Session.History)-1].Content = resp.NextQuestion
+			m.Session.GetHistory()[len(m.Session.GetHistory())-1].Content = resp.NextQuestion
 		}
-		m.Session.TotalTokensUsed += resp.TokensPrompt + resp.TokensCompletion
+		_ = m.Session.UpdateTokens(resp.TokensPrompt, resp.TokensCompletion)
 
 		return oracleResultMsg{resp: resp}
 	}
@@ -88,7 +88,7 @@ func (m DashboardModel) recvGenProgressCmd() tea.Cmd {
 // generateSpecsCmd synthesizes all targets in parallel inside background worker goroutines.
 func (m DashboardModel) generateSpecsCmd(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		err := generator.Generate(ctx, m.Gateway, m.Session, m.OutputDir, m.genChan, m.approvalChan)
+		err := generator.Generate(ctx, m.Gateway, m.Session, m.OutputDir, m.genChan, m.approvalChan, m.diffApprovalChan)
 		return genFinishedMsg{err: err}
 	}
 }

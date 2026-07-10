@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/generator"
 	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
@@ -81,7 +82,7 @@ func (m DashboardModel) handleOracleResult(msg oracleResultMsg) (tea.Model, tea.
 		logger.Log("session save failed after oracle result: %v", err)
 	}
 	wasCompleted := m.isCompleted
-	m.isCompleted = checkCompletion(m.Session.Scores)
+	m.isCompleted = checkCompletion(m.Session.GetScores())
 
 	return m.checkAndTriggerPostOracle(wasCompleted)
 }
@@ -99,8 +100,8 @@ func (m DashboardModel) handleEditorFinished(msg editorFinishedMsg) (tea.Model, 
 		return m, nil
 	}
 
-	m.Session.Facts = editedFacts
-	m.Session.GeneratedFiles = nil
+	m.Session.UpdateFacts(editedFacts)
+	m.Session.ClearGeneratedFiles()
 	if err := m.Session.Save(); err != nil {
 		logger.Log("session save failed after editor: %v", err)
 	}
@@ -136,6 +137,15 @@ func (m DashboardModel) handleGenProgress(msg genProgressMsg) (tea.Model, tea.Cm
 		model, cmd := m.openFileViewer()
 		m = model.(DashboardModel)
 		return m, tea.Batch(cmd, m.recvGenProgressCmd())
+	}
+
+	if ev.Status == "waiting_diff_approval" {
+		var diffs []domain.FileDiff
+		if err := json.Unmarshal([]byte(ev.Details), &diffs); err == nil {
+			model, cmd := m.startDiffApproval(diffs)
+			m = model.(DashboardModel)
+			return m, tea.Batch(cmd, m.recvGenProgressCmd())
+		}
 	}
 
 	return m, m.recvGenProgressCmd()
@@ -203,7 +213,7 @@ func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cm
 
 		dir := m.OutputDir
 		if dir == "" {
-			dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
+			dir = filepath.Join(state.GetSessionDir(m.Session.GetProjectName()), "output")
 		}
 		metaPath := filepath.Join(dir, ".synthspec-meta.json")
 		if metaBytes, readErr := os.ReadFile(metaPath); readErr == nil {
@@ -226,7 +236,7 @@ func (m DashboardModel) handleContextPruneResult(msg contextPruneResultMsg) (tea
 	if msg.err != nil {
 		m.setError(fmt.Errorf("context pruning failed: %w", msg.err))
 	} else if msg.pruned {
-		m.setError(fmt.Errorf("conversation summarized to fit context limit"))
+		m.genStatus = "Conversation summarized to fit context limit."
 	}
 	return m, nil
 }

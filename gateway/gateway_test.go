@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/toanle/synthspec/config"
-	"github.com/toanle/synthspec/shared"
+	"github.com/toanle/synthspec/domain"
 )
 
 func TestSanitizeNextQuestion(t *testing.T) {
@@ -64,9 +64,9 @@ func TestSanitizeNextQuestion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := shared.SanitizeNextQuestion(tt.input)
+			actual := SanitizeNextQuestion(tt.input)
 			if actual != tt.expected {
-				t.Errorf("shared.SanitizeNextQuestion(%q) = %q; expected %q", tt.input, actual, tt.expected)
+				t.Errorf("SanitizeNextQuestion(%q) = %q; expected %q", tt.input, actual, tt.expected)
 			}
 		})
 	}
@@ -184,9 +184,9 @@ func TestSanitizeJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := shared.SanitizeJSON(tt.input)
+			actual := SanitizeJSON(tt.input)
 			if actual != tt.expected {
-				t.Errorf("shared.SanitizeJSON(%q) = %q; expected %q", tt.input, actual, tt.expected)
+				t.Errorf("SanitizeJSON(%q) = %q; expected %q", tt.input, actual, tt.expected)
 			}
 		})
 	}
@@ -201,7 +201,7 @@ func TestStreamOracleResponse(t *testing.T) {
 	}
 
 	tokenChan := make(chan string, 100)
-	shared.StreamOracleResponse(res, tokenChan)
+	domain.StreamOracleResponse(res, tokenChan)
 
 	// Collect all chunks
 	var received strings.Builder
@@ -222,7 +222,7 @@ func TestStreamOracleResponse(t *testing.T) {
 func TestStreamOracleResponse_EmptyResponse(t *testing.T) {
 	res := &OracleResponse{}
 	tokenChan := make(chan string, 100)
-	shared.StreamOracleResponse(res, tokenChan)
+	domain.StreamOracleResponse(res, tokenChan)
 
 	var received strings.Builder
 	for chunk := range tokenChan {

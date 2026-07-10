@@ -9,7 +9,6 @@ import (
 	"runtime"
 
 	"github.com/toanle/synthspec/domain"
-	"github.com/toanle/synthspec/gateway"
 )
 
 // GetEditorCommand prepares the temp file and returns the exec.Cmd to be run by Bubble Tea.
@@ -31,17 +30,17 @@ func GetEditorCommand(projectName string, facts domain.Facts) (*exec.Cmd, string
 }
 
 // ReadBackEditedFacts parses the edited file back and removes it.
-func ReadBackEditedFacts(filePath string) (gateway.Facts, error) {
+func ReadBackEditedFacts(filePath string) (domain.Facts, error) {
 	defer os.Remove(filePath)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return gateway.Facts{}, fmt.Errorf("failed to read back facts: %w", err)
+		return domain.Facts{}, fmt.Errorf("failed to read back facts: %w", err)
 	}
 
-	var facts gateway.Facts
+	var facts domain.Facts
 	if err := json.Unmarshal(data, &facts); err != nil {
-		return gateway.Facts{}, fmt.Errorf("invalid facts JSON: %w", err)
+		return domain.Facts{}, fmt.Errorf("invalid facts JSON: %w", err)
 	}
 
 	return facts, nil

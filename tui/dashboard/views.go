@@ -40,6 +40,12 @@ func (m DashboardModel) View() string {
 			Render(mainChat)
 		body = styledChat
 	} else {
+		// Truncate sidebar lines to bodyHeight to prevent vertical overflow pushing the footer offscreen
+		sidebarLines := strings.Split(sidebar, "\n")
+		if len(sidebarLines) > bodyHeight {
+			sidebar = strings.Join(sidebarLines[:bodyHeight], "\n")
+		}
+
 		// Apply styles and dimensions
 		styledSidebar := shared.SidebarStyle.
 			Width(sidebarWidth).
@@ -61,19 +67,22 @@ func (m DashboardModel) View() string {
 	return shared.DocStyle.Render(fullView)
 }
 
+
 func (m DashboardModel) renderHeader() string {
 	title := " 🛠️  SynthSpec Solution Architect Dashboard "
 
 	// Average Score Calculation
-	avgScore := (m.Session.Scores.Functional +
-		m.Session.Scores.Structural +
-		m.Session.Scores.Security +
-		m.Session.Scores.Compliance) / 4
+	avgScore := (m.Session.GetScores().Functional +
+		m.Session.GetScores().Structural +
+		m.Session.GetScores().Security +
+		m.Session.GetScores().Compliance) / 4
 
-	meta := fmt.Sprintf("Project: %s | Provider: %s | Model: %s",
-		lipgloss.NewStyle().Foreground(shared.ColorInfo).Bold(true).Render(m.Session.ProjectName),
-		strings.ToUpper(m.Session.Provider),
-		m.Session.Model,
+	meta := fmt.Sprintf("Project: %s | Provider: %s | Model: %s | Tokens: %d | Cost: $%.4f",
+		lipgloss.NewStyle().Foreground(shared.ColorInfo).Bold(true).Render(m.Session.GetProjectName()),
+		strings.ToUpper(m.Session.GetProvider()),
+		m.Session.GetModel(),
+		m.Session.GetTotalTokens(),
+		m.Session.GetEstimatedCost(),
 	)
 
 	progBar := shared.RenderProgressBar(40, avgScore)
@@ -93,10 +102,10 @@ func (m DashboardModel) renderSidebar() string {
 		Score     int
 		Rationale string
 	}{
-		{"Functional", m.Session.Scores.Functional, m.Session.Rationales.Functional},
-		{"Structural", m.Session.Scores.Structural, m.Session.Rationales.Structural},
-		{"Security", m.Session.Scores.Security, m.Session.Rationales.Security},
-		{"Compliance", m.Session.Scores.Compliance, m.Session.Rationales.Compliance},
+		{"Functional", m.Session.GetScores().Functional, m.Session.GetRationales().Functional},
+		{"Structural", m.Session.GetScores().Structural, m.Session.GetRationales().Structural},
+		{"Security", m.Session.GetScores().Security, m.Session.GetRationales().Security},
+		{"Compliance", m.Session.GetScores().Compliance, m.Session.GetRationales().Compliance},
 	}
 
 	for _, d := range dimensions {
@@ -109,6 +118,10 @@ func (m DashboardModel) renderSidebar() string {
 			rationale = "No feedback generated yet."
 		}
 		wrappedRationale := shared.WrapText(rationale, 30)
+		rationaleLines := strings.Split(wrappedRationale, "\n")
+		if len(rationaleLines) > 2 {
+			wrappedRationale = strings.Join(rationaleLines[:2], "\n") + "..."
+		}
 		mutedRationale := lipgloss.NewStyle().Foreground(shared.ColorMuted).Render(wrappedRationale)
 
 		sections = append(sections, fmt.Sprintf("%s\n%s\n%s", label, prog, mutedRationale))
@@ -142,6 +155,9 @@ func (m DashboardModel) renderThoughtBox() string {
 }
 
 func (m DashboardModel) renderMainChat() string {
+	if m.showDiffViewer {
+		return m.viewport.View()
+	}
 	if m.showViewer {
 		return m.renderViewer()
 	}

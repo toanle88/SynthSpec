@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/gateway"
 )
 
@@ -22,7 +23,7 @@ func findSourceTemplate(templates []config.Template) (int, error) {
 	return -1, fmt.Errorf("no source template found (no template with is_source: true)")
 }
 
-func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, standards []config.Standard) (FileCompliance, string, error) {
+func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, standards []config.Standard) (FileCompliance, string, string, error) {
 	sendProgress(fg.progress, ProgressEvent{
 		Status:  "synthesizing",
 		Phase:   "source",
@@ -31,18 +32,18 @@ func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, 
 	})
 	sourceCompliance, err := fg.processFile(sourceTemplate.FileName, sourceTemplate.Prompt, standards, "")
 	if err != nil {
-		return FileCompliance{}, "", err
+		return FileCompliance{}, "", "", err
 	}
 
 	sourceDocPath := filepath.Join(fg.outputDir, sourceTemplate.FileName)
 	sourceDocBytes, err := os.ReadFile(sourceDocPath)
 	if err != nil {
-		return FileCompliance{}, "", fmt.Errorf("failed to read source model document %s: %w", sourceTemplate.FileName, err)
+		return FileCompliance{}, "", "", fmt.Errorf("failed to read source model document %s: %w", sourceTemplate.FileName, err)
 	}
 
 	sourceDoc := strings.TrimSpace(string(sourceDocBytes))
 	if sourceDoc == "" {
-		return FileCompliance{}, "", fmt.Errorf("source model document %s is empty", sourceTemplate.FileName)
+		return FileCompliance{}, "", "", fmt.Errorf("source model document %s is empty", sourceTemplate.FileName)
 	}
 
 	if fg.approvalChan != nil {
@@ -57,7 +58,7 @@ func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, 
 			// Re-read file to capture any manual edits made by the user during the pause
 			sourceDocBytes, err = os.ReadFile(sourceDocPath)
 			if err != nil {
-				return FileCompliance{}, "", fmt.Errorf("failed to re-read source model document %s: %w", sourceTemplate.FileName, err)
+				return FileCompliance{}, "", "", fmt.Errorf("failed to re-read source model document %s: %w", sourceTemplate.FileName, err)
 			}
 			sourceDoc = strings.TrimSpace(string(sourceDocBytes))
 			sendProgress(fg.progress, ProgressEvent{
@@ -67,12 +68,33 @@ func (fg *fileGenerator) generateSourceDocument(sourceTemplate config.Template, 
 				Message: fmt.Sprintf("Source document %s approved and locked", sourceTemplate.FileName),
 			})
 		case <-fg.ctx.Done():
-			return FileCompliance{}, "", fg.ctx.Err()
+			return FileCompliance{}, "", "", fg.ctx.Err()
 		}
 	}
 
-	return sourceCompliance, sourceDoc, nil
+	sendProgress(fg.progress, ProgressEvent{
+		Status:  "extracting",
+		Phase:   "source",
+		File:    sourceTemplate.FileName,
+		Message: "Extracting dense structural entities for token optimization...",
+	})
+	denseEntities, err := fg.gw.ExtractStructuralEntities(fg.ctx, sourceDoc)
+	if err != nil {
+		return FileCompliance{}, "", "", fmt.Errorf("failed to extract structural entities: %w", err)
+	}
+
+	// Persist extracted entities to disk for auditing and verification
+	entitiesPath := filepath.Join(fg.outputDir, ".synthspec-entities.json")
+	if writeErr := os.WriteFile(entitiesPath, []byte(denseEntities), 0644); writeErr != nil {
+		sendProgress(fg.progress, ProgressEvent{
+			Status:  "warning",
+			Message: fmt.Sprintf("Warning: failed to save extracted entities file: %v", writeErr),
+		})
+	}
+
+	return sourceCompliance, sourceDoc, denseEntities, nil
 }
+
 
 type generationResult struct {
 	index      int
@@ -116,6 +138,37 @@ func (fg *fileGenerator) runConsistencyVerification(templates []config.Template,
 
 	filesContent := fg.readFilesContent(templates)
 
+	// Run local ConsistencyAuditor (Docs vs Docs)
+	localAuditor := NewConsistencyAuditor()
+	localReport, err := localAuditor.Audit(filesContent)
+	if err == nil && !localReport.Consistent {
+		var missing []string
+		for _, feedback := range localReport.Feedback {
+			if strings.Contains(feedback, "missing from 01_domain_model_use_cases.md: ") {
+				parts := strings.Split(feedback, "missing from 01_domain_model_use_cases.md: ")
+				if len(parts) > 1 {
+					ents := strings.Split(parts[1], ", ")
+					missing = append(missing, ents...)
+				}
+			}
+		}
+
+		if len(missing) > 0 {
+			sendProgress(fg.progress, ProgressEvent{
+				Status:  "correcting",
+				Message: fmt.Sprintf("Retroactively updating Domain Model with missing entities: %s", strings.Join(missing, ", ")),
+			})
+			oldDomainModel := filesContent[fg.sourceFileName]
+			updatedDomain, updateErr := ProposeUpstreamUpdate(fg.ctx, fg.gw, oldDomainModel, missing)
+			if updateErr == nil {
+				fg.proposedMu.Lock()
+				fg.proposedContents[fg.sourceFileName] = updatedDomain
+				fg.proposedMu.Unlock()
+				filesContent[fg.sourceFileName] = updatedDomain
+			}
+		}
+	}
+
 	report, err := fg.runConsistencyRefinementLoop(filesContent, fileCompliances, standards)
 	if err != nil {
 		return err
@@ -124,10 +177,16 @@ func (fg *fileGenerator) runConsistencyVerification(templates []config.Template,
 	return fg.finishGeneration(fileCompliances, standards, report)
 }
 
-// readFilesContent reads all currently generated template files from disk and returns their text contents.
+// readFilesContent reads all currently generated template files from proposedContents or disk.
 func (fg *fileGenerator) readFilesContent(templates []config.Template) map[string]string {
 	filesContent := make(map[string]string)
+	fg.proposedMu.Lock()
+	defer fg.proposedMu.Unlock()
 	for _, template := range templates {
+		if content, ok := fg.proposedContents[template.FileName]; ok {
+			filesContent[template.FileName] = content
+			continue
+		}
 		filePath := filepath.Join(fg.outputDir, template.FileName)
 		contentBytes, readErr := os.ReadFile(filePath)
 		if readErr == nil {
@@ -182,9 +241,16 @@ func (fg *fileGenerator) refineSingleInconsistentFile(fileName string, feedback 
 
 	var referenceDoc string
 	if fileName != fg.sourceFileName {
-		sourcePath := filepath.Join(fg.outputDir, fg.sourceFileName)
-		if bytes, err := os.ReadFile(sourcePath); err == nil {
+		// Attempt to read the dense entities JSON first
+		entitiesPath := filepath.Join(fg.outputDir, ".synthspec-entities.json")
+		if bytes, err := os.ReadFile(entitiesPath); err == nil {
 			referenceDoc = string(bytes)
+		} else {
+			// Fallback to raw source document if dense entities file is not available
+			sourcePath := filepath.Join(fg.outputDir, fg.sourceFileName)
+			if bytes, err := os.ReadFile(sourcePath); err == nil {
+				referenceDoc = string(bytes)
+			}
 		}
 	}
 
@@ -193,10 +259,9 @@ func (fg *fileGenerator) refineSingleInconsistentFile(fileName string, feedback 
 		return fmt.Errorf("failed to refine inconsistent file %s: %w", fileName, err)
 	}
 
-	filePath := filepath.Join(fg.outputDir, fileName)
-	if err := os.WriteFile(filePath, []byte(refined), 0644); err != nil {
-		return fmt.Errorf("failed to save refined content for %s: %w", fileName, err)
-	}
+	fg.proposedMu.Lock()
+	fg.proposedContents[fileName] = refined
+	fg.proposedMu.Unlock()
 
 	filesContent[fileName] = refined
 
@@ -214,9 +279,15 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 		Message: "Compiling compliance report (00_compliance_report.md)...",
 	})
 	reportContent := GenerateComplianceReport(fg.persistence.GetProjectName(), fileCompliances, standards, consistencyReport)
-	reportPath := filepath.Join(fg.outputDir, "00_compliance_report.md")
-	if err := os.WriteFile(reportPath, []byte(reportContent), 0644); err != nil {
-		return fmt.Errorf("failed to write 00_compliance_report.md: %w", err)
+	fg.proposedMu.Lock()
+	fg.proposedContents["00_compliance_report.md"] = reportContent
+	fg.proposedMu.Unlock()
+
+	if err := fg.runPromptOptimization(fg.templates); err != nil {
+		sendProgress(fg.progress, ProgressEvent{
+			Status:  "warning",
+			Message: fmt.Sprintf("Warning: prompt optimization failed: %v", err),
+		})
 	}
 
 	complianceSummary := make(map[string]int)
@@ -231,7 +302,6 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 		Message: "Compiling solution metadata (.synthspec-meta.json)...",
 	})
 
-	// Get session info from persistence
 	projectName := fg.persistence.GetProjectName()
 	provider := fg.persistence.GetProvider()
 	history := fg.persistence.GetHistory()
@@ -254,15 +324,81 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 		return fmt.Errorf("failed to serialize telemetry metadata: %w", err)
 	}
 
-	metaPath := filepath.Join(fg.outputDir, ".synthspec-meta.json")
-	if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
-		return fmt.Errorf("failed to write .synthspec-meta.json: %w", err)
+	fg.proposedMu.Lock()
+	fg.proposedContents[".synthspec-meta.json"] = string(metaData)
+	fg.proposedMu.Unlock()
+
+	// Compute Diffs and wait for approval
+	var diffs []domain.FileDiff
+	fg.proposedMu.Lock()
+	for fname, newContent := range fg.proposedContents {
+		if fname == ".synthspec-meta.json" || fname == "99_optimized_prompt.md" || fname == "00_compliance_report.md" {
+			continue
+		}
+		oldContent := ""
+		filePath := filepath.Join(fg.outputDir, fname)
+		if bytes, err := os.ReadFile(filePath); err == nil {
+			oldContent = string(bytes)
+		}
+		if oldContent != newContent {
+			diffs = append(diffs, ComputeDiff(fname, oldContent, newContent))
+		}
 	}
+	fg.proposedMu.Unlock()
+
+	if len(diffs) > 0 && fg.diffApprovalChan != nil {
+		diffsJSON, _ := json.Marshal(diffs)
+		sendProgress(fg.progress, ProgressEvent{
+			Status:  "waiting_diff_approval",
+			Details: string(diffsJSON),
+			Message: "Awaiting approval for proposed file modifications...",
+		})
+		select {
+		case <-fg.diffApprovalChan:
+			// Approved, proceed
+		case <-fg.ctx.Done():
+			return fg.ctx.Err()
+		}
+	}
+
+	// Write proposed contents to disk
+	fg.proposedMu.Lock()
+	for fname, newContent := range fg.proposedContents {
+		filePath := filepath.Join(fg.outputDir, fname)
+		if err := os.WriteFile(filePath, []byte(newContent), 0644); err != nil {
+			fg.proposedMu.Unlock()
+			return fmt.Errorf("failed to write %s output file: %w", fname, err)
+		}
+	}
+	fg.proposedMu.Unlock()
 
 	sendProgress(fg.progress, ProgressEvent{
 		Status:  "completed",
 		Details: fg.outputDir,
 		Message: fmt.Sprintf("All files generated in: %s", fg.outputDir),
 	})
+	return nil
+}
+
+func (fg *fileGenerator) runPromptOptimization(templates []config.Template) error {
+	sendProgress(fg.progress, ProgressEvent{
+		Status:  "optimizing_prompt",
+		Message: "Condensing files into optimized prompt (99_optimized_prompt.md)...",
+	})
+
+	filesContent := fg.readFilesContent(templates)
+	if len(filesContent) == 0 {
+		return fmt.Errorf("no generated files found to optimize")
+	}
+
+	optimized, err := fg.gw.OptimizePrompt(fg.ctx, filesContent)
+	if err != nil {
+		return fmt.Errorf("failed to optimize prompt: %w", err)
+	}
+
+	fg.proposedMu.Lock()
+	fg.proposedContents["99_optimized_prompt.md"] = optimized
+	fg.proposedMu.Unlock()
+
 	return nil
 }

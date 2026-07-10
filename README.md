@@ -68,6 +68,28 @@ Once all vectors hit 100% confidence, the asset synthesis engine unlocks. It gen
 
 ---
 
+## Updates & Advanced Commands
+
+### 1. `synthspec update`
+Modify or add new requirements to an existing project specification by booting directly into the update panel:
+```bash
+synthspec update <project_name>
+```
+
+### 2. Session Diffs & Approval Gate
+Before modifying any physical markdown specification files on disk, SynthSpec calculates a line-by-line diff.
+- Displays a colorblind-safe Git-style diff viewer in the TUI using explicit `+` / `-` symbols.
+- Press `Tab` / `Shift+Tab` to navigate changes across multiple files.
+- Press `a` or `Enter` to approve and save changes to disk, or `Esc` / `q` to reject and cancel.
+
+### 3. TUI Command Escapes
+While in the interactive interrogation loop console, type the following commands into the text input box:
+- **`:undo`**: Reverts the last requirements submission and rolls back the session state using the internal session time-travel stack.
+- **`:override`** or **`:bypass`**: Forcibly overrides confidence meters to 100% and immediately compiles downstream specification assets (useful to bypass pedantic LLM sub-queries).
+- **`:edit`**: Suspends the TUI and opens the transient facts session context directly in your host system's `$EDITOR`.
+
+---
+
 ## Quick Start & Installation
 
 ### Build from Source

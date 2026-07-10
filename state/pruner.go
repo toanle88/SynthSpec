@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/domain"
 )
 
+// ContextSummarizer provides an interface to summarize conversation history.
+type ContextSummarizer interface {
+	Summarize(ctx context.Context, history []domain.Message) (string, error)
+}
+
 // CheckAndPruneContext evaluates total tokens and runs summarization if over 75% capacity
-func (s *Session) CheckAndPruneContext(ctx context.Context, gw gateway.Gateway) (bool, error) {
-	limit, exists := ModelLimits[s.Model]
+func (s *Session) CheckAndPruneContext(ctx context.Context, gw ContextSummarizer) (bool, error) {
+	limit, exists := GetModelLimit(s.Model)
 	if !exists {
 		// Default conservative limit
 		limit = 100000
@@ -31,7 +36,7 @@ func (s *Session) CheckAndPruneContext(ctx context.Context, gw gateway.Gateway) 
 		summaryText = "Summarized historical progress."
 	}
 
-	s.History = []gateway.Message{
+	s.History = []domain.Message{
 		{Role: "user", Content: "Let's summarize our progress so far."},
 		{Role: "assistant", Content: "Summary of earlier conversation:\n" + summaryText},
 	}

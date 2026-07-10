@@ -2,7 +2,11 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 )
+
+// ErrBudgetExceeded is returned when the hard budget cap is reached
+var ErrBudgetExceeded = errors.New("hard budget cap exceeded")
 
 // Message represents a single turn in the conversation history
 type Message struct {
@@ -88,4 +92,17 @@ type Standard struct {
 type ConsistencyReport struct {
 	Consistent bool              `json:"consistent"`
 	Feedback   map[string]string `json:"feedback"` // fileName -> correction instructions if inconsistent
+}
+
+// GeneratedFileState represents the status and compliance audit of a generated file.
+// It is moved here to avoid circular dependencies between generator and state.
+type GeneratedFileState struct {
+	FileName       string             `json:"file_name"`
+	Results        []ComplianceResult `json:"results"`
+	HasError       bool               `json:"has_error"`
+	ErrMsg         string             `json:"err_msg"`
+	InProgressText string             `json:"-"`
+	CurrentAttempt int                `json:"current_attempt"`
+	PromptHash     string             `json:"prompt_hash"`
+	FactsHash      string             `json:"facts_hash"`
 }

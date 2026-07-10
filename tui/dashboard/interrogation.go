@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/state"
 )
 
@@ -54,7 +55,7 @@ func (m DashboardModel) handleKeyEnterTextInput() (tea.Model, tea.Cmd) {
 	m.textInput.SetValue("")
 
 	if val == ":edit" {
-		editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
+		editorCmd, tempPath, err := state.GetEditorCommand(m.Session.GetProjectName(), m.Session.GetFacts())
 		if err != nil {
 			m.setError(err)
 			return m, nil
@@ -63,6 +64,36 @@ func (m DashboardModel) handleKeyEnterTextInput() (tea.Model, tea.Cmd) {
 		return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
 			return editorFinishedMsg{err: err}
 		})
+	}
+
+	if val == ":override" || val == ":bypass" {
+		scores := domain.ConfidenceScores{
+			Functional: 100,
+			Structural: 100,
+			Security:   100,
+			Compliance: 100,
+		}
+		rationales := domain.DimensionRationales{
+			Functional: "Bypassed by operator",
+			Structural: "Bypassed by operator",
+			Security:   "Bypassed by operator",
+			Compliance: "Bypassed by operator",
+		}
+		_ = m.Session.UpdateScores(scores, rationales)
+		m.isCompleted = true
+		return m.triggerRegeneration()
+	}
+
+	if val == ":undo" {
+		if err := m.Session.Undo(); err == nil {
+			m.isCompleted = checkCompletion(m.Session.GetScores())
+			m.showTextInput = len(m.Session.GetLastChoices()) == 0
+			m.err = nil
+			return m, func() tea.Msg { return initQueryMsg{} }
+		} else {
+			m.setError(err)
+			return m, nil
+		}
 	}
 
 	return m.startOracleQuery(val)
@@ -84,7 +115,7 @@ func (m DashboardModel) handleKeyEnterChoiceSelection() (tea.Model, tea.Cmd) {
 	if selected == "Let AI decide" {
 		val = "Let the AI decide based on current facts and context."
 	} else {
-		val = m.Session.LastChoices[m.selectedChoiceIdx]
+		val = m.Session.GetLastChoices()[m.selectedChoiceIdx]
 	}
 
 	return m.startOracleQuery(val)
@@ -162,7 +193,7 @@ func (m DashboardModel) handleKeyEsc() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.showTextInput && len(m.Session.LastChoices) > 0 {
+	if m.showTextInput && len(m.Session.GetLastChoices()) > 0 {
 		m.showTextInput = false
 		m.textInput.Blur()
 	}

@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -202,3 +203,43 @@ func TestGetGatewayForSession_ForceMock(t *testing.T) {
 		t.Fatal("expected non-nil gateway")
 	}
 }
+
+func TestIngestCmd(t *testing.T) {
+	cleanupProject("ingest-proj")
+	tempDir := t.TempDir()
+	origWd, _ := os.Getwd()
+	defer os.Chdir(origWd)
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Create a dummy session so LoadSession doesn't fail
+	mockFlag = true
+	rootCmd.SetArgs([]string{"init", "ingest-proj"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("failed to init project: %v", err)
+	}
+
+	// 2. Create a dummy directory to ingest
+	srcDir := filepath.Join(tempDir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "test.go"), []byte("package main\n\nfunc main() {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Execute ingest command
+	rootCmd.SetArgs([]string{"ingest", srcDir, "--project", "ingest-proj"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("failed to execute ingest command: %v", err)
+	}
+
+	// 4. Verify kb.json was created inside the project session directory
+	projDir := state.GetSessionDir("ingest-proj")
+	kbPath := filepath.Join(projDir, "kb.json")
+	if _, err := os.Stat(kbPath); os.IsNotExist(err) {
+		t.Fatalf("expected kb.json to exist at %s", kbPath)
+	}
+}
+

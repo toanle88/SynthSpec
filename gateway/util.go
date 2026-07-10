@@ -1,11 +1,7 @@
-package shared
+package gateway
 
 import (
-	"encoding/json"
 	"strings"
-	"time"
-
-	"github.com/toanle/synthspec/domain"
 )
 
 // SanitizeNextQuestion enforces the strict single question constraint on LLM output.
@@ -61,26 +57,4 @@ func SanitizeJSON(content string) string {
 		content = strings.TrimSpace(content)
 	}
 	return content
-}
-
-// StreamOracleResponse takes a response, marshals it, and streams it chunk-by-chunk to tokenChan.
-// It uses its own independent background context so it is never cancelled by the HTTP request's
-// context timeout (which fires via defer cancel() when queryOracleCmd returns).
-func StreamOracleResponse(res *domain.OracleResponse, tokenChan chan<- string) {
-	data, _ := json.MarshalIndent(res, "", "  ")
-	strData := string(data)
-
-	go func() {
-		defer close(tokenChan)
-		runes := []rune(strData)
-		chunkSize := 8
-		for i := 0; i < len(runes); i += chunkSize {
-			end := i + chunkSize
-			if end > len(runes) {
-				end = len(runes)
-			}
-			tokenChan <- string(runes[i:end])
-			time.Sleep(2 * time.Millisecond)
-		}
-	}()
 }

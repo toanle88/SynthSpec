@@ -2,24 +2,36 @@ package gateway
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/toanle/synthspec/config"
 )
 
 // NewGateway creates the appropriate Gateway implementation based on the provider name.
 func NewGateway(provider, apiKey, model string) (Gateway, error) {
+	var adapter ProviderAdapter
+	timeout := 5 * time.Minute
+	maxRetries := 3
+
+	if s, err := config.LoadSettings(); err == nil && s != nil {
+		timeout = time.Duration(s.TimeoutSeconds) * time.Second
+		maxRetries = s.MaxRetries
+	}
+
 	switch provider {
 	case config.ProviderMock:
-		return NewMockGateway(), nil
+		return NewMockGateway(), nil // Mock implements Gateway directly
 	case config.ProviderGemini:
-		return NewGeminiGateway(apiKey, model), nil
+		adapter = NewGeminiAdapter(apiKey, model)
 	case config.ProviderOpenAI:
-		return NewOpenAIGateway(apiKey, model), nil
+		adapter = NewOpenAIAdapter(apiKey, model)
 	case config.ProviderAnthropic:
-		return NewAnthropicGateway(apiKey, model), nil
+		adapter = NewAnthropicAdapter(apiKey, model)
 	case config.ProviderOpenRouter:
-		return NewOpenRouterGateway(apiKey, model), nil
+		adapter = NewOpenRouterAdapter(apiKey, model)
 	default:
 		return nil, fmt.Errorf("unrecognized provider: %s", provider)
 	}
+
+	return NewBaseGateway(adapter, timeout, maxRetries), nil
 }

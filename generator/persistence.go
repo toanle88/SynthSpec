@@ -8,10 +8,10 @@ import (
 // This interface allows the generator to be tested without a real filesystem.
 type SessionPersistence interface {
 	// SaveGeneratedFile persists a generated file's state
-	SaveGeneratedFile(state GeneratedFileState) error
+	SaveGeneratedFile(state domain.GeneratedFileState) error
 
 	// LoadGeneratedFile retrieves a generated file's state
-	LoadGeneratedFile(fileName string) (GeneratedFileState, bool)
+	LoadGeneratedFile(fileName string) (domain.GeneratedFileState, bool)
 
 	// UpdateFacts updates the compiled facts
 	UpdateFacts(facts domain.Facts) error
@@ -44,15 +44,3 @@ type SessionPersistence interface {
 	GetFacts() domain.Facts
 }
 
-// GeneratedFileState mirrors state.GeneratedFileState but lives in generator
-// to avoid generator → state dependency
-type GeneratedFileState struct {
-	FileName       string
-	Results        []domain.ComplianceResult
-	HasError       bool
-	ErrMsg         string
-	InProgressText string
-	CurrentAttempt int
-	PromptHash     string
-	FactsHash      string
-}

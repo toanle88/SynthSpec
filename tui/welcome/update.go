@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/toanle/synthspec/config"
-	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
 	"github.com/toanle/synthspec/tui/shared"
 )
@@ -31,7 +29,21 @@ func (m WelcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouseMsg(msg)
 	}
 
-	return m, nil
+	// Forward all other messages (e.g., BlinkMsg) to the active text inputs to keep their loops alive
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.filterInput, cmd = m.filterInput.Update(msg)
+	cmds = append(cmds, cmd)
+
+	for i := range m.settingInputs {
+		m.settingInputs[i], cmd = m.settingInputs[i].Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m WelcomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -103,7 +115,8 @@ func (m WelcomeModel) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", keyCtrlP, "k", "down", keyCtrlN, "j", "tab", keyShiftTab:
 		m.SelectedOption = navigateList(m.SelectedOption, len(m.Options), m.Settings.VimMode, msg)
 	case "enter":
-		m.handleMenuSelection()
+		cmd := m.handleMenuSelection()
+		return m, cmd
 	case "q", "esc":
 		m.Action = ActionExit
 		return m, tea.Quit
@@ -145,6 +158,7 @@ func (m WelcomeModel) updateBlueprintSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		m.Phase = PhaseProjectMenu
 		return m, nil
 	case "esc":
+		m.textInput.Focus()
 		m.Phase = PhaseCreateInput
 	}
 	return m, nil
@@ -288,74 +302,4 @@ func (m *WelcomeModel) runFuzzyFiltering() {
 	}
 }
 
-func (m *WelcomeModel) adjustSettingFocus(delta int) {
-	if m.SelectedSettingIdx < len(m.settingInputs) {
-		m.settingInputs[m.SelectedSettingIdx].Blur()
-	}
 
-	totalSettings := len(m.settingInputs) + 2
-	m.SelectedSettingIdx = (m.SelectedSettingIdx + delta + totalSettings) % totalSettings
-
-	if m.SelectedSettingIdx < len(m.settingInputs) {
-		m.settingInputs[m.SelectedSettingIdx].Focus()
-	}
-}
-
-func (m *WelcomeModel) saveSettingsFromInputs() {
-	var tSec, mRet int
-	_, _ = fmt.Sscanf(m.settingInputs[0].Value(), "%d", &tSec)
-	_, _ = fmt.Sscanf(m.settingInputs[1].Value(), "%d", &mRet)
-	outFolder := strings.TrimSpace(m.settingInputs[2].Value())
-
-	if tSec > 0 {
-		m.Settings.TimeoutSeconds = tSec
-	}
-	if mRet >= 0 {
-		m.Settings.MaxRetries = mRet
-	}
-	if outFolder != "" {
-		m.Settings.DefaultOutputFolder = outFolder
-	}
-
-	_ = config.SaveSettings(m.Settings, true)
-	_ = config.SaveSettings(m.Settings, false)
-
-	logger.LogEvent("TUI", fmt.Sprintf("Saved settings: timeout_seconds=%d max_retries=%d default_output_folder=%s debug=%t vim_mode=%t", m.Settings.TimeoutSeconds, m.Settings.MaxRetries, m.Settings.DefaultOutputFolder, m.Settings.Debug, m.Settings.VimMode))
-	_ = logger.Init(false, m.Settings.Debug)
-	m.Phase = PhaseMenu
-}
-
-func (m WelcomeModel) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	switch msg.String() {
-	case "up", keyShiftTab:
-		m.adjustSettingFocus(-1)
-	case "k":
-		if m.Settings.VimMode {
-			m.adjustSettingFocus(-1)
-		}
-	case "down", "tab":
-		m.adjustSettingFocus(1)
-	case "j":
-		if m.Settings.VimMode {
-			m.adjustSettingFocus(1)
-		}
-	case " ", "space":
-		if m.SelectedSettingIdx == len(m.settingInputs) {
-			m.Settings.Debug = !m.Settings.Debug
-			logger.LogEvent("TUI", fmt.Sprintf("Debug logging toggled: %t", m.Settings.Debug))
-		} else if m.SelectedSettingIdx == len(m.settingInputs)+1 {
-			m.Settings.VimMode = !m.Settings.VimMode
-			logger.LogEvent("TUI", fmt.Sprintf("Vim mode toggled: %t", m.Settings.VimMode))
-		}
-	case "enter":
-		m.saveSettingsFromInputs()
-	case "esc":
-		m.Phase = PhaseMenu
-	default:
-		if m.SelectedSettingIdx < len(m.settingInputs) {
-			m.settingInputs[m.SelectedSettingIdx], cmd = m.settingInputs[m.SelectedSettingIdx].Update(msg)
-		}
-	}
-	return m, cmd
-}

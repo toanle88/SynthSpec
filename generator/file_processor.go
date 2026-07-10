@@ -44,15 +44,9 @@ func (fg *fileGenerator) processFile(fileName string, promptTemplate string, sta
 		return FileCompliance{}, err
 	}
 
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		sendProgress(fg.progress, ProgressEvent{
-			File:    fileName,
-			Status:  "failed",
-			Details: fmt.Sprintf("write failed: %v", err),
-			Message: fmt.Sprintf("Failed to write %s: %v", fileName, err),
-		})
-		return FileCompliance{}, fmt.Errorf("failed to write %s output file: %w", fileName, err)
-	}
+	fg.proposedMu.Lock()
+	fg.proposedContents[fileName] = content
+	fg.proposedMu.Unlock()
 
 	if err := fg.updateSessionProgress(fileName, promptTemplate, complianceResults, checkErr); err != nil {
 		return FileCompliance{}, err

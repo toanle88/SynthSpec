@@ -21,9 +21,23 @@ type TemplatesConfig struct {
 
 // LoadTemplates loads the templates from a local override file or falls back to the embedded defaults.
 func LoadTemplates() ([]Template, error) {
-	cfg, err := loadYAML[TemplatesConfig](defaultTemplatesYAML, []string{
+	cfg, err := loadAndMergeYAML[TemplatesConfig](defaultTemplatesYAML, []string{
 		"templates.yaml",
 		".synthspec/templates.yaml",
+	}, func(base, override TemplatesConfig) TemplatesConfig {
+		m := make(map[string]int)
+		for i, tmpl := range base.Templates {
+			m[tmpl.FileName] = i
+		}
+
+		for _, tmpl := range override.Templates {
+			if idx, exists := m[tmpl.FileName]; exists {
+				base.Templates[idx] = tmpl
+			} else {
+				base.Templates = append(base.Templates, tmpl)
+			}
+		}
+		return base
 	})
 	if err != nil {
 		return nil, err

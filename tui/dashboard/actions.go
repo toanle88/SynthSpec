@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/security"
 	"github.com/toanle/synthspec/state"
 )
 
@@ -22,7 +23,9 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 		m.genFileStatuses[f] = "pending"
 	}
 	m.approvalChan = make(chan struct{})
+	m.diffApprovalChan = make(chan struct{})
 	m.isWaitingApproval = false
+	m.isWaitingDiffApproval = false
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelGen = cancel
@@ -35,7 +38,7 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 
 // launchExternalEditor suspends Bubble Tea UI and runs the external system editor.
 func (m DashboardModel) launchExternalEditor() (tea.Model, tea.Cmd) {
-	editorCmd, tempPath, err := state.GetEditorCommand(m.Session.ProjectName, m.Session.Facts)
+	editorCmd, tempPath, err := state.GetEditorCommand(m.Session.GetProjectName(), m.Session.GetFacts())
 	if err != nil {
 		m.setError(err)
 		return m, nil
@@ -50,7 +53,7 @@ func (m DashboardModel) launchExternalEditor() (tea.Model, tea.Cmd) {
 func (m DashboardModel) launchFileEditor(fileName string) (tea.Model, tea.Cmd) {
 	dir := m.OutputDir
 	if dir == "" {
-		dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
+		dir = filepath.Join(state.GetSessionDir(m.Session.GetProjectName()), "output")
 	}
 	filePath := filepath.Join(dir, fileName)
 	editorCmd, err := state.GetFileEditorCommand(filePath)
@@ -73,6 +76,11 @@ func (m DashboardModel) activateUpdatePrompt() (tea.Model, tea.Cmd) {
 }
 
 func (m DashboardModel) startOracleQuery(val string) (tea.Model, tea.Cmd) {
+	if err := security.ScanForSecrets(val); err != nil {
+		m.setError(err)
+		return m, nil
+	}
+	_ = m.Session.SaveHistoryState()
 	m.loading = true
 	m.err = nil
 	m.streamingTokens = ""
@@ -92,7 +100,7 @@ func (m DashboardModel) startOracleQuery(val string) (tea.Model, tea.Cmd) {
 // getChoicesList formats standard and custom options to display on the interactive console list.
 func (m DashboardModel) getChoicesList() []string {
 	var list []string
-	for i, c := range m.Session.LastChoices {
+	for i, c := range m.Session.GetLastChoices() {
 		if i == 0 {
 			list = append(list, "(Recommended) "+c)
 		} else {
@@ -106,14 +114,14 @@ func (m DashboardModel) getChoicesList() []string {
 
 // updateSessionState updates the session structure fields with response metadata.
 func (m *DashboardModel) updateSessionState(resp *gateway.OracleResponse) {
-	m.Session.Facts = resp.Facts
-	m.Session.Scores = resp.ConfidenceScores
-	m.Session.Rationales = resp.DimensionRationales
-	m.Session.LastQuestion = resp.NextQuestion
-	m.Session.LastChoices = resp.NextChoices
-	m.Session.GeneratedFiles = nil
+	m.Session.UpdateFacts(resp.Facts)
+	m.Session.UpdateScores(resp.ConfidenceScores, m.Session.GetRationales())
+	m.Session.UpdateScores(m.Session.GetScores(), resp.DimensionRationales)
+	m.Session.SetInterrogationState(resp.NextQuestion, m.Session.GetLastChoices())
+	m.Session.SetInterrogationState(m.Session.GetLastQuestion(), resp.NextChoices)
+	m.Session.ClearGeneratedFiles()
 	m.selectedChoiceIdx = 0
-	m.showTextInput = len(m.Session.LastChoices) == 0
+	m.showTextInput = len(m.Session.GetLastChoices()) == 0
 }
 
 // checkAndTriggerPostOracle performs checks to either initiate background document generation or queue context history compaction.
@@ -131,7 +139,9 @@ func (m DashboardModel) checkAndTriggerPostOracle(wasCompleted bool) (tea.Model,
 			m.genFileStatuses[f] = "pending"
 		}
 		m.approvalChan = make(chan struct{})
+		m.diffApprovalChan = make(chan struct{})
 		m.isWaitingApproval = false
+		m.isWaitingDiffApproval = false
 
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelGen = cancel

@@ -20,6 +20,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.showDiffViewer {
+		return m.handleDiffViewerUpdate(msg)
+	}
+
 	if m.showViewer {
 		return m.handleViewerUpdate(msg)
 	}

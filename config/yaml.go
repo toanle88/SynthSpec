@@ -30,3 +30,29 @@ func loadYAML[T any](embedded []byte, localPaths []string) (T, error) {
 
 	return cfg, nil
 }
+
+// loadAndMergeYAML parses the embedded YAML config first, then deep-merges local overrides
+// sequentially using a user-supplied merge function.
+func loadAndMergeYAML[T any](embedded []byte, localPaths []string, mergeFn func(base T, override T) T) (T, error) {
+	var zero T
+	var base T
+	if err := yaml.Unmarshal(embedded, &base); err != nil {
+		return zero, fmt.Errorf("failed to parse embedded YAML configuration: %w", err)
+	}
+
+	for _, p := range localPaths {
+		if _, err := os.Stat(p); err == nil {
+			if fileData, readErr := os.ReadFile(p); readErr == nil {
+				var override T
+				if err := yaml.Unmarshal(fileData, &override); err == nil {
+					base = mergeFn(base, override)
+				} else {
+					return zero, fmt.Errorf("failed to parse local override YAML (%s): %w", p, err)
+				}
+			}
+		}
+	}
+
+	return base, nil
+}
+

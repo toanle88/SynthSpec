@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/gateway"
 	"github.com/toanle/synthspec/logger"
 	"github.com/toanle/synthspec/state"
@@ -54,7 +55,7 @@ type typingTickMsg struct{}
 
 // DashboardModel represents the TUI state
 type DashboardModel struct {
-	Session   *state.Session
+	Session   state.SessionManager
 	Gateway   gateway.Gateway
 	OutputDir string
 	Settings  *config.Settings
@@ -123,12 +124,17 @@ type ViewerState struct {
 }
 
 type ApprovalGateState struct {
-	approvalChan      chan struct{}
-	isWaitingApproval bool
-	isEditingFile     bool
+	approvalChan          chan struct{}
+	diffApprovalChan      chan struct{}
+	isWaitingApproval     bool
+	isWaitingDiffApproval bool
+	isEditingFile         bool
+	proposedDiffs         []domain.FileDiff
+	selectedDiffIdx       int
+	showDiffViewer        bool
 }
 
-func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string) DashboardModel {
+func NewDashboardModel(sess state.SessionManager, gw gateway.Gateway, outputDir string) DashboardModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = shared.SpinnerStyle
@@ -142,39 +148,20 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 	ti.Width = 60
 
 	// Check if already 100% completed
-	completed := checkCompletion(sess.Scores)
+	completed := checkCompletion(sess.GetScores())
 
 	standards, err := config.LoadStandards()
 	if err != nil {
 		logger.Log("WARN: failed to load standards: %v", err)
 	}
 
-	// If already completed and output meta exists, try to load scores
-	complianceScores := make(map[string]int)
-	showScorecard := false
-	if completed {
-		dir := outputDir
-		if dir == "" {
-			dir = filepath.Join(state.GetSessionDir(sess.ProjectName), "output")
-		}
-		metaPath := filepath.Join(dir, ".synthspec-meta.json")
-		if metaBytes, readErr := os.ReadFile(metaPath); readErr == nil {
-			var meta struct {
-				ComplianceSummary map[string]int `json:"compliance_summary"`
-			}
-			if jsonErr := json.Unmarshal(metaBytes, &meta); jsonErr == nil && len(meta.ComplianceSummary) > 0 {
-				complianceScores = meta.ComplianceSummary
-				showScorecard = true
-			}
-		}
-	}
-
-	showTextInput := len(sess.LastChoices) == 0
-
 	resolvedOutputDir := outputDir
 	if resolvedOutputDir == "" {
-		resolvedOutputDir = filepath.Join(state.GetSessionDir(sess.ProjectName), "output")
+		resolvedOutputDir = filepath.Join(state.GetSessionDir(sess.GetProjectName()), "output")
 	}
+
+	complianceScores, showScorecard := initializeComplianceScores(sess, completed, resolvedOutputDir)
+	showTextInput := len(sess.GetLastChoices()) == 0
 
 	templates, err := config.LoadTemplates()
 	if err != nil {
@@ -184,16 +171,8 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 	for _, t := range templates {
 		genFiles = append(genFiles, t.FileName)
 	}
-	genFileStatuses := make(map[string]string)
+	genFileStatuses := initializeFileStatuses(genFiles, resolvedOutputDir)
 	genFileDetails := make(map[string]string)
-	for _, f := range genFiles {
-		filePath := filepath.Join(resolvedOutputDir, f)
-		if _, err := os.Stat(filePath); err == nil {
-			genFileStatuses[f] = "done"
-		} else {
-			genFileStatuses[f] = "pending"
-		}
-	}
 
 	ui := textinput.New()
 	ui.Placeholder = "Type new requirements or modifications here..."
@@ -202,19 +181,7 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 	ui.CharLimit = 2000
 	ui.Width = 60
 
-	settings, err := config.LoadSettings()
-	if err != nil {
-		logger.Log("WARN: failed to load settings: %v", err)
-	}
-	if settings == nil {
-		settings = &config.Settings{
-			TimeoutSeconds:      config.DefaultTimeoutSeconds,
-			MaxRetries:          config.DefaultMaxRetries,
-			DefaultOutputFolder: config.DefaultOutputFolderValue,
-			Debug:               false,
-			VimMode:             false,
-		}
-	}
+	settings := initializeSettings()
 
 	return DashboardModel{
 		Session:     sess,
@@ -249,19 +216,22 @@ func NewDashboardModel(sess *state.Session, gw gateway.Gateway, outputDir string
 			isFullScreenViewer: false,
 		},
 		ApprovalGateState: ApprovalGateState{
-			approvalChan:      nil,
-			isWaitingApproval: false,
-			isEditingFile:     false,
+			approvalChan:          nil,
+			diffApprovalChan:      nil,
+			isWaitingApproval:     false,
+			isWaitingDiffApproval: false,
+			isEditingFile:         false,
+			showDiffViewer:        false,
 		},
 		selectedChoiceIdx: 0,
 		showTextInput:     showTextInput,
-		loading:           !completed && len(sess.History) == 0 && sess.LastQuestion == "",
+		loading:           !completed && len(sess.GetHistory()) == 0 && sess.GetLastQuestion() == "",
 		chatViewport:      viewport.New(0, 0),
 	}
 }
 
 func (m DashboardModel) Init() tea.Cmd {
-	logger.LogEvent("TUI", fmt.Sprintf("Dashboard initialized for project: %s", m.Session.ProjectName))
+	logger.LogEvent("TUI", fmt.Sprintf("Dashboard initialized for project: %s", m.Session.GetProjectName()))
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.spinner.Tick)
 
@@ -269,7 +239,7 @@ func (m DashboardModel) Init() tea.Cmd {
 	// which correctly sets isStreaming and thoughtChan on the REAL Bubble Tea model.
 	// We cannot mutate those fields here because Init() has a value receiver —
 	// any changes made to m inside Init() are discarded by the runtime.
-	if len(m.Session.History) == 0 && m.Session.LastQuestion == "" {
+	if len(m.Session.GetHistory()) == 0 && m.Session.GetLastQuestion() == "" {
 		cmds = append(cmds, func() tea.Msg { return initQueryMsg{} })
 	}
 
@@ -289,7 +259,7 @@ func (m *DashboardModel) setError(err error) {
 	if err != nil {
 		var projectName string
 		if m.Session != nil {
-			projectName = m.Session.ProjectName
+			projectName = m.Session.GetProjectName()
 		}
 		logger.LogError(projectName, "tui", "setError", err)
 	}
@@ -300,3 +270,56 @@ func (m *DashboardModel) StartWithUpdatePrompt() {
 	m.isCLIUpdateMode = true
 	m.updateInput.Focus()
 }
+
+func initializeComplianceScores(sess state.SessionManager, completed bool, resolvedOutputDir string) (map[string]int, bool) {
+	complianceScores := make(map[string]int)
+	showScorecard := false
+	if completed {
+		metaPath := filepath.Join(resolvedOutputDir, ".synthspec-meta.json")
+		if metaBytes, readErr := os.ReadFile(metaPath); readErr == nil {
+			var meta struct {
+				ComplianceSummary map[string]int `json:"compliance_summary"`
+			}
+			if jsonErr := json.Unmarshal(metaBytes, &meta); jsonErr == nil && len(meta.ComplianceSummary) > 0 {
+				complianceScores = meta.ComplianceSummary
+				showScorecard = true
+			}
+		}
+	}
+	return complianceScores, showScorecard
+}
+
+func initializeFileStatuses(genFiles []string, resolvedOutputDir string) map[string]string {
+	genFileStatuses := make(map[string]string)
+	for _, f := range genFiles {
+		filePath := filepath.Join(resolvedOutputDir, f)
+		if _, err := os.Stat(filePath); err == nil {
+			genFileStatuses[f] = "done"
+		} else {
+			genFileStatuses[f] = "pending"
+		}
+	}
+	return genFileStatuses
+}
+
+func initializeSettings() *config.Settings {
+	settings, err := config.LoadSettings()
+	if err != nil {
+		logger.Log("WARN: failed to load settings: %v", err)
+	}
+	if settings == nil {
+		settings = &config.Settings{
+			TimeoutSeconds:      config.DefaultTimeoutSeconds,
+			MaxRetries:          config.DefaultMaxRetries,
+			DefaultOutputFolder: config.DefaultOutputFolderValue,
+			Debug:               false,
+			VimMode:             false,
+		}
+	}
+	return settings
+}
+
+
+
+
+

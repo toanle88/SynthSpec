@@ -11,8 +11,9 @@ type Settings struct {
 	TimeoutSeconds      int    `json:"timeout_seconds"`
 	MaxRetries          int    `json:"max_retries"`
 	DefaultOutputFolder string `json:"default_output_folder"`
-	Debug               bool   `json:"debug"`
-	VimMode             bool   `json:"vim_mode"`
+	Debug               bool    `json:"debug"`
+	VimMode             bool    `json:"vim_mode"`
+	HardBudgetCap       float64 `json:"hard_budget_cap"`
 }
 
 const (
@@ -44,6 +45,7 @@ func LoadSettings() (*Settings, error) {
 		DefaultOutputFolder: DefaultOutputFolderValue,
 		Debug:               false,
 		VimMode:             false,
+		HardBudgetCap:       0.0,
 	}
 
 	// 1. Try to load from global settings
@@ -76,6 +78,9 @@ func mergeSettingsFromFile(s *Settings, path string) {
 	}
 	if loaded.DefaultOutputFolder != "" {
 		s.DefaultOutputFolder = loaded.DefaultOutputFolder
+	}
+	if loaded.HardBudgetCap > 0 {
+		s.HardBudgetCap = loaded.HardBudgetCap
 	}
 
 	// Only override debug/vim_mode if they are explicitly present in JSON

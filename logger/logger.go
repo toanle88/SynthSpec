@@ -6,24 +6,20 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/toanle/synthspec/config"
 )
 
-const timeFormat = "2006-01-02 15:04:05.000"
+const (
+	timeFormat       = "2006-01-02 15:04:05.000"
+	errorLogFileName = "errors.log"
+)
 
 var (
 	enabled bool
 	mu      sync.Mutex
 	logFile *os.File
 )
-
-// getSynthspecRoot returns the base directory for SynthSpec data.
-// It prefers the user's config directory with a fallback to the current working directory.
-func getSynthspecRoot() string {
-	if configDir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(configDir, "synthspec")
-	}
-	return "synthspec"
-}
 
 // Init initializes the logging system. It enables logging if either the cli flag is true or settings show debug is true.
 func Init(cliDebug, settingsDebug bool) error {
@@ -41,7 +37,7 @@ func Init(cliDebug, settingsDebug bool) error {
 		return nil
 	}
 
-	dir := filepath.Join(getSynthspecRoot(), ".synthspec")
+	dir := filepath.Join(config.GetSynthspecRoot(), ".synthspec")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
@@ -121,18 +117,18 @@ func LogError(projectName, component, operation string, err error) {
 	// If logging is not enabled, we still want to log errors to a file
 	// Create a separate error log file
 	var logPath string
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	if projectName != "" {
 		dir := filepath.Join(root, projectName)
 		if errMk := os.MkdirAll(dir, 0755); errMk == nil {
-			logPath = filepath.Join(dir, "errors.log")
+			logPath = filepath.Join(dir, errorLogFileName)
 		} else {
-			logPath = filepath.Join(root, "errors.log")
+			logPath = filepath.Join(root, errorLogFileName)
 		}
 	} else {
 		dir := root
 		if errMk := os.MkdirAll(dir, 0755); errMk == nil {
-			logPath = filepath.Join(dir, "errors.log")
+			logPath = filepath.Join(dir, errorLogFileName)
 		} else {
 			return
 		}

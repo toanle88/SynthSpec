@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/domain"
 )
 
 func TestResolveEditor_EDITOREnv(t *testing.T) {
@@ -67,7 +67,7 @@ func TestGetEditorCommand(t *testing.T) {
 	}
 	defer os.RemoveAll(filepath.Join("synthspec", projectName))
 
-	facts := gateway.Facts{
+	facts := domain.Facts{
 		Functional: "test functional",
 		Structural: "test structural",
 		Security:   "test security",
@@ -85,7 +85,7 @@ func TestGetEditorCommand(t *testing.T) {
 		t.Fatalf("failed to read editor file: %v", err)
 	}
 
-	var readFacts gateway.Facts
+	var readFacts domain.Facts
 	if err := json.Unmarshal(data, &readFacts); err != nil {
 		t.Fatalf("editor file should contain valid JSON: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestReadBackEditedFacts(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "facts_edit.json")
 
-	originalFacts := gateway.Facts{
+	originalFacts := domain.Facts{
 		Functional: "edited functional",
 		Structural: "edited structural",
 	}
@@ -172,7 +172,7 @@ func TestGetEditorCommand_CreatesDir(t *testing.T) {
 	}
 	defer os.RemoveAll(filepath.Join("synthspec", projectName))
 
-	facts := gateway.Facts{Functional: "test"}
+	facts := domain.Facts{Functional: "test"}
 	cmd, filePath, err := GetEditorCommand(projectName, facts)
 	if err != nil {
 		t.Fatalf("GetEditorCommand failed: %v", err)

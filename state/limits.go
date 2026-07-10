@@ -1,7 +1,7 @@
 package state
 
-// ModelLimits registers the context window sizes (in tokens) for supported models
-var ModelLimits = map[string]int{
+// modelLimits registers the context window sizes (in tokens) for supported models
+var modelLimits = map[string]int{
 	"gemini-2.5-pro":    2000000,
 	"gemini-1.5-pro":    2000000,
 	"gemini-1.5-flash":  1000000,
@@ -9,4 +9,10 @@ var ModelLimits = map[string]int{
 	"o3-mini":           200000,
 	"claude-3-5-sonnet": 200000,
 	"mock-model":        10000,
+}
+
+// GetModelLimit returns the context window size (in tokens) for a supported model
+func GetModelLimit(model string) (int, bool) {
+	limit, ok := modelLimits[model]
+	return limit, ok
 }

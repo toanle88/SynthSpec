@@ -50,28 +50,27 @@ This document tracks current priorities, upcoming milestones, and development st
 - [x] Enable full mouse interaction in the TUI (clicking panels, scrolling lists) using the underlying terminal framework.
 
 ### Milestone 7: The Agentic Guardrail Compiler (v0.7.0) ── [ ] Planned
-- [ ] **Context Injection Engine**: Synthesize lightweight pointer files (`.cursor/rules/*.mdc`, `CLAUDE.md`, or `AGENTS.md`) that explicitly link down to the generated markdown specifications.
-- [ ] **Structural Entity Extraction**: Build a background parser that converts the human-readable `01_domain_model_use_cases.md` into dense, optimized YAML/JSON data objects before feeding it into downstream parallel prompts to minimize token tax and prevent "lost in the middle" hallucination.
-- [ ] **Prompt Optimization**: Implement a backend routine to condense human-readable markdown files into absolute, imperative directives optimized for downstream coding LLMs.
-- [ ] **Live Token & Cost Estimation**: Track exact tokens consumed during the session and display a real-time estimated cost/burn-rate metric in the TUI header.
-- [ ] **Circuit Breakers & Hard Budgets**: Build a safety monitoring mechanism that allows users to configure a hard monetary cap (e.g., max $2.00 per execution) to automatically halt background API routines if a loop begins consuming excessive tokens.
-- [ ] **Pre-Flight Secret Scrubbing**: Integrate a local regex scanner (e.g., gitleaks logic) to intercept the prompt and block requests if a user accidentally pastes proprietary secrets (API keys, passwords) into the TUI.
+- [x] **Structural Entity Extraction**: Build a background parser that converts the human-readable `01_domain_model_use_cases.md` into dense, optimized YAML/JSON data objects before feeding it into downstream parallel prompts to minimize token tax and prevent "lost in the middle" hallucination.
+- [x] **Prompt Optimization**: Implement a backend routine to condense human-readable markdown files into absolute, imperative directives optimized for downstream coding LLMs.
+- [x] **Live Token & Cost Estimation**: Track exact tokens consumed during the session and display a real-time estimated cost/burn-rate metric in the TUI header.
+- [x] **Circuit Breakers & Hard Budgets**: Build a safety monitoring mechanism that allows users to configure a hard monetary cap (e.g., max $2.00 per execution) to automatically halt background API routines if a loop begins consuming excessive tokens.
+- [x] **Pre-Flight Secret Scrubbing**: Integrate a local regex scanner (e.g., gitleaks logic) to intercept the prompt and block requests if a user accidentally pastes proprietary secrets (API keys, passwords) into the TUI.
 
-### Milestone 8: Smart Diffing & Session State (v0.8.0) ── [ ] Planned
-- [ ] Implement `synthspec update` command (tied to the Boot Menu) to load existing `.synthspec-meta.json` and generated markdown files.
-- [ ] **Internal Consistency Auditor (Docs vs. Docs)**: Implement a verification sweep that cross-references generated JSON/YAML structural entities across all Markdown files to highlight manual editing discrepancies (e.g., flagging if an entity exists in the API spec but is missing from the Domain Model).
-- [ ] Build a structured diffing engine to calculate delta changes based on newly added requirements without overwriting manual developer edits.
-- [ ] **Colorblind-Safe Diffing**: Ensure the interactive Git-style diff viewer utilizes explicit ANSI symbols (+ / -) or high-contrast themes instead of relying solely on red/green color coding.
-- [ ] **Self-Healing Markdown Linting**: Add a post-generation validation step to parse and verify structural integrity (e.g., tables, code blocks). Automatically trigger a silent LLM repair loop for malformed syntax.
-- [ ] **Bi-Directional Architecture Updates**: Implement a retroactive feedback loop that detects when a downstream document (like API Architecture) identifies a required edge-case entity, and intelligently proposes an upstream update back to the root Domain Model without overwriting the entire file.
-- [ ] **Human-in-the-Loop (HITL) Confidence Override**: Introduce an escape hatch command (`:override` or `:bypass`) allowing engineers to manually fast-track lagging evaluation segments to 100% confidence, preventing deadlocks caused by pedantic LLM sub-queries.
-- [ ] Add an interactive Git-style diff viewer in the TUI for user approval before modifying physical files.
-- [ ] **Session "Time-Travel"**: Implement a state-history stack allowing the user to type `:undo` or press `Ctrl+Z` to step backward in the conversation.
+### Milestone 8: Smart Diffing & Session State (v0.8.0) ── [x] Completed
+- [x] Implement `synthspec update` command (tied to the Boot Menu) to load existing `.synthspec-meta.json` and generated markdown files.
+- [x] **Internal Consistency Auditor (Docs vs. Docs)**: Implement a verification sweep that cross-references generated JSON/YAML structural entities across all Markdown files to highlight manual editing discrepancies (e.g., flagging if an entity exists in the API spec but is missing from the Domain Model).
+- [x] Build a structured diffing engine to calculate delta changes based on newly added requirements without overwriting manual developer edits.
+- [x] **Colorblind-Safe Diffing**: Ensure the interactive Git-style diff viewer utilizes explicit ANSI symbols (+ / -) or high-contrast themes instead of relying solely on red/green color coding.
+- [x] **Self-Healing Markdown Linting**: Add a post-generation validation step to parse and verify structural integrity (e.g., tables, code blocks). Automatically trigger a silent LLM repair loop for malformed syntax.
+- [x] **Bi-Directional Architecture Updates**: Implement a retroactive feedback loop that detects when a downstream document (like API Architecture) identifies a required edge-case entity, and intelligently proposes an upstream update back to the root Domain Model without overwriting the entire file.
+- [x] **Human-in-the-Loop (HITL) Confidence Override**: Introduce an escape hatch command (`:override` or `:bypass`) allowing engineers to manually fast-track lagging evaluation segments to 100% confidence, preventing deadlocks caused by pedantic LLM sub-queries.
+- [x] Add an interactive Git-style diff viewer in the TUI for user approval before modifying physical files.
+- [x] **Session "Time-Travel"**: Implement a state-history stack allowing the user to type `:undo` or press `Ctrl+Z` to step backward in the conversation.
 
-### Milestone 9: Context Ingestion & Custom Standards Blueprint (v0.9.0) ── [ ] Planned
-- [ ] Add `synthspec ingest <path>` command to index existing codebases, database schemas, and legacy documentation via local embeddings (RAG).
-- [ ] **Standards & Prompt Overrides (BYOT)**: Allow execution customization by exposing standard definitions (`standards.yaml`) and template instructions (`templates.yaml`) to local project folder deep-merges, allowing teams to redefine engineering criteria.
-- [ ] **Rich Diagram Export**: Add a synthesis pipeline to output structural diagrams directly into `.excalidraw` JSON format and Structurizr `.dsl` (C4 Model) files for immediate visual editing.
+### Milestone 9: Context Ingestion & Custom Standards Blueprint (v0.9.0) ── [x] Completed
+- [x] Add `synthspec ingest <path>` command to index existing codebases, database schemas, and legacy documentation via local embeddings (RAG).
+- [x] **Standards & Prompt Overrides (BYOT)**: Allow execution customization by exposing standard definitions (`standards.yaml`) and template instructions (`templates.yaml`) to local project folder deep-merges, allowing teams to redefine engineering criteria.
+- [x] **Rich Diagram Export**: Add a synthesis pipeline to output structural diagrams directly into `.excalidraw` JSON format and Structurizr `.dsl` (C4 Model) files for immediate visual editing.
 
 ---
 

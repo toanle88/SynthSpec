@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/toanle/synthspec/gateway"
+	"github.com/toanle/synthspec/config"
+	"github.com/toanle/synthspec/domain"
 	"github.com/toanle/synthspec/logger"
 )
 
 func TestSessionSaveAndLoad(t *testing.T) {
 	projectName := "test-session-project"
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, projectName)) // Clean up
 
 	sess := Session{
@@ -24,11 +25,11 @@ func TestSessionSaveAndLoad(t *testing.T) {
 		Model:       "mock-model",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		Facts: gateway.Facts{
+		Facts: domain.Facts{
 			Functional: "functional requirements",
 			Structural: "structural requirements",
 		},
-		Scores: gateway.ConfidenceScores{
+		Scores: domain.ConfidenceScores{
 			Functional: 50,
 			Structural: 25,
 		},
@@ -61,7 +62,7 @@ func TestSessionSaveAndLoad(t *testing.T) {
 func TestListProjects(t *testing.T) {
 	project1 := "proj-1"
 	project2 := "proj-2"
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 
 	defer os.RemoveAll(filepath.Join(root, project1))
 	defer os.RemoveAll(filepath.Join(root, project2))
@@ -99,7 +100,7 @@ func TestListProjects(t *testing.T) {
 
 func TestLogError(t *testing.T) {
 	projectName := "test-error-log-project"
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, projectName))
 	defer os.Remove(filepath.Join(root, "errors.log"))
 
@@ -186,19 +187,14 @@ func TestAddTurn(t *testing.T) {
 	}
 }
 
-// mockGatewayCheckContext implements gateway.Gateway for CheckAndPruneContext tests
+// mockGatewayCheckContext implements state.ContextSummarizer for CheckAndPruneContext tests
 type mockGatewayCheckContext struct {
-	gateway.MockGateway
 	queryCalled bool
 }
 
-func (m *mockGatewayCheckContext) QueryOracle(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string) (*gateway.OracleResponse, error) {
+func (m *mockGatewayCheckContext) Summarize(ctx context.Context, history []domain.Message) (string, error) {
 	m.queryCalled = true
-	return &gateway.OracleResponse{
-		NextQuestion:     "Consolidated summary of progress",
-		TokensPrompt:     50,
-		TokensCompletion: 30,
-	}, nil
+	return "Consolidated summary of progress", nil
 }
 
 func TestCheckAndPruneContext_BelowThreshold(t *testing.T) {
@@ -207,7 +203,7 @@ func TestCheckAndPruneContext_BelowThreshold(t *testing.T) {
 		Model:           "mock-model",
 		TotalTokensUsed: 100, // far below 75% of 10000
 	}
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	pruned, err := sess.CheckAndPruneContext(context.Background(), &mockGatewayCheckContext{})
@@ -224,17 +220,17 @@ func TestCheckAndPruneContext_AboveThreshold(t *testing.T) {
 		ProjectName:     "test-prune-above",
 		Model:           "mock-model",
 		TotalTokensUsed: 9000, // above 75% of 10000
-		History: []gateway.Message{
+		History: []domain.Message{
 			{Role: "user", Content: "Q1"},
 			{Role: "assistant", Content: "A1"},
 			{Role: "user", Content: "Q2"},
 			{Role: "assistant", Content: "A2"},
 		},
-		Facts: gateway.Facts{
+		Facts: domain.Facts{
 			Functional: "test",
 		},
 	}
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	pruned, err := sess.CheckAndPruneContext(context.Background(), &mockGatewayCheckContext{})
@@ -256,7 +252,7 @@ func TestCheckAndPruneContext_UnknownModel(t *testing.T) {
 		Model:           "unknown-model",
 		TotalTokensUsed: 80000, // above 75% of default 100000
 	}
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	pruned, err := sess.CheckAndPruneContext(context.Background(), &mockGatewayCheckContext{})
@@ -274,7 +270,7 @@ func TestSave_ErrorMarshaling(t *testing.T) {
 	sess := &Session{
 		ProjectName: "test-marshal-error",
 	}
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))
 
 	// Save should succeed since Session marshals fine
@@ -322,7 +318,7 @@ func TestSave_WriteError(t *testing.T) {
 	sess := &Session{
 		ProjectName: "test-write-error",
 	}
-	root := getSynthspecRoot()
+	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, "test-write-error"))
 
 	err := sess.Save()
@@ -330,3 +326,66 @@ func TestSave_WriteError(t *testing.T) {
 		t.Fatalf("expected Save to succeed with valid setup: %v", err)
 	}
 }
+
+func TestCheckBudget(t *testing.T) {
+	sess := &Session{
+		ProjectName:           "test-budget",
+		Model:                 "mock-model",
+		TotalPromptTokens:     1000000,
+		TotalCompletionTokens: 1000000,
+	}
+
+	// mock-model is $0, let's change to a model that costs money
+	sess.Model = "gpt-4o"
+	// For gpt-4o: prompt = 2.50, comp = 10.00 => total = 12.50
+
+	if err := sess.CheckBudget(0.0); err != nil {
+		t.Errorf("CheckBudget(0) should not fail, got %v", err)
+	}
+
+	if err := sess.CheckBudget(20.0); err != nil {
+		t.Errorf("CheckBudget(20.0) should not fail, got %v", err)
+	}
+
+	if err := sess.CheckBudget(10.0); err != domain.ErrBudgetExceeded {
+		t.Errorf("CheckBudget(10.0) should fail with ErrBudgetExceeded, got %v", err)
+	}
+}
+
+func TestSessionUndo(t *testing.T) {
+	projectName := "test-session-undo"
+	root := config.GetSynthspecRoot()
+	defer os.RemoveAll(filepath.Join(root, projectName))
+
+	sess := &Session{
+		ProjectName: projectName,
+		Provider:    "mock",
+		Model:       "mock-model",
+	}
+
+	if err := sess.Save(); err != nil {
+		t.Fatalf("failed to save session: %v", err)
+	}
+
+	// Change state and save history
+	sess.Facts.Functional = "fact 1"
+	if err := sess.SaveHistoryState(); err != nil {
+		t.Fatalf("failed to save history: %v", err)
+	}
+
+	// Make another change
+	sess.Facts.Functional = "fact 2"
+	if err := sess.Save(); err != nil {
+		t.Fatalf("failed to save second state: %v", err)
+	}
+
+	// Undo
+	if err := sess.Undo(); err != nil {
+		t.Fatalf("undo failed: %v", err)
+	}
+
+	if sess.Facts.Functional != "fact 1" {
+		t.Errorf("expected Fact 1, got %q", sess.Facts.Functional)
+	}
+}
+

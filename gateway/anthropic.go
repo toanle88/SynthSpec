@@ -1,18 +1,13 @@
 package gateway
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/domain"
-	"github.com/toanle/synthspec/logger"
-	"github.com/toanle/synthspec/shared"
 )
 
 const (
@@ -24,31 +19,27 @@ const (
 	errEmptyContentAnthropic  = "empty content returned from Anthropic"
 )
 
-type AnthropicGateway struct {
-	apiKey     string
-	model      string
-	client     *http.Client
-	maxRetries int
+type AnthropicAdapter struct {
+	apiKey string
+	model  string
 }
 
-func NewAnthropicGateway(apiKey, model string) *AnthropicGateway {
+func NewAnthropicAdapter(apiKey, model string) *AnthropicAdapter {
 	if model == "" {
 		model = "claude-3-5-sonnet"
 	}
-	timeout := 5 * time.Minute
-	maxRetries := 3
-
-	if s, err := config.LoadSettings(); err == nil && s != nil {
-		timeout = time.Duration(s.TimeoutSeconds) * time.Second
-		maxRetries = s.MaxRetries
+	return &AnthropicAdapter{
+		apiKey: apiKey,
+		model:  model,
 	}
+}
 
-	return &AnthropicGateway{
-		apiKey:     apiKey,
-		model:      model,
-		client:     &http.Client{Timeout: timeout},
-		maxRetries: maxRetries,
-	}
+func (a *AnthropicAdapter) ProviderName() string {
+	return config.ProviderAnthropic
+}
+
+func (a *AnthropicAdapter) ModelName() string {
+	return a.model
 }
 
 // Anthropic API structures
@@ -79,12 +70,11 @@ type anthropicResponse struct {
 	} `json:"usage"`
 }
 
-func (a *AnthropicGateway) QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error) {
-	systemPrompt := OracleSystemPrompt
 
+
+func (a *AnthropicAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string) (*http.Request, error) {
 	messages := []anthropicMessage{}
 
-	// Add facts context to boot history (Claude does not allow system messages inside message array, they must go to root 'system' parameter)
 	factsJSON, _ := json.Marshal(facts)
 	messages = append(messages, anthropicMessage{
 		Role: "user",
@@ -99,7 +89,6 @@ func (a *AnthropicGateway) QueryOracle(ctx context.Context, facts Facts, history
 		},
 	})
 
-	// Add conversation history
 	for _, m := range history {
 		messages = append(messages, anthropicMessage{
 			Role: m.Role,
@@ -109,7 +98,6 @@ func (a *AnthropicGateway) QueryOracle(ctx context.Context, facts Facts, history
 		})
 	}
 
-	// Add latest user input
 	if latestInput != "" {
 		messages = append(messages, anthropicMessage{
 			Role: "user",
@@ -121,186 +109,112 @@ func (a *AnthropicGateway) QueryOracle(ctx context.Context, facts Facts, history
 
 	reqBody := anthropicRequest{
 		Model:     a.model,
-		System:    systemPrompt,
+		System:    OracleSystemPrompt,
 		Messages:  messages,
 		MaxTokens: 4000,
 	}
 
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
+}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set(contentTypeHeader, applicationJSON)
-	req.Header.Set(authApiKeyHeader, a.apiKey)
-	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
-
-	startTime := time.Now()
-	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
-	duration := time.Since(startTime)
-	if err != nil {
-		logger.LogAPI(config.ProviderAnthropic, a.model, duration, 0, 0, err)
-		return nil, err
-	}
-
+func (a *AnthropicAdapter) ParseOracleResponse(body []byte) (*domain.OracleResponse, int, int, error) {
 	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		logger.LogAPI(config.ProviderAnthropic, a.model, duration, 0, 0, err)
-		return nil, fmt.Errorf(errParseAnthropicResponse, err)
+	if err := json.Unmarshal(body, &anthropicResp); err != nil {
+		return nil, 0, 0, fmt.Errorf(errParseAnthropicResponse, err)
 	}
-
 	if len(anthropicResp.Content) == 0 {
-		errEmpty := fmt.Errorf(errEmptyContentAnthropic)
-		logger.LogAPI(config.ProviderAnthropic, a.model, duration, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, errEmpty)
-		return nil, errEmpty
+		return nil, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, fmt.Errorf(errEmptyContentAnthropic)
 	}
 
-	var oracleResp OracleResponse
 	contentStr := anthropicResp.Content[0].Text
+	var oracleResp domain.OracleResponse
 	if err := json.Unmarshal([]byte(contentStr), &oracleResp); err != nil {
-		errInvalidJSON := fmt.Errorf("Anthropic returned invalid Oracle JSON: %w (Raw content: %s)", err, contentStr)
-		logger.LogAPI(config.ProviderAnthropic, a.model, duration, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, errInvalidJSON)
-		return nil, errInvalidJSON
+		return nil, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, fmt.Errorf("invalid Oracle JSON: %w", err)
 	}
-
-	logger.LogAPI(config.ProviderAnthropic, a.model, duration, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, nil)
-
-	oracleResp.TokensPrompt = anthropicResp.Usage.InputTokens
-	oracleResp.TokensCompletion = anthropicResp.Usage.OutputTokens
-	oracleResp.NextQuestion = shared.SanitizeNextQuestion(oracleResp.NextQuestion)
-
-	return &oracleResp, nil
+	return &oracleResp, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, nil
 }
 
-func (a *AnthropicGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error) {
-	res, err := a.QueryOracle(ctx, facts, history, latestInput)
-	if err != nil {
-		close(tokenChan)
-		return nil, err
-	}
-	shared.StreamOracleResponse(res, tokenChan)
-	return res, nil
-}
-
-func (a *AnthropicGateway) GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error) {
-	messages := []anthropicMessage{
-		{
-			Role: "user",
-			Content: []anthropicContentPart{
-				{Type: "text", Text: promptTemplate},
-			},
-		},
-	}
-
+func (a *AnthropicAdapter) BuildGenerateSpecRequest(facts domain.Facts, fileName string, promptTemplate string) (*http.Request, error) {
 	reqBody := anthropicRequest{
-		Model:     a.model,
-		System:    GenerateSpecSystemPrompt,
-		Messages:  messages,
+		Model:  a.model,
+		System: GenerateSpecSystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: []anthropicContentPart{{Type: "text", Text: promptTemplate}}},
+		},
 		MaxTokens: 4000,
 	}
-
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set(contentTypeHeader, applicationJSON)
-	req.Header.Set(authApiKeyHeader, a.apiKey)
-	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
-
-	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
-	if err != nil {
-		return "", err
-	}
-
-	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return "", fmt.Errorf(errParseAnthropicResponse, err)
-	}
-
-	if len(anthropicResp.Content) == 0 {
-		return "", fmt.Errorf(errEmptyContentAnthropic)
-	}
-
-	return anthropicResp.Content[0].Text, nil
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
 }
 
-func (a *AnthropicGateway) EvaluateCompliance(ctx context.Context, fileName string, fileContent string, standards []domain.Standard) ([]ComplianceResult, error) {
-	applicableStandards := config.FilterApplicableStandards(standards, fileName)
-
-	if len(applicableStandards) == 0 {
-		return nil, nil
+func (a *AnthropicAdapter) BuildExtractStructuralEntitiesRequest(sourceDoc string) (*http.Request, error) {
+	reqBody := anthropicRequest{
+		Model:  a.model,
+		System: EntityExtractionSystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: []anthropicContentPart{{Type: "text", Text: sourceDoc}}},
+		},
+		MaxTokens: 4000,
 	}
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
+}
 
-	systemPrompt := ComplianceSystemPrompt
 
+func (a *AnthropicAdapter) ParseGenerateSpecResponse(body []byte) (string, int, int, error) {
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(body, &anthropicResp); err != nil {
+		return "", 0, 0, fmt.Errorf(errParseAnthropicResponse, err)
+	}
+	if len(anthropicResp.Content) == 0 {
+		return "", 0, 0, fmt.Errorf(errEmptyContentAnthropic)
+	}
+	return anthropicResp.Content[0].Text, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, nil
+}
+
+func (a *AnthropicAdapter) BuildEvaluateComplianceRequest(fileName string, fileContent string, standards []domain.Standard) (*http.Request, error) {
 	type auditPayload struct {
 		FileName    string            `json:"file_name"`
 		FileContent string            `json:"file_content"`
 		Standards   []domain.Standard `json:"standards"`
 	}
-
-	payloadStruct := auditPayload{
+	payloadBytes, _ := json.Marshal(auditPayload{
 		FileName:    fileName,
 		FileContent: fileContent,
-		Standards:   applicableStandards,
-	}
-	payloadBytes, _ := json.Marshal(payloadStruct)
-
-	messages := []anthropicMessage{
-		{
-			Role: "user",
-			Content: []anthropicContentPart{
-				{Type: "text", Text: string(payloadBytes)},
-			},
-		},
-	}
+		Standards:   standards,
+	})
 
 	reqBody := anthropicRequest{
-		Model:     a.model,
-		System:    systemPrompt,
-		Messages:  messages,
+		Model:  a.model,
+		System: ComplianceSystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: []anthropicContentPart{{Type: "text", Text: string(payloadBytes)}}},
+		},
 		MaxTokens: 4000,
 	}
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
+}
 
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set(contentTypeHeader, applicationJSON)
-	req.Header.Set(authApiKeyHeader, a.apiKey)
-	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
-
-	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
-	if err != nil {
-		return nil, err
-	}
-
+func (a *AnthropicAdapter) ParseEvaluateComplianceResponse(body []byte) ([]domain.ComplianceResult, int, int, error) {
 	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return nil, fmt.Errorf(errParseAnthropicResponse, err)
+	if err := json.Unmarshal(body, &anthropicResp); err != nil {
+		return nil, 0, 0, fmt.Errorf(errParseAnthropicResponse, err)
 	}
-
 	if len(anthropicResp.Content) == 0 {
-		return nil, fmt.Errorf(errEmptyContentAnthropic)
+		return nil, 0, 0, fmt.Errorf(errEmptyContentAnthropic)
 	}
 
 	rawJSON := anthropicResp.Content[0].Text
-
-	// Enforce parsing object wrappers
 	if idx := strings.Index(rawJSON, "{"); idx != -1 {
 		if endIdx := strings.LastIndex(rawJSON, "}"); endIdx != -1 && endIdx > idx {
 			rawJSON = rawJSON[idx : endIdx+1]
@@ -308,18 +222,15 @@ func (a *AnthropicGateway) EvaluateCompliance(ctx context.Context, fileName stri
 	}
 
 	var envelope struct {
-		Results []ComplianceResult `json:"results"`
+		Results []domain.ComplianceResult `json:"results"`
 	}
 	if err := json.Unmarshal([]byte(rawJSON), &envelope); err != nil {
-		return nil, fmt.Errorf("Anthropic returned invalid compliance JSON: %w (Raw content: %s)", err, rawJSON)
+		return nil, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, fmt.Errorf("invalid compliance JSON: %w", err)
 	}
-
-	return envelope.Results, nil
+	return envelope.Results, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, nil
 }
 
-func (a *AnthropicGateway) RefineSpecFile(ctx context.Context, fileName string, fileContent string, feedback string, failedStandards []domain.Standard, referenceDoc string) (string, error) {
-	systemPrompt := "You are a senior solutions architect. Your job is to modify an existing specification file to fix quality standards violations. Return only the updated file contents and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."
-
+func (a *AnthropicAdapter) BuildRefineSpecRequest(fileName string, fileContent string, feedback string, failedStandards []domain.Standard, referenceDoc string) (*http.Request, error) {
 	var criteriaLines []string
 	for _, std := range failedStandards {
 		criteriaLines = append(criteriaLines, fmt.Sprintf("- Standard '%s' (%s): %s", std.Name, std.ID, std.Criteria))
@@ -337,184 +248,117 @@ Reference source document:
 %s
 
 Original File Content:
-%sRefineSystemPrompt
+%s
 
 CRITICAL: When rewriting this file to fix the audit failures, do not abbreviate, truncate, or omit any existing sections that are already passing. You must maintain or improve the detail level of the entire document.
 
 Return ONLY the updated file contents. Do NOT wrap it in markdown code blocks like `+"```"+` or include any conversational filler.`,
 		fileName, feedback, criteriaText, strings.TrimSpace(referenceDoc), fileContent)
 
-	messages := []anthropicMessage{
-		{
-			Role: "user",
-			Content: []anthropicContentPart{
-				{Type: "text", Text: prompt},
-			},
-		},
-	}
-
 	reqBody := anthropicRequest{
-		Model:     a.model,
-		System:    systemPrompt,
-		Messages:  messages,
+		Model:  a.model,
+		System: RefineSystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: []anthropicContentPart{{Type: "text", Text: prompt}}},
+		},
 		MaxTokens: 4000,
 	}
-
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set(contentTypeHeader, applicationJSON)
-	req.Header.Set(authApiKeyHeader, a.apiKey)
-	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
-
-	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
-	if err != nil {
-		return "", err
-	}
-
-	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return "", fmt.Errorf(errParseAnthropicResponse, err)
-	}
-
-	if len(anthropicResp.Content) == 0 {
-		return "", fmt.Errorf(errEmptyContentAnthropic)
-	}
-
-	return anthropicResp.Content[0].Text, nil
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
 }
 
-func (a *AnthropicGateway) VerifyConsistency(ctx context.Context, files map[string]string) (*ConsistencyReport, error) {
-	systemPrompt := ConsistencySystemPrompt
+func (a *AnthropicAdapter) ParseRefineSpecResponse(body []byte) (string, int, int, error) {
+	return a.ParseGenerateSpecResponse(body)
+}
 
+func (a *AnthropicAdapter) BuildVerifyConsistencyRequest(files map[string]string) (*http.Request, error) {
 	type consistencyPayload struct {
 		Files map[string]string `json:"files"`
 	}
-
-	payloadStruct := consistencyPayload{Files: files}
-	payloadBytes, _ := json.Marshal(payloadStruct)
-
-	messages := []anthropicMessage{
-		{
-			Role: "user",
-			Content: []anthropicContentPart{
-				{Type: "text", Text: string(payloadBytes)},
-			},
-		},
-	}
+	payloadBytes, _ := json.Marshal(consistencyPayload{Files: files})
 
 	reqBody := anthropicRequest{
-		Model:     a.model,
-		System:    systemPrompt,
-		Messages:  messages,
+		Model:  a.model,
+		System: ConsistencySystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: []anthropicContentPart{{Type: "text", Text: string(payloadBytes)}}},
+		},
 		MaxTokens: 4000,
 	}
-
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set(contentTypeHeader, applicationJSON)
-	req.Header.Set(authApiKeyHeader, a.apiKey)
-	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
-
-	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
-	if err != nil {
-		return nil, err
-	}
-
-	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return nil, fmt.Errorf(errParseAnthropicResponse, err)
-	}
-
-	if len(anthropicResp.Content) == 0 {
-		return nil, fmt.Errorf(errEmptyContentAnthropic)
-	}
-
-	contentStr := anthropicResp.Content[0].Text
-	contentStr = shared.SanitizeJSON(contentStr)
-
-	var report ConsistencyReport
-	if err := json.Unmarshal([]byte(contentStr), &report); err != nil {
-		return nil, fmt.Errorf("failed to parse consistency report JSON: %w (Raw content: %s)", err, contentStr)
-	}
-
-	return &report, nil
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
 }
 
-// Summarize generates a concise summary of the conversation history using the Anthropic model.
-func (a *AnthropicGateway) Summarize(ctx context.Context, history []Message) (string, error) {
-	systemPrompt := "You are a technical summarizer. Compress the conversation history into a single clear paragraph summarizing the key architectural decisions, user preferences, and engineering requirements established. Focus on consensus outcomes, not the back-and-forth dialogue."
+func (a *AnthropicAdapter) ParseVerifyConsistencyResponse(body []byte) (*domain.ConsistencyReport, int, int, error) {
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(body, &anthropicResp); err != nil {
+		return nil, 0, 0, fmt.Errorf(errParseAnthropicResponse, err)
+	}
+	if len(anthropicResp.Content) == 0 {
+		return nil, 0, 0, fmt.Errorf(errEmptyContentAnthropic)
+	}
 
+	contentStr := SanitizeJSON(anthropicResp.Content[0].Text)
+	var report domain.ConsistencyReport
+	if err := json.Unmarshal([]byte(contentStr), &report); err != nil {
+		return nil, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, fmt.Errorf("failed to parse consistency report JSON: %w", err)
+	}
+	return &report, anthropicResp.Usage.InputTokens, anthropicResp.Usage.OutputTokens, nil
+}
+
+func (a *AnthropicAdapter) BuildSummarizeRequest(history []domain.Message) (*http.Request, error) {
 	var messages []anthropicMessage
-
-	// Add conversation history
 	for _, msg := range history {
 		role := "user"
 		if msg.Role == "assistant" {
 			role = "assistant"
 		}
 		messages = append(messages, anthropicMessage{
-			Role: role,
-			Content: []anthropicContentPart{
-				{Type: "text", Text: msg.Content},
-			},
+			Role:    role,
+			Content: []anthropicContentPart{{Type: "text", Text: msg.Content}},
 		})
 	}
-
-	// Add summarization instruction
 	messages = append(messages, anthropicMessage{
-		Role: "user",
-		Content: []anthropicContentPart{
-			{Type: "text", Text: "Summarize the above conversation into a single paragraph capturing the key decisions and requirements."},
-		},
+		Role:    "user",
+		Content: []anthropicContentPart{{Type: "text", Text: "Summarize the above conversation into a single paragraph capturing the key decisions and requirements."}},
 	})
 
 	reqBody := anthropicRequest{
 		Model:     a.model,
-		System:    systemPrompt,
+		System:    "You are a technical summarizer. Compress the conversation history into a single clear paragraph summarizing the key architectural decisions, user preferences, and engineering requirements established. Focus on consensus outcomes, not the back-and-forth dialogue.",
 		Messages:  messages,
 		MaxTokens: 1000,
 	}
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
+}
 
-	payload, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
+func (a *AnthropicAdapter) ParseSummarizeResponse(body []byte) (string, int, int, error) {
+	return a.ParseGenerateSpecResponse(body)
+}
+
+func (a *AnthropicAdapter) BuildOptimizePromptRequest(files map[string]string) (*http.Request, error) {
+	var sb strings.Builder
+	for name, content := range files {
+		sb.WriteString(fmt.Sprintf("=== FILE: %s ===\n%s\n\n", name, content))
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", anthropicChatURL, bytes.NewReader(payload))
-	if err != nil {
-		return "", err
+	reqBody := anthropicRequest{
+		Model:  a.model,
+		System: OptimizePromptSystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: []anthropicContentPart{{Type: "text", Text: sb.String()}}},
+		},
+		MaxTokens: 4000,
 	}
-	req.Header.Set(contentTypeHeader, applicationJSON)
-	req.Header.Set(authApiKeyHeader, a.apiKey)
-	req.Header.Set(anthropicVersionHeader, anthropicVersionValue)
-
-	respBytes, err := SendWithRetry(ctx, a.client, req, a.maxRetries)
-	if err != nil {
-		return "", err
-	}
-
-	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBytes, &anthropicResp); err != nil {
-		return "", fmt.Errorf(errParseAnthropicResponse, err)
-	}
-
-	if len(anthropicResp.Content) == 0 {
-		return "", fmt.Errorf(errEmptyContentAnthropic)
-	}
-
-	return anthropicResp.Content[0].Text, nil
+	return buildJSONRequest(anthropicChatURL, reqBody, map[string]string{
+		authApiKeyHeader:       a.apiKey,
+		anthropicVersionHeader: anthropicVersionValue,
+	})
 }

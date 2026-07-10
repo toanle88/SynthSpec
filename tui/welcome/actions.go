@@ -100,51 +100,52 @@ func (m WelcomeModel) handleProjectMenuSelectionExport() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *WelcomeModel) handleMenuSelection() {
+func (m *WelcomeModel) handleMenuSelection() tea.Cmd {
 	switch m.SelectedOption {
 	case 0:
 		m.textInput.SetValue("")
 		m.Phase = PhaseCreateInput
+		return m.textInput.Focus()
 	case 1:
 		projects, err := state.ListProjects()
 		if err != nil {
 			m.alertTitle = "Error Scanning Projects"
 			m.alertMessage = fmt.Sprintf("Failed to list existing projects: %v", err)
 			m.Phase = PhaseStatusAlert
-			return
+			return nil
 		}
 		if len(projects) == 0 {
 			m.alertTitle = "No Saved Projects"
 			m.alertMessage = "No active SynthSpec projects were found in this directory.\nChoose 'Create New Project' to get started."
 			m.Phase = PhaseStatusAlert
-			return
+			return nil
 		}
 		m.Projects = projects
 		m.FilteredProjects = projects
 		m.SelectedProject = 0
 		m.filterInput.SetValue("")
-		m.filterInput.Focus()
 		m.Phase = PhaseResumeSelect
+		return m.filterInput.Focus()
 	case 2:
 		projects, err := state.ListProjects()
 		if err != nil {
 			m.alertTitle = "Error Scanning Projects"
 			m.alertMessage = fmt.Sprintf("Failed to list existing projects: %v", err)
 			m.Phase = PhaseStatusAlert
-			return
+			return nil
 		}
 		if len(projects) == 0 {
 			m.alertTitle = "No Saved Projects"
 			m.alertMessage = "No active SynthSpec projects were found to export.\nChoose 'Create New Project' to get started."
 			m.Phase = PhaseStatusAlert
-			return
+			return nil
 		}
 		m.Projects = projects
 		m.FilteredProjects = projects
 		m.SelectedProject = 0
 		m.filterInput.SetValue("")
-		m.filterInput.Focus()
 		m.Phase = PhaseExportSelect
+		return m.filterInput.Focus()
 	case 3:
 		m.Phase = PhaseViewAssets
 	case 4:
@@ -153,15 +154,18 @@ func (m *WelcomeModel) handleMenuSelection() {
 		m.settingInputs[0].SetValue(fmt.Sprintf("%d", m.Settings.TimeoutSeconds))
 		m.settingInputs[1].SetValue(fmt.Sprintf("%d", m.Settings.MaxRetries))
 		m.settingInputs[2].SetValue(m.Settings.DefaultOutputFolder)
+		m.settingInputs[3].SetValue(fmt.Sprintf("%.2f", m.Settings.HardBudgetCap))
 		m.SelectedSettingIdx = 0
-		m.settingInputs[0].Focus()
+		cmd := m.settingInputs[0].Focus()
 		m.settingInputs[1].Blur()
 		m.settingInputs[2].Blur()
 		m.Phase = PhaseSettings
+		return cmd
 	case 6:
 		m.Action = ActionExit
 		m.Phase = PhaseStatusAlert
 	}
+	return nil
 }
 
 func PhaseThemeToggle() WelcomePhase {

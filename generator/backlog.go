@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/toanle/synthspec/shared"
+	"github.com/toanle/synthspec/gateway"
 )
 
 // Backlog represents the top-level structure of the engineering backlog
@@ -30,7 +30,7 @@ type Task struct {
 
 // validateBacklog parses and validates the engineering backlog JSON against structural requirements
 func validateBacklog(content string) error {
-	content = shared.SanitizeJSON(content)
+	content = gateway.SanitizeJSON(content)
 	var backlog Backlog
 	if err := json.Unmarshal([]byte(content), &backlog); err != nil {
 		return fmt.Errorf("invalid JSON syntax: %w", err)

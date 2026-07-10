@@ -19,7 +19,24 @@ func NewGatewayForSession(sess *state.Session, forceMock bool) (gateway.Gateway,
 		return nil, fmt.Errorf("failed to resolve credentials: %w", err)
 	}
 
-	return gateway.NewGateway(cfg.Provider, cfg.APIKey, cfg.Model)
+	gw, err := gateway.NewGateway(cfg.Provider, cfg.APIKey, cfg.Model)
+	if err != nil {
+		return nil, err
+	}
+
+	gw.RegisterTokenCounter(func(p, c int) {
+		_ = sess.UpdateTokens(p, c)
+	})
+
+	if settings, err := config.LoadSettings(); err == nil && settings != nil {
+		if settings.HardBudgetCap > 0 {
+			gw.RegisterBudgetCheck(func() error {
+				return sess.CheckBudget(settings.HardBudgetCap)
+			})
+		}
+	}
+
+	return gw, nil
 }
 
 // resolveProjectName auto-detects a single project from args, or returns an error

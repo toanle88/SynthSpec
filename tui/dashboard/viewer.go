@@ -153,7 +153,7 @@ func (m DashboardModel) openFileViewer() (tea.Model, tea.Cmd) {
 	}
 	dir := m.OutputDir
 	if dir == "" {
-		dir = filepath.Join(state.GetSessionDir(m.Session.ProjectName), "output")
+		dir = filepath.Join(state.GetSessionDir(m.Session.GetProjectName()), "output")
 	}
 	filePath := filepath.Join(dir, selectedFile)
 	contentBytes, err := os.ReadFile(filePath)

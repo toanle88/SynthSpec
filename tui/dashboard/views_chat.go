@@ -75,9 +75,9 @@ func (m DashboardModel) renderInterrogationState() string {
 	var content []string
 	content = append(content, shared.TitleStyle.Render("💬 Conversation Timeline"))
 
-	if m.Session.LastQuestion != "" && !m.loading && !m.isStreaming {
+	if m.Session.GetLastQuestion() != "" && !m.loading && !m.isStreaming {
 		content = append(content, "\n"+shared.QuestionStyle.Render("Architect's Question:"))
-		content = append(content, shared.WrapText(m.Session.LastQuestion, m.width-45))
+		content = append(content, shared.WrapText(m.Session.GetLastQuestion(), m.width-45))
 	}
 
 	if m.loading || m.isStreaming {
