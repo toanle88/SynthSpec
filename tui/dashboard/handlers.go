@@ -207,6 +207,13 @@ func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cm
 		}
 	} else {
 		m.genStatus = "All specifications synthesized successfully!"
+		// Mark all successfully generated files as done
+		for _, f := range m.genFiles {
+			if m.genFileStatuses[f] != "failed" {
+				m.genFileStatuses[f] = "done"
+			}
+		}
+
 		if err := m.Session.Save(); err != nil {
 			logger.Log("session save failed after generation: %v", err)
 		}

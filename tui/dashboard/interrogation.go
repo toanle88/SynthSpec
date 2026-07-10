@@ -213,7 +213,7 @@ func (m DashboardModel) handleKeyRunes(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleKeyRunesCompleted handles shortcut keys (generate, edit, update, quit) on the final completion dashboard screen.
 func (m DashboardModel) handleKeyRunesCompleted(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := string(msg.Runes)
+	key := msg.String()
 	switch strings.ToLower(key) {
 	case "g":
 		return m.triggerRegeneration()
@@ -252,7 +252,7 @@ func (m DashboardModel) handleKeyRunesIncomplete(msg tea.KeyMsg) (tea.Model, tea
 	if m.showTextInput {
 		return m, nil
 	}
-	key := string(msg.Runes)
+	key := msg.String()
 	switch strings.ToLower(key) {
 	case "g":
 		return m.triggerRegeneration()

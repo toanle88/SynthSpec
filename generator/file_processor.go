@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -153,7 +154,11 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 	for attempt := startAttempt; attempt < maxRetries; attempt++ {
 		checkErr = PerformStaticValidation(fileName, content, fg.templates)
 		if checkErr != nil {
-			content, checkErr = fg.handleSyntaxError(fileName, content, attempt, checkErr, referenceDoc, promptTemplate)
+			var err error
+			content, err = fg.handleSyntaxError(fileName, content, attempt, checkErr, referenceDoc, promptTemplate)
+			if err != nil {
+				return content, nil, nil, err
+			}
 			continue
 		}
 
@@ -194,13 +199,19 @@ func (fg *fileGenerator) handleSyntaxError(fileName string, content string, atte
 		Message: fmt.Sprintf("⚠️ Syntax error in %s: %v. Correcting (attempt %d/%d)...", fileName, checkErr, attempt+1, maxRetries),
 	})
 	feedback := fmt.Sprintf("Static syntax validation failed: %v. Please rewrite the file to output syntactically valid contents.", checkErr)
-	refined, refineErr := fg.gw.RefineSpecFile(fg.ctx, fileName, content, feedback, nil, referenceDoc)
-	if refineErr == nil {
-		content = refined
-		_ = fg.updateInProgressState(fileName, content, attempt+1, promptTemplate)
+	
+	refineCtx, cancel := context.WithTimeout(fg.ctx, 60*time.Second)
+	defer cancel()
+
+	refined, refineErr := fg.gw.RefineSpecFile(refineCtx, fileName, content, feedback, nil, referenceDoc)
+	if refineErr != nil {
+		return content, fmt.Errorf("refinement call failed: %w", refineErr)
 	}
+	
+	content = refined
+	_ = fg.updateInProgressState(fileName, content, attempt+1, promptTemplate)
 	time.Sleep(100 * time.Millisecond)
-	return content, checkErr
+	return content, nil
 }
 
 func (fg *fileGenerator) handleComplianceEvaluation(fileName string, content string, attempt int, standards []config.Standard, referenceDoc string, promptTemplate string) (string, []gateway.ComplianceResult, error, bool, error) {

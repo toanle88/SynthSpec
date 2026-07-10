@@ -6,7 +6,7 @@ templates:
       Write a comprehensive Domain Model & Use Cases markdown file. Detail bounded contexts and ensure domain entities are mapped uniquely within them to prevent context bleed. Define core domain entities, value objects, and aggregates. Detail scenario walkthroughs (including actor, preconditions, triggers, main flow, and postconditions). 
       
       CRITICAL STANDARDS:
-      1. Each primary scenario walkthrough MUST contain a structured Mermaid.js sequence diagram showing step-by-step actor and system interactions. 
+      1. Each primary scenario walkthrough MUST contain a structured Mermaid.js sequence diagram showing step-by-step actor and system interactions. DO NOT use semicolons (;) anywhere inside Mermaid sequence diagram text or messages, as they are interpreted as statement separators and will break the diagram.
       2. PURITY RULE: This document must be a pure business specification. DO NOT include any programming code snippets (e.g., Go, Python, etc.), JSON API payloads, SQL schemas, or framework-specific implementation details anywhere in this document. 
       
       OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.

@@ -241,6 +241,18 @@ func (s *Session) AddTurn(userMsg, assistantMsg string, tokensPrompt, tokensComp
 	s.TotalTokensUsed += tokensPrompt + tokensCompletion
 }
 
+// EstimateHistoryTokens returns the estimated token count of the conversation history.
+func (s *Session) EstimateHistoryTokens() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	totalChars := 0
+	for _, msg := range s.History {
+		totalChars += len(msg.Content)
+	}
+	// Conservative estimate: 1 token ≈ 3.5 characters
+	return int(float64(totalChars) / 3.5)
+}
+
 func (s *Session) GetTotalPromptTokens() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

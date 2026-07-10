@@ -122,7 +122,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 	}
 	fg.sourceFileName = templates[sourceIdx].FileName
 
-	sourceCompliance, _, denseEntities, err := fg.generateSourceDocument(templates[sourceIdx], standards)
+	sourceCompliance, sourceDoc, _, err := fg.generateSourceDocument(templates[sourceIdx], standards)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 		Message: fmt.Sprintf("Source document locked. Starting parallel generation for %d downstream documents...", len(templates)-1),
 	})
 
-	if err := fg.generateDownstreamParallel(templates, denseEntities, standards, fileCompliances); err != nil {
+	if err := fg.generateDownstreamParallel(templates, sourceDoc, standards, fileCompliances); err != nil {
 		return err
 	}
 

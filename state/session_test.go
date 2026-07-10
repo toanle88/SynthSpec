@@ -221,10 +221,7 @@ func TestCheckAndPruneContext_AboveThreshold(t *testing.T) {
 		Model:           "mock-model",
 		TotalTokensUsed: 9000, // above 75% of 10000
 		History: []domain.Message{
-			{Role: "user", Content: "Q1"},
-			{Role: "assistant", Content: "A1"},
-			{Role: "user", Content: "Q2"},
-			{Role: "assistant", Content: "A2"},
+			{Role: "user", Content: strings.Repeat("A", 30000)}, // ~8571 tokens, above threshold of 7500
 		},
 		Facts: domain.Facts{
 			Functional: "test",
@@ -251,6 +248,9 @@ func TestCheckAndPruneContext_UnknownModel(t *testing.T) {
 		ProjectName:     "test-prune-unknown",
 		Model:           "unknown-model",
 		TotalTokensUsed: 80000, // above 75% of default 100000
+		History: []domain.Message{
+			{Role: "user", Content: strings.Repeat("B", 300000)}, // ~85714 tokens, above threshold of 75000
+		},
 	}
 	root := config.GetSynthspecRoot()
 	defer os.RemoveAll(filepath.Join(root, sess.ProjectName))

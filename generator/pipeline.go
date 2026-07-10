@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -228,7 +229,10 @@ func (fg *fileGenerator) runConsistencyRefinementLoop(filesContent map[string]st
 	}
 
 	if consistencyReport != nil && !consistencyReport.Consistent {
-		return nil, fmt.Errorf("failed to achieve cross-document consistency after 3 refinement attempts")
+		sendProgress(fg.progress, ProgressEvent{
+			Status:  "warning",
+			Message: "Warning: failed to achieve cross-document consistency after 3 refinement attempts. Proceeding to save files.",
+		})
 	}
 	return consistencyReport, nil
 }
@@ -241,16 +245,10 @@ func (fg *fileGenerator) refineSingleInconsistentFile(fileName string, feedback 
 
 	var referenceDoc string
 	if fileName != fg.sourceFileName {
-		// Attempt to read the dense entities JSON first
-		entitiesPath := filepath.Join(fg.outputDir, ".synthspec-entities.json")
-		if bytes, err := os.ReadFile(entitiesPath); err == nil {
+		// Read raw source document directly for full context reference
+		sourcePath := filepath.Join(fg.outputDir, fg.sourceFileName)
+		if bytes, err := os.ReadFile(sourcePath); err == nil {
 			referenceDoc = string(bytes)
-		} else {
-			// Fallback to raw source document if dense entities file is not available
-			sourcePath := filepath.Join(fg.outputDir, fg.sourceFileName)
-			if bytes, err := os.ReadFile(sourcePath); err == nil {
-				referenceDoc = string(bytes)
-			}
 		}
 	}
 
@@ -391,7 +389,11 @@ func (fg *fileGenerator) runPromptOptimization(templates []config.Template) erro
 		return fmt.Errorf("no generated files found to optimize")
 	}
 
-	optimized, err := fg.gw.OptimizePrompt(fg.ctx, filesContent)
+	// Apply a strict 60-second timeout for prompt optimization call to prevent hanging
+	optCtx, cancel := context.WithTimeout(fg.ctx, 60*time.Second)
+	defer cancel()
+
+	optimized, err := fg.gw.OptimizePrompt(optCtx, filesContent)
 	if err != nil {
 		return fmt.Errorf("failed to optimize prompt: %w", err)
 	}

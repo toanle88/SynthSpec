@@ -12,7 +12,7 @@ type ContextSummarizer interface {
 	Summarize(ctx context.Context, history []domain.Message) (string, error)
 }
 
-// CheckAndPruneContext evaluates total tokens and runs summarization if over 75% capacity
+// CheckAndPruneContext evaluates active history tokens and runs summarization if over 75% capacity
 func (s *Session) CheckAndPruneContext(ctx context.Context, gw ContextSummarizer) (bool, error) {
 	limit, exists := GetModelLimit(s.Model)
 	if !exists {
@@ -21,12 +21,17 @@ func (s *Session) CheckAndPruneContext(ctx context.Context, gw ContextSummarizer
 	}
 
 	threshold := int(float64(limit) * 0.75)
-	if s.TotalTokensUsed <= threshold {
+	if s.EstimateHistoryTokens() <= threshold {
 		return false, nil
 	}
 
+	s.mu.Lock()
+	historyCopy := make([]domain.Message, len(s.History))
+	copy(historyCopy, s.History)
+	s.mu.Unlock()
+
 	// Summarize conversation history using dedicated Summarize method
-	summaryText, err := gw.Summarize(ctx, s.History)
+	summaryText, err := gw.Summarize(ctx, historyCopy)
 	if err != nil {
 		return false, fmt.Errorf("summarization call failed: %w", err)
 	}
@@ -36,10 +41,12 @@ func (s *Session) CheckAndPruneContext(ctx context.Context, gw ContextSummarizer
 		summaryText = "Summarized historical progress."
 	}
 
+	s.mu.Lock()
 	s.History = []domain.Message{
 		{Role: "user", Content: "Let's summarize our progress so far."},
 		{Role: "assistant", Content: "Summary of earlier conversation:\n" + summaryText},
 	}
+	s.mu.Unlock()
 	// Note: We don't add tokens for summarization since it's a separate call
 
 	if err := s.Save(); err != nil {

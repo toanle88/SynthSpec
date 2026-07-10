@@ -120,6 +120,9 @@ func validateSequenceLine(trimmed string) error {
 	if strings.Contains(right, " ") && !(strings.HasPrefix(right, `"`) && strings.HasSuffix(right, `"`)) {
 		return fmt.Errorf("invalid sequence diagram: unquoted participant name with spaces: %q. Use double quotes around names with spaces", right)
 	}
+	if strings.Contains(rightPart, ";") {
+		return fmt.Errorf("invalid sequence diagram: message %q contains a semicolon ';'. Semicolons are parsed as statement separators in Mermaid.js and will break the diagram. Use a comma or space instead.", rightPart)
+	}
 	return nil
 }
 
@@ -153,11 +156,30 @@ func validateCodeBlocks(content string) error {
 				return fmt.Errorf("invalid json code block: %w", err)
 			}
 		case "yaml", "yml":
-			var temp interface{}
-			if err := yaml.Unmarshal([]byte(code), &temp); err != nil {
+			if err := validateYAMLCodeBlock(code); err != nil {
 				return fmt.Errorf("invalid yaml code block: %w", err)
 			}
 		}
+	}
+	return nil
+}
+
+func validateYAMLCodeBlock(code string) error {
+	trimmed := strings.TrimSpace(code)
+	// Skip HTTP request/response snippets colorized as yaml
+	for _, prefix := range []string{"GET ", "POST ", "PUT ", "DELETE ", "PATCH ", "HTTP/"} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return nil
+		}
+	}
+	// Skip snippets with placeholder ellipses
+	if strings.Contains(code, "...") {
+		return nil
+	}
+
+	var temp interface{}
+	if err := yaml.Unmarshal([]byte(code), &temp); err != nil {
+		return err
 	}
 	return nil
 }
@@ -212,6 +234,14 @@ func validateJSONCodeBlock(code string) error {
 	var temp interface{}
 	if err := json.Unmarshal([]byte(code), &temp); err == nil {
 		return nil
+	}
+
+	// Scan for the first '{' or '[' to handle raw HTTP headers or preambles in example code blocks
+	if idx := strings.IndexAny(code, "{["); idx != -1 {
+		decoder := json.NewDecoder(strings.NewReader(code[idx:]))
+		if err := decoder.Decode(&temp); err == nil {
+			return nil
+		}
 	}
 
 	// Fallback: if there's trailing content after the top-level JSON value,
