@@ -13,6 +13,8 @@ import (
 // triggerRegeneration sets states and commands to begin a new specification file generation run.
 func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 	m.isGenerating = true
+	m.isCompleted = false
+	m.showScorecard = false
 	m.genStatus = "Starting spec generation..."
 	m.genPhase = "source"
 	m.genChan = make(chan string, 10)

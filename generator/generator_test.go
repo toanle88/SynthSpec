@@ -45,6 +45,7 @@ func TestGenerate_AllSuccess(t *testing.T) {
 		"05_coding_standards_guidelines.md",
 		"06_security_threat_model.md",
 		"07_engineering_roadmap.md",
+		"08_behavioral_specifications.feature",
 		".synthspec-meta.json",
 		".synthspec-entities.json",
 		"99_optimized_prompt.md",

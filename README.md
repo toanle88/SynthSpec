@@ -65,6 +65,7 @@ Once all vectors hit 100% confidence, the asset synthesis engine unlocks. It gen
 - **`05_coding_standards_guidelines.md`**: Development standards and CI/CD guidance.
 - **`06_security_threat_model.md`**: Comprehensive STRIDE threat modeling & mitigations.
 - **`07_engineering_roadmap.md`**: Delivery phases and timeline planning.
+- **`08_behavioral_specifications.feature`**: Executable Cucumber/Gherkin BDD specifications.
 
 ---
 

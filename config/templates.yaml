@@ -104,3 +104,18 @@ templates:
       OUTPUT FORMAT: Return ONLY the raw markdown content. Do not include any conversational preamble, greetings, or conclusions.
       
       Use these facts:
+
+  - file_name: "08_behavioral_specifications.feature"
+    name: "Executable Behavioral Specifications"
+    prompt: |
+      Generate a set of Cucumber/Gherkin Feature files (.feature format) describing the behavioral specifications of the system based on the defined domain model and use cases.
+      
+      CRITICAL STANDARDS:
+      1. Use valid Gherkin syntax (Feature, Background, Scenario, Scenario Outline, Given, When, Then, And, Examples).
+      2. Group scenarios by Bounded Context / Core Feature defined in 01_domain_model_use_cases.md.
+      3. Focus on testable business rules and validation logic. Do not write programming language code.
+      4. Ensure all variables in Scenario Outlines are defined in Examples tables.
+      
+      OUTPUT FORMAT: Return ONLY the raw Gherkin text. Do not wrap in markdown code blocks or add conversational commentary.
+      
+      Use these facts:

@@ -44,31 +44,67 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateChatViewport()
 
 	case oracleResultMsg:
-		return m.handleOracleResult(msg)
+		model, cmd := m.handleOracleResult(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case editorFinishedMsg:
-		return m.handleEditorFinished(msg)
+		model, cmd := m.handleEditorFinished(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case fileEditorFinishedMsg:
-		return m.handleUpdateFileEditorFinishedMsg(msg)
+		model, cmd := m.handleUpdateFileEditorFinishedMsg(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case genProgressMsg:
-		return m.handleGenProgress(msg)
+		model, cmd := m.handleGenProgress(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case genFinishedMsg:
-		return m.handleGenFinished(msg)
+		model, cmd := m.handleGenFinished(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case contextPruneResultMsg:
-		return m.handleContextPruneResult(msg)
+		model, cmd := m.handleContextPruneResult(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case initQueryMsg:
-		return m.startOracleQuery("")
+		model, cmd := m.startOracleQuery("")
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case thoughtTokenMsg:
-		return m.handleUpdateThoughtTokenMsg(msg)
+		model, cmd := m.handleUpdateThoughtTokenMsg(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case typingTickMsg:
-		return m.handleUpdateTypingTickMsg()
+		model, cmd := m.handleUpdateTypingTickMsg()
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case streamDoneMsg:
 		m.isStreaming = false
@@ -78,7 +114,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		return m.handleUpdateMouseMsg(msg)
+		model, cmd := m.handleUpdateMouseMsg(msg)
+		m = model.(DashboardModel)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	if !m.isCompleted && !m.loading && m.showTextInput {

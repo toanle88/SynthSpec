@@ -76,30 +76,8 @@ This document tracks current priorities, upcoming milestones, and development st
 
 ## Long-Term Vision (Enterprise Governance & Autonomy)
 
-### Milestone 10: Executable Architecture & Scaffolding (v1.0.0) ── [ ] Planned
-- [ ] **Zero-to-Code Scaffolding Engine**: Add a `synthspec scaffold` command to automatically generate the physical code directory topography, base interfaces, and domain structs in the target language based on the defined architecture.
-- [ ] **Issue Tracker Synchronization**: Build an automated handoff utility (`synthspec sync`) to parse functional requirements from generated documents and push them directly to Jira, Linear, or GitHub Issues as formatted epics and sub-tasks.
+### Milestone 10: Executable Architecture & Behavioral Specifications (v1.0.0) ── [ ] Planned
+- [x] **Executable Behavioral Specifications**: Translate functional requirements from the PRD into BDD Feature Files (Cucumber/Gherkin) and TDD preconditions.
 - [ ] **Mock Server Generation**: Programmatically construct containerized, local mock environments (via WireMock or Prism configuration bundles) mirroring the synthesized API architecture maps, allowing front-end validation to begin instantly.
-- [ ] **Executable Behavioral Specifications**: Translate functional requirements from the PRD into BDD Feature Files (Cucumber/Gherkin) and TDD preconditions.
 - [ ] **Infrastructure as Code (IaC) Synthesis**: Generate production-ready Terraform or Pulumi configurations detailing VPCs, IAM roles, and RDS instances required by the system's threat model.
-
-### Milestone 11: Production-Grade Enforcement (v1.1.0) ── [ ] Planned
-- [ ] **Architecture Drift Detection (Docs vs. Code)**: Synthesize automated architecture tests using frameworks like ArchUnit or NetArchTest, and expose an on-demand audit route in the Boot Menu to map physical local code against the established `.synthspec-meta.json` constraints to flag violations.
-- [ ] **SynthSpec LSP (Language Server Protocol)**: Build a local language server that integrates into VS Code/Neovim to provide real-time editor warnings (red squiggles) the moment a developer types code that violates the generated architectural boundaries.
-- [ ] **Persistent Organizational Memory**: Build a global `~/.synthspec/` knowledge graph that learns team preferences across projects to accelerate future initializations.
-
----
-
-## Next-Gen Horizons (Active Ecosystem Integration)
-
-### Milestone 12: Reverse Engineering & Simulation (v2.0.0+) ── [ ] Planned
 - [ ] **The "Brownfield" Engine**: Implement a legacy ingestion command (`synthspec audit <path>`) to scan, map, and reverse-engineer existing undocumented codebases back into structured specifications and technical debt reports.
-- [ ] **Dynamic Context Engineering (Anti-Rot)**: Generate task-specific context pointers that curate only the minimum high-signal tokens needed for a specific coding task, combating "context rot" and the "lost in the middle" phenomenon.
-- [ ] **Multi-Agent Orchestration Protocols**: Generate coordination configurations designed to orchestrate entire teams of specialized AI sub-agents working in parallel.
-- [ ] **What-If Architecture Simulation**: Build an execution sandbox to safely simulate architectural shifts and dynamically project cascading design changes along with live infrastructure cost alterations via cloud pricing APIs.
-- [ ] **Chaos Engineering & Threat Simulation**: Convert threat modeling documents directly into actionable verification scripts to programmatically audit deployed environments against the established spec.
-
-### Milestone 13: Enterprise Air-Gapped & Collaborative Intelligence (v3.0.0+) ── [ ] Planned
-- [ ] **The Air-Gapped Engine (Local Inference)**: Build native adapter support for Ollama and Llama.cpp, allowing the entire AI architecture generation process to run on local, offline compute clusters for maximum privacy in highly regulated environments.
-- [ ] **Multi-Player Collaborative TUI**: Integrate an embedded terminal SSH server (e.g., via Charm `wish`) allowing multiple developers to securely join a shared remote SynthSpec session, enabling team-based real-time architectural decision-making.
-- [ ] **Continuous RLHF Learning Loop**: Automatically monitor and capture manual human modifications (diffs) made to generated architectures, compiling a structured `.jsonl` preference dataset used to automatically fine-tune custom AI adapters that learn and mimic an organization's bespoke engineering culture.
