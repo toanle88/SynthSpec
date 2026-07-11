@@ -148,7 +148,7 @@ func NewDashboardModel(sess state.SessionManager, gw gateway.Gateway, outputDir 
 	ti.Prompt = "> "
 	ti.PromptStyle = shared.InputPrefixStyle
 	ti.Focus()
-	ti.CharLimit = 2000
+	ti.CharLimit = 200000
 	ti.Width = 60
 
 	// Check if already 100% completed
@@ -182,7 +182,7 @@ func NewDashboardModel(sess state.SessionManager, gw gateway.Gateway, outputDir 
 	ui.Placeholder = "Type new requirements or modifications here..."
 	ui.Prompt = "> "
 	ui.PromptStyle = shared.InputPrefixStyle
-	ui.CharLimit = 2000
+	ui.CharLimit = 200000
 	ui.Width = 60
 
 	settings := initializeSettings()

@@ -151,11 +151,18 @@ func (m DashboardModel) checkAndTriggerPostOracle(wasCompleted bool) (tea.Model,
 		m.diffApprovalChan = make(chan struct{})
 		m.isWaitingApproval = false
 		m.isWaitingDiffApproval = false
+		m.forceFinishChan = make(chan struct{})
+		m.genStartTime = time.Now()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelGen = cancel
 
-		batchCmds = append(batchCmds, m.generateSpecsCmd(ctx), m.recvGenProgressCmd())
+		batchCmds = append(batchCmds, 
+			m.generateSpecsCmd(ctx), 
+			m.recvGenProgressCmd(),
+			m.spinner.Tick,
+			tickCmd(),
+		)
 	} else if !m.isCompleted {
 		m.loading = true
 		batchCmds = append(batchCmds, m.pruneContextCmd())

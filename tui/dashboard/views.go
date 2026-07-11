@@ -175,7 +175,7 @@ func (m DashboardModel) renderMainChat() string {
 		content = append(content, shared.TitleStyle.Render("📝 Add New Requirement / Modify Specification"))
 		content = append(content, "\nEnter your new requirements or modifications below:")
 		content = append(content, "\n"+m.updateInput.View())
-		content = append(content, "\n"+lipgloss.NewStyle().Foreground(shared.ColorMuted).Render("(Press Enter to submit, Esc to cancel)"))
+		content = append(content, "\n"+lipgloss.NewStyle().Foreground(shared.ColorMuted).Render("(Press Enter to submit, Ctrl+P to paste, Esc to cancel)"))
 		return strings.Join(content, "\n")
 	}
 	return m.chatViewport.View()
@@ -262,8 +262,10 @@ func (m DashboardModel) renderFooter() string {
 		keys = append(keys, "q/Esc: Cancel", "f: Force Finish & Save")
 	} else if m.isCompleted {
 		keys = append(keys, "v/Enter: View file", "g: Regenerate & Verify", "u: Modify", "e: Editor")
+	} else if m.showUpdatePrompt {
+		keys = append(keys, "Enter: Submit", "Ctrl+P: Paste", "Esc: Cancel")
 	} else if m.showTextInput {
-		keys = append(keys, "Enter: Send", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", ":edit: Open full editor", "Esc: Cancel")
+		keys = append(keys, "Enter: Send", "Ctrl+P: Paste", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", ":edit: Open full editor", "Esc: Cancel")
 	} else {
 		keys = append(keys, "j/k/Arrows: Navigate", "Enter: Select", "Ctrl+K: I Don't Know", "PgUp/PgDn: Scroll", "g: Regenerate & Verify", "u: Modify", "e: Editor")
 	}

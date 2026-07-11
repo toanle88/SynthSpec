@@ -3,6 +3,7 @@ package dashboard
 import (
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/toanle/synthspec/tui/dashboard/keys"
 )
@@ -48,6 +49,41 @@ func (m DashboardModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.Type {
+	case tea.KeyCtrlV, tea.KeyCtrlP:
+		if m.showTextInput && !m.loading {
+			text, err := clipboard.ReadAll()
+			if err == nil && text != "" {
+				val := m.textInput.Value()
+				pos := m.textInput.Position()
+				if pos < 0 {
+					pos = 0
+				}
+				if pos > len(val) {
+					pos = len(val)
+				}
+				newVal := val[:pos] + text + val[pos:]
+				m.textInput.SetValue(newVal)
+				m.textInput.SetCursor(pos + len(text))
+			}
+			return m, nil
+		}
+		if m.showUpdatePrompt && !m.loading {
+			text, err := clipboard.ReadAll()
+			if err == nil && text != "" {
+				val := m.updateInput.Value()
+				pos := m.updateInput.Position()
+				if pos < 0 {
+					pos = 0
+				}
+				if pos > len(val) {
+					pos = len(val)
+				}
+				newVal := val[:pos] + text + val[pos:]
+				m.updateInput.SetValue(newVal)
+				m.updateInput.SetCursor(pos + len(text))
+			}
+			return m, nil
+		}
 	case tea.KeyCtrlK:
 		if !m.isCompleted && !m.loading && !m.isGenerating && !m.showUpdatePrompt {
 			return m.startOracleQuery("I do not know the answer. Please recommend the best compliance/architectural choice based on industry standards.")
