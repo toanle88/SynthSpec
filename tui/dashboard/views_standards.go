@@ -212,24 +212,8 @@ func (m DashboardModel) renderGroupDetails(fileStandards []config.Standard) stri
 
 func (m DashboardModel) renderStandardGroup(fileHeader string, fileStandards []config.Standard, isExpanded bool, fileStatus string) string {
 	headerIcon := m.getGroupHeaderIcon(fileStatus)
-	verifiedCount := m.countVerifiedStandards(fileStandards)
-
-	var fileLabel string
-	if m.isCompleted {
-		fileLabel = fmt.Sprintf("  %s %s", headerIcon, fileHeader)
-	} else if isExpanded {
-		fileLabel = fmt.Sprintf("  ▼ %s %s (Active)", headerIcon, fileHeader)
-	} else if fileStatus == "done" || fileStatus == "skipped" {
-		fileLabel = fmt.Sprintf("  ▶ %s %s (%d/%d Checked)", headerIcon, fileHeader, verifiedCount, len(fileStandards))
-	} else {
-		fileLabel = fmt.Sprintf("  ▶ %s %s (%d Pending)", headerIcon, fileHeader, len(fileStandards))
-	}
-
+	fileLabel := fmt.Sprintf("  %s %s", headerIcon, fileHeader)
 	headerLine := lipgloss.NewStyle().Foreground(shared.ColorInfo).Bold(true).Render(fileLabel)
-	if !isExpanded && !m.isCompleted {
-		return headerLine
-	}
-
 	return headerLine + "\n" + m.renderGroupDetails(fileStandards)
 }
 

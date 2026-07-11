@@ -2,6 +2,7 @@ package welcome
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/toanle/synthspec/generator"
 	"github.com/toanle/synthspec/tui/shared"
 )
 
@@ -24,7 +25,7 @@ func (m WelcomeModel) View() string {
 `
 	logoStyle := lipgloss.NewStyle().Foreground(shared.ColorAccent).Bold(true)
 	logoText := logoStyle.Render(logo)
-	subTitle := lipgloss.NewStyle().Foreground(shared.ColorMuted).Italic(true).Render("  Open-Source BYOK AI Solution Architect CLI")
+	subTitle := lipgloss.NewStyle().Foreground(shared.ColorMuted).Italic(true).Render("  Open-Source BYOK AI Solution Architect CLI v" + generator.EngineVersion)
 
 	var content string
 	switch m.Phase {

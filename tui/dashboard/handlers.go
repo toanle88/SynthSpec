@@ -234,6 +234,7 @@ func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cm
 			}
 		}
 	}
+	m.chatViewport.GotoTop()
 	return m, nil
 }
 

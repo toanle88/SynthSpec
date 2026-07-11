@@ -200,7 +200,7 @@ func (fg *fileGenerator) handleSyntaxError(fileName string, content string, atte
 	})
 	feedback := fmt.Sprintf("Static syntax validation failed: %v. Please rewrite the file to output syntactically valid contents.", checkErr)
 	
-	refineCtx, cancel := context.WithTimeout(fg.ctx, 60*time.Second)
+	refineCtx, cancel := context.WithTimeout(fg.ctx, 180*time.Second)
 	defer cancel()
 
 	refined, refineErr := fg.gw.RefineSpecFile(refineCtx, fileName, content, feedback, nil, referenceDoc)

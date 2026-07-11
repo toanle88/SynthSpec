@@ -11,7 +11,7 @@ import (
 // getFileStatusIconAndStyle mapping maps dynamic status to its TUI icon and color style.
 func (m DashboardModel) getFileStatusIconAndStyle(status string) (string, lipgloss.Style) {
 	switch status {
-	case "skipped", "done":
+	case "skipped", "done", "extracting":
 		return "🟢 Done", shared.StyleSuccess
 	case "waiting_approval":
 		return "⏸️ Awaiting Approval", shared.StyleWarning

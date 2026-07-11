@@ -100,6 +100,10 @@ git clone https://github.com/your-org/synthspec.git
 cd synthspec
 go build -o synthspec main.go
 ```
+To set a specific version at build time, compile using `-ldflags`:
+```bash
+go build -ldflags="-X 'github.com/toanle/synthspec/generator.EngineVersion=1.0.0'" -o synthspec main.go
+```
 
 ### Setup API Keys
 Setup your chosen upstream LLM provider API key:
