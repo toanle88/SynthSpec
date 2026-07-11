@@ -31,6 +31,7 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 	m.isWaitingDiffApproval = false
 	m.forceFinishChan = make(chan struct{})
 	m.genStartTime = time.Now()
+	m.genLogs = nil
 	m.chatViewport.GotoTop()
 
 	ctx, cancel := context.WithCancel(context.Background())

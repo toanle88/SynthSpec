@@ -35,6 +35,17 @@ func (m DashboardModel) renderGeneratingState() string {
 	content = append(content, "\n"+lipgloss.NewStyle().Foreground(shared.ColorSuccess).Bold(true).Render("Status: "+m.genStatus))
 	content = append(content, "\n"+shared.TitleStyle.Render("📋 Engineering Quality Standards Check:"))
 	content = append(content, m.renderStandardsGrid())
+	if len(m.genLogs) > 0 {
+		content = append(content, "\n"+shared.TitleStyle.Render("📊 Activity Stream Logs:"))
+		logBoxContent := strings.Join(m.genLogs, "\n")
+		styledGenLogs := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#a1a1aa")).
+			Background(lipgloss.Color("#18181b")).
+			Padding(1, 2).
+			Width(m.width - 45).
+			Render(logBoxContent)
+		content = append(content, styledGenLogs)
+	}
 	if len(m.validatorLogs) > 0 {
 		content = append(content, "\n"+shared.TitleStyle.Render("💻 Validator Live Console Logs:"))
 		boxContent := strings.Join(m.validatorLogs, "\n")

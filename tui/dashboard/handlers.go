@@ -129,6 +129,11 @@ func (m DashboardModel) handleGenProgress(msg genProgressMsg) (tea.Model, tea.Cm
 
 	if ev.Message != "" {
 		m.genStatus = ev.Message
+		timeStr := time.Now().Format("15:04:05")
+		m.genLogs = append(m.genLogs, fmt.Sprintf("[%s] %s", timeStr, ev.Message))
+		if len(m.genLogs) > 15 {
+			m.genLogs = m.genLogs[len(m.genLogs)-15:]
+		}
 	}
 
 	if ev.Status == "waiting_approval" {

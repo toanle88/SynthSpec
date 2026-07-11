@@ -103,6 +103,7 @@ type GenerationState struct {
 	cancelGen       context.CancelFunc
 	forceFinishChan chan struct{}
 	genStartTime    time.Time
+	genLogs         []string
 }
 
 type ThoughtStreamState struct {
