@@ -32,7 +32,7 @@ func TestGenerate_AllSuccess(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestGenerate_DownstreamFilesRunInParallel(t *testing.T) {
 	var genErr error
 	done := make(chan struct{})
 	go func() {
-		genErr = Generate(context.Background(), gateway, persistence, tempDir, progress, nil, nil)
+		genErr = Generate(context.Background(), gateway, persistence, tempDir, progress, nil, nil, nil)
 		close(done)
 	}()
 
@@ -154,7 +154,7 @@ func TestGenerate_TransientAPIFailure(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("expected success on transient retry, got: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestGenerate_TransientValidationFailure(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestGenerate_PersistentFailure(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected persistent failure error, got nil")
 	}

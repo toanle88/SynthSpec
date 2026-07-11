@@ -199,6 +199,7 @@ func (m *DashboardModel) handleGenProgressLogs(ev generator.ProgressEvent) {
 // handleGenFinished saves final status and parses scorecard performance statistics when the asset synthesis ends.
 func (m DashboardModel) handleGenFinished(msg genFinishedMsg) (tea.Model, tea.Cmd) {
 	m.isGenerating = false
+	m.isCompleted = checkCompletion(m.Session.GetScores())
 	if msg.err != nil {
 		if msg.err == context.Canceled || strings.Contains(msg.err.Error(), "context canceled") {
 			m.genStatus = "Specification generation cancelled."

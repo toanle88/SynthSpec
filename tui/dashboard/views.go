@@ -249,10 +249,11 @@ func (m DashboardModel) renderFooter() string {
 		elements = append(elements, styledBox)
 	}
 
-	// Keybindings helper
 	keys := []string{"Ctrl+C: Quit"}
 	if m.err != nil {
 		keys = append(keys, "Esc: Dismiss Error")
+	} else if m.isGenerating {
+		keys = append(keys, "q/Esc: Cancel", "f: Force Finish & Save")
 	} else if m.isCompleted {
 		keys = append(keys, "v/Enter: View file", "g: Regenerate & Verify", "u: Modify", "e: Editor")
 	} else if m.showTextInput {

@@ -67,14 +67,19 @@ type fileGenerator struct {
 	proposedContents map[string]string
 	proposedMu       sync.Mutex
 	startTime        time.Time
+	forceFinishChan  chan struct{}
 }
 
 // Generate runs sequential spec generation for all files
-func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersistence, outputDir string, progress chan<- string, approvalChan chan struct{}, diffApprovalChan chan struct{}) error {
+func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersistence, outputDir string, progress chan<- string, approvalChan chan struct{}, diffApprovalChan chan struct{}, forceFinishChan chan struct{}) (genErr error) {
 	startTime := time.Now()
+	var fg *fileGenerator
 	defer func() {
 		elapsed := int64(time.Since(startTime).Seconds())
 		_ = persistence.AddDuration(elapsed)
+		if fg != nil && genErr != nil {
+			_ = fg.writeProposedToDisk()
+		}
 	}()
 	defer close(progress)
 
@@ -107,7 +112,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 
 	sendProgress(progress, ProgressEvent{Status: "started", Phase: "source", Details: strings.Join(files, ","), Message: "Starting spec generation..."})
 
-	fg := &fileGenerator{
+	fg = &fileGenerator{
 		ctx:              ctx,
 		gw:               gw,
 		persistence:      persistence,
@@ -118,6 +123,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 		templates:        templates,
 		proposedContents: make(map[string]string),
 		startTime:        startTime,
+		forceFinishChan:  forceFinishChan,
 	}
 
 	fileCompliances := make([]FileCompliance, len(templates))

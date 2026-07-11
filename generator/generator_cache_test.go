@@ -47,7 +47,7 @@ func TestResumableMidLoop(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("expected success, got err: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestGenerate_ConsistencyCheckAndSelfCorrection(t *testing.T) {
 		}
 	}()
 
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("expected generation success after consistency refinement, got: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 		}
 	}()
 
-	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("initial generation failed: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress2, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress2, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("second generation failed: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestGenerate_DiffBasedCaching(t *testing.T) {
 			continue
 		}
 	}()
-	err = Generate(context.Background(), tg, persistence, tempDir, progress3, nil, nil)
+	err = Generate(context.Background(), tg, persistence, tempDir, progress3, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("generation after facts modification failed: %v", err)
 	}

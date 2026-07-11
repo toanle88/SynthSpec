@@ -152,6 +152,17 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 	applicableStds := config.FilterApplicableStandards(standards, fileName)
 
 	for attempt := startAttempt; attempt < maxRetries; attempt++ {
+		select {
+		case <-fg.forceFinishChan:
+			sendProgress(fg.progress, ProgressEvent{
+				File:    fileName,
+				Status:  "warning",
+				Message: fmt.Sprintf("Manual finish requested. Bypassing remaining self-correction for %s.", fileName),
+			})
+			return content, complianceResults, checkErr, nil
+		default:
+		}
+
 		checkErr = PerformStaticValidation(fileName, content, fg.templates)
 		if checkErr != nil {
 			var err error
@@ -179,6 +190,11 @@ func (fg *fileGenerator) runSelfCorrection(fileName string, content string, star
 	}
 
 	if staticErr := PerformStaticValidation(fileName, content, fg.templates); staticErr != nil {
+		select {
+		case <-fg.forceFinishChan:
+			return content, complianceResults, checkErr, nil
+		default:
+		}
 		sendProgress(fg.progress, ProgressEvent{
 			File:    fileName,
 			Status:  "failed",

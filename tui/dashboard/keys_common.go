@@ -21,6 +21,18 @@ func (m DashboardModel) handleUpdateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			m.genStatus = "Specification generation cancelled."
 			return m, nil
 		}
+		if keyStr == "f" || keyStr == "F" {
+			if m.forceFinishChan != nil {
+				select {
+				case <-m.forceFinishChan:
+					// Already closed
+				default:
+					close(m.forceFinishChan)
+				}
+			}
+			m.genStatus = "Force-finish requested. Saving current drafts..."
+			return m, nil
+		}
 		return m, nil
 	}
 	if m.loading {

@@ -132,6 +132,16 @@ func (fg *fileGenerator) generateDownstreamParallel(templates []config.Template,
 }
 
 func (fg *fileGenerator) runConsistencyVerification(templates []config.Template, standards []config.Standard, fileCompliances []FileCompliance) error {
+	select {
+	case <-fg.forceFinishChan:
+		sendProgress(fg.progress, ProgressEvent{
+			Status:  "warning",
+			Message: "Manual finish requested. Bypassing cross-document consistency checks.",
+		})
+		return fg.finishGeneration(fileCompliances, standards, &gateway.ConsistencyReport{Consistent: true})
+	default:
+	}
+
 	sendProgress(fg.progress, ProgressEvent{
 		Status:  "auditing",
 		Message: "Verifying cross-document logical consistency...",
@@ -201,6 +211,16 @@ func (fg *fileGenerator) readFilesContent(templates []config.Template) map[strin
 func (fg *fileGenerator) runConsistencyRefinementLoop(filesContent map[string]string, fileCompliances []FileCompliance, standards []config.Standard) (*gateway.ConsistencyReport, error) {
 	var consistencyReport *gateway.ConsistencyReport
 	for cAttempt := 1; cAttempt <= 3; cAttempt++ {
+		select {
+		case <-fg.forceFinishChan:
+			sendProgress(fg.progress, ProgressEvent{
+				Status:  "warning",
+				Message: "Manual finish requested. Skipping remaining consistency refinement.",
+			})
+			return &gateway.ConsistencyReport{Consistent: true}, nil
+		default:
+		}
+
 		report, err := fg.gw.VerifyConsistency(fg.ctx, filesContent)
 		if err != nil {
 			return nil, fmt.Errorf("cross-document consistency verification failed: %w", err)
@@ -406,5 +426,20 @@ func (fg *fileGenerator) runPromptOptimization(templates []config.Template) erro
 	fg.proposedContents["99_optimized_prompt.md"] = optimized
 	fg.proposedMu.Unlock()
 
+	return nil
+}
+
+// writeProposedToDisk writes any currently generated in-memory file drafts to disk.
+// This is used to persist progress even if the pipeline exits prematurely with an error.
+func (fg *fileGenerator) writeProposedToDisk() error {
+	fg.proposedMu.Lock()
+	defer fg.proposedMu.Unlock()
+	for fname, newContent := range fg.proposedContents {
+		if fname == ".synthspec-meta.json" || fname == "99_optimized_prompt.md" || fname == "00_compliance_report.md" {
+			continue
+		}
+		filePath := filepath.Join(fg.outputDir, fname)
+		_ = os.WriteFile(filePath, []byte(newContent), 0644)
+	}
 	return nil
 }

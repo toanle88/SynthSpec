@@ -88,7 +88,7 @@ func (m DashboardModel) recvGenProgressCmd() tea.Cmd {
 // generateSpecsCmd synthesizes all targets in parallel inside background worker goroutines.
 func (m DashboardModel) generateSpecsCmd(ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		err := generator.Generate(ctx, m.Gateway, m.Session, m.OutputDir, m.genChan, m.approvalChan, m.diffApprovalChan)
+		err := generator.Generate(ctx, m.Gateway, m.Session, m.OutputDir, m.genChan, m.approvalChan, m.diffApprovalChan, m.forceFinishChan)
 		return genFinishedMsg{err: err}
 	}
 }

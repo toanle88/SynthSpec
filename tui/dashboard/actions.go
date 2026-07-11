@@ -28,6 +28,7 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 	m.diffApprovalChan = make(chan struct{})
 	m.isWaitingApproval = false
 	m.isWaitingDiffApproval = false
+	m.forceFinishChan = make(chan struct{})
 	m.chatViewport.GotoTop()
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -100,6 +100,7 @@ type GenerationState struct {
 	genFileStatuses map[string]string
 	genFileDetails  map[string]string
 	cancelGen       context.CancelFunc
+	forceFinishChan chan struct{}
 }
 
 type ThoughtStreamState struct {
