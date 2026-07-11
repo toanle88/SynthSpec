@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -29,6 +31,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case timerTickMsg:
+		if m.isGenerating {
+			cmds = append(cmds, tickCmd())
+		}
+		m.updateChatViewport()
+		return m, tea.Batch(cmds...)
+
 	case tea.KeyMsg:
 		var keyCmd tea.Cmd
 		var model tea.Model
@@ -133,4 +142,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	m.updateChatViewport()
 	return m, tea.Batch(cmds...)
+}
+
+type timerTickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return timerTickMsg(t)
+	})
 }

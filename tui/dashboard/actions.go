@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/toanle/synthspec/gateway"
@@ -29,6 +30,7 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 	m.isWaitingApproval = false
 	m.isWaitingDiffApproval = false
 	m.forceFinishChan = make(chan struct{})
+	m.genStartTime = time.Now()
 	m.chatViewport.GotoTop()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,6 +40,7 @@ func (m DashboardModel) triggerRegeneration() (tea.Model, tea.Cmd) {
 		m.generateSpecsCmd(ctx),
 		m.recvGenProgressCmd(),
 		m.spinner.Tick,
+		tickCmd(),
 	)
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -101,6 +102,7 @@ type GenerationState struct {
 	genFileDetails  map[string]string
 	cancelGen       context.CancelFunc
 	forceFinishChan chan struct{}
+	genStartTime    time.Time
 }
 
 type ThoughtStreamState struct {

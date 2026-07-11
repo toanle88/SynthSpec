@@ -78,7 +78,13 @@ func (m DashboardModel) renderHeader() string {
 		m.Session.GetScores().Security +
 		m.Session.GetScores().Compliance) / 4
 
-	totalDurationStr := (time.Duration(m.Session.GetTotalDuration()) * time.Second).String()
+	var accumulatedSecs int64
+	if m.isGenerating {
+		accumulatedSecs = m.Session.GetTotalDuration() + int64(time.Since(m.genStartTime).Seconds())
+	} else {
+		accumulatedSecs = m.Session.GetTotalDuration()
+	}
+	totalDurationStr := (time.Duration(accumulatedSecs) * time.Second).String()
 	meta := fmt.Sprintf("Project: %s | Provider: %s | Model: %s | Tokens: %d | Cost: $%.4f | Time: %s",
 		lipgloss.NewStyle().Foreground(shared.ColorInfo).Bold(true).Render(m.Session.GetProjectName()),
 		strings.ToUpper(m.Session.GetProvider()),

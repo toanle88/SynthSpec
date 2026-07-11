@@ -236,7 +236,7 @@ func (s *Session) GetHistory() []domain.Message {
 func (s *Session) GetTotalTokens() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.TotalTokensUsed
+	return s.TotalPromptTokens + s.TotalCompletionTokens
 }
 
 // GetFacts returns the current facts
