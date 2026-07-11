@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/toanle/synthspec/gateway"
@@ -77,12 +78,14 @@ func (m DashboardModel) renderHeader() string {
 		m.Session.GetScores().Security +
 		m.Session.GetScores().Compliance) / 4
 
-	meta := fmt.Sprintf("Project: %s | Provider: %s | Model: %s | Tokens: %d | Cost: $%.4f",
+	totalDurationStr := (time.Duration(m.Session.GetTotalDuration()) * time.Second).String()
+	meta := fmt.Sprintf("Project: %s | Provider: %s | Model: %s | Tokens: %d | Cost: $%.4f | Time: %s",
 		lipgloss.NewStyle().Foreground(shared.ColorInfo).Bold(true).Render(m.Session.GetProjectName()),
 		strings.ToUpper(m.Session.GetProvider()),
 		m.Session.GetModel(),
 		m.Session.GetTotalTokens(),
 		m.Session.GetEstimatedCost(),
+		totalDurationStr,
 	)
 
 	progBar := shared.RenderProgressBar(40, avgScore)

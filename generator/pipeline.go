@@ -304,6 +304,9 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 	provider := fg.persistence.GetProvider()
 	history := fg.persistence.GetHistory()
 	totalTokens := fg.persistence.GetTotalTokens()
+	currentElapsed := int64(time.Since(fg.startTime).Seconds())
+	accumulatedSecs := fg.persistence.GetTotalDuration() + currentElapsed
+	formattedDuration := (time.Duration(accumulatedSecs) * time.Second).String()
 
 	meta := GenerationMetadata{
 		ProjectName:         projectName,
@@ -313,6 +316,7 @@ func (fg *fileGenerator) finishGeneration(fileCompliances []FileCompliance, stan
 		CompletionMetrics: CompletionMetrics{
 			TotalTurns:     len(history) / 2,
 			TokensConsumed: totalTokens,
+			TotalDuration:  formattedDuration,
 		},
 		ComplianceSummary: complianceSummary,
 	}

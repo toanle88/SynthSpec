@@ -160,13 +160,14 @@ func (tg *TestGateway) RegisterBudgetCheck(fn func() error) {
 
 // MockPersistence implements generator.SessionPersistence for testing
 type MockPersistence struct {
-	projectName string
-	provider    string
-	history     []domain.Message
-	facts       domain.Facts
-	totalTokens int
-	files       map[string]domain.GeneratedFileState
-	mu          sync.Mutex
+	projectName   string
+	provider      string
+	history       []domain.Message
+	facts         domain.Facts
+	totalTokens   int
+	totalDuration int64
+	files         map[string]domain.GeneratedFileState
+	mu            sync.Mutex
 }
 
 func NewMockPersistence() *MockPersistence {
@@ -247,6 +248,19 @@ func (mp *MockPersistence) GetFacts() domain.Facts {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 	return mp.facts
+}
+
+func (mp *MockPersistence) GetTotalDuration() int64 {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	return mp.totalDuration
+}
+
+func (mp *MockPersistence) AddDuration(seconds int64) error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	mp.totalDuration += seconds
+	return nil
 }
 
 type blockingGateway struct {

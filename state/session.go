@@ -32,6 +32,7 @@ type Session struct {
 	TotalTokensUsed       int                        `json:"total_tokens_used"`
 	TotalPromptTokens     int                        `json:"total_prompt_tokens"`
 	TotalCompletionTokens int                        `json:"total_completion_tokens"`
+	TotalDuration         int64                      `json:"total_duration"`
 	GeneratedFiles        []domain.GeneratedFileState `json:"generated_files,omitempty"`
 }
 
@@ -185,6 +186,21 @@ func (s *Session) UpdateTokens(prompt, completion int) error {
 	s.TotalPromptTokens += prompt
 	s.TotalCompletionTokens += completion
 	s.TotalTokensUsed += prompt + completion
+	return s.saveLocked()
+}
+
+// GetTotalDuration returns the accumulated session duration in seconds
+func (s *Session) GetTotalDuration() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.TotalDuration
+}
+
+// AddDuration adds seconds to the accumulated session duration
+func (s *Session) AddDuration(seconds int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.TotalDuration += seconds
 	return s.saveLocked()
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/toanle/synthspec/config"
 	"github.com/toanle/synthspec/gateway"
@@ -28,8 +29,9 @@ type GenerationMetadata struct {
 }
 
 type CompletionMetrics struct {
-	TotalTurns     int `json:"total_turns"`
-	TokensConsumed int `json:"tokens_consumed"`
+	TotalTurns     int    `json:"total_turns"`
+	TokensConsumed int    `json:"tokens_consumed"`
+	TotalDuration  string `json:"total_duration"`
 }
 
 // ProgressEvent represents a structured progress update sent to the TUI
@@ -64,10 +66,16 @@ type fileGenerator struct {
 	sessionMu        sync.Mutex
 	proposedContents map[string]string
 	proposedMu       sync.Mutex
+	startTime        time.Time
 }
 
 // Generate runs sequential spec generation for all files
 func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersistence, outputDir string, progress chan<- string, approvalChan chan struct{}, diffApprovalChan chan struct{}) error {
+	startTime := time.Now()
+	defer func() {
+		elapsed := int64(time.Since(startTime).Seconds())
+		_ = persistence.AddDuration(elapsed)
+	}()
 	defer close(progress)
 
 	// Load templates
@@ -109,6 +117,7 @@ func Generate(ctx context.Context, gw gateway.Gateway, persistence SessionPersis
 		diffApprovalChan: diffApprovalChan,
 		templates:        templates,
 		proposedContents: make(map[string]string),
+		startTime:        startTime,
 	}
 
 	fileCompliances := make([]FileCompliance, len(templates))

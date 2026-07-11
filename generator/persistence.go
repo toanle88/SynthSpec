@@ -42,5 +42,11 @@ type SessionPersistence interface {
 
 	// GetFacts returns the current facts
 	GetFacts() domain.Facts
+
+	// GetTotalDuration returns the total duration in seconds
+	GetTotalDuration() int64
+
+	// AddDuration adds seconds to the total duration
+	AddDuration(seconds int64) error
 }
 

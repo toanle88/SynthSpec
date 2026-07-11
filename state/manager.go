@@ -24,6 +24,8 @@ type SessionManager interface {
 	GetEstimatedCost() float64
 	UpdateTokens(prompt, completion int) error
 	AddTokens(int) error
+	GetTotalDuration() int64
+	AddDuration(seconds int64) error
 	AddTurn(string, string, int, int)
 	Save() error
 	SaveSession() error
