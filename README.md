@@ -93,11 +93,27 @@ While in the interactive interrogation loop console, type the following commands
 
 ## Quick Start & Installation
 
-### Build from Source
-Ensure you have Go 1.20+ installed:
+### Build & Run from Source
+Ensure you have Go 1.20+ installed.
+
+#### Option A: Run directly (Development)
+You can run the application directly using the recommended OpenRouter and DeepSeek configuration (make sure `OPENROUTER_API_KEY` is set):
 ```bash
-git clone https://github.com/your-org/synthspec.git
+# Run with recommended OpenRouter DeepSeek model
+go run main.go init test-project --provider openrouter --model deepseek-v4-flash
+
+# Run with the offline mock provider (no API key needed)
+go run main.go init test-project --mock
+```
+
+#### Option B: Compile & Build Binary
+If you prefer compiling to a binary:
+```bash
+# Clone the repository
+git clone https://github.com/toanle/synthspec.git
 cd synthspec
+
+# Build the binary
 go build -o synthspec main.go
 ```
 To set a specific version at build time, compile using `-ldflags`:
@@ -139,30 +155,26 @@ $env:OPENROUTER_API_KEY="your-openrouter-key"
 ```
 
 ### Run with Live LLM Provider (Default)
-To run with a live upstream model, make sure you have set the appropriate API key environment variables (as detailed in the "Setup API Keys" section above), then initialize or resume the session without the `--mock` flag. Each retry uses a fresh prompt so the model does not carry over stale retry context:
+To run with a live upstream model, make sure you have set the appropriate API key environment variables (as detailed in the "Setup API Keys" section above), then initialize or resume the session.
+
+For example, to run with **OpenRouter** and **DeepSeek-v4-Flash** (highly recommended):
 
 **On Linux / macOS:**
 ```bash
-./synthspec init test-project
-./synthspec resume test-project
+./synthspec init test-project --provider openrouter --model deepseek-v4-flash
+./synthspec resume test-project --provider openrouter --model deepseek-v4-flash
 ```
 
 **On Windows Command Prompt (CMD):**
 ```cmd
-synthspec init test-project
-synthspec resume test-project
+synthspec init test-project --provider openrouter --model deepseek-v4-flash
+synthspec resume test-project --provider openrouter --model deepseek-v4-flash
 ```
 
 **On Windows PowerShell:**
 ```powershell
-.\synthspec init test-project
-.\synthspec resume test-project
-```
-
-You can optionally override the default provider or model by passing the `--provider` or `--model` flags:
-```bash
-# E.g., using Gemini explicitly
-./synthspec init test-project --provider gemini --model gemini-2.5-pro
+.\synthspec init test-project --provider openrouter --model deepseek-v4-flash
+.\synthspec resume test-project --provider openrouter --model deepseek-v4-flash
 ```
 
 ### Run with Mock Provider (Local Offline Testing)
@@ -188,10 +200,12 @@ synthspec resume test-project --mock
 
 ---
 
-## Documentation
+## Documentation & License
 
-For developers, contributors, and maintainers, check out the detailed documentation directory:
-- **[Documentation Overview](docs/README.md)**: Entry point and directory map.
+For developers, contributors, and maintainers:
+- **[Documentation Overview](docs/README.md)**: Full directory map and document overview.
 - **[System Architecture](docs/architecture/system.md)**: Decoupled component layouts and diagrams.
 - **[TUI Design Standards](docs/standard/tui-design.md)**: Grid spacing and terminal visual guides.
 - **[Project Roadmap](docs/ROADMAP.md)**: Milestones, priorities, and status checklist.
+- **[Contributing Guide](CONTRIBUTING.md)**: Guidelines for contributing code, architecture rules, and testing standards.
+- **[License (MIT)](LICENSE)**: SynthSpec open-source license information.
