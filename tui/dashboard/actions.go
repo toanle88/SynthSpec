@@ -124,13 +124,17 @@ func (m DashboardModel) getChoicesList() []string {
 // updateSessionState updates the session structure fields with response metadata.
 func (m *DashboardModel) updateSessionState(resp *gateway.OracleResponse) {
 	m.Session.UpdateFacts(resp.Facts)
-	m.Session.UpdateScores(resp.ConfidenceScores, m.Session.GetRationales())
-	m.Session.UpdateScores(m.Session.GetScores(), resp.DimensionRationales)
-	m.Session.SetInterrogationState(resp.NextQuestion, m.Session.GetLastChoices())
-	m.Session.SetInterrogationState(m.Session.GetLastQuestion(), resp.NextChoices)
+	m.Session.UpdateScores(resp.ConfidenceScores, resp.DimensionRationales)
+
+	// Keep old choices when LLM returns empty choices but has a question
+	choices := resp.NextChoices
+	if len(choices) == 0 && resp.NextQuestion != "" {
+		choices = m.Session.GetLastChoices()
+	}
+	m.Session.SetInterrogationState(resp.NextQuestion, choices)
 	m.Session.ClearGeneratedFiles()
 	m.selectedChoiceIdx = 0
-	m.showTextInput = len(m.Session.GetLastChoices()) == 0
+	m.showTextInput = len(choices) == 0
 }
 
 // checkAndTriggerPostOracle performs checks to either initiate background document generation or queue context history compaction.
@@ -157,8 +161,8 @@ func (m DashboardModel) checkAndTriggerPostOracle(wasCompleted bool) (tea.Model,
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelGen = cancel
 
-		batchCmds = append(batchCmds, 
-			m.generateSpecsCmd(ctx), 
+		batchCmds = append(batchCmds,
+			m.generateSpecsCmd(ctx),
 			m.recvGenProgressCmd(),
 			m.spinner.Tick,
 			tickCmd(),

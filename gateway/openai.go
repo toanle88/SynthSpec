@@ -67,9 +67,7 @@ type openAIChatResponse struct {
 	} `json:"usage"`
 }
 
-
-
-func (o *OpenAIAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string) (*http.Request, error) {
+func (o *OpenAIAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string, currentScores domain.ConfidenceScores, currentRationales domain.DimensionRationales) (*http.Request, error) {
 	messages := []openAIChatMessage{
 		{Role: "system", Content: OracleSystemPrompt},
 	}
@@ -78,6 +76,18 @@ func (o *OpenAIAdapter) BuildOracleRequest(facts domain.Facts, history []domain.
 	messages = append(messages, openAIChatMessage{
 		Role:    "system",
 		Content: fmt.Sprintf("Current compiled facts:\n%s", string(factsJSON)),
+	})
+
+	scoresJSON, _ := json.Marshal(struct {
+		Scores     domain.ConfidenceScores    `json:"current_confidence_scores"`
+		Rationales domain.DimensionRationales `json:"current_dimension_rationales"`
+	}{
+		Scores:     currentScores,
+		Rationales: currentRationales,
+	})
+	messages = append(messages, openAIChatMessage{
+		Role:    "system",
+		Content: fmt.Sprintf("Current confidence scores and rationales (build upon these, do NOT reset to 0):\n%s", string(scoresJSON)),
 	})
 
 	for _, m := range history {
@@ -143,7 +153,6 @@ func (o *OpenAIAdapter) BuildExtractStructuralEntitiesRequest(sourceDoc string) 
 	}
 	return buildJSONRequest(openaiChatURL, reqBody, map[string]string{"Authorization": authBearerPrefix + o.apiKey})
 }
-
 
 func (o *OpenAIAdapter) ParseGenerateSpecResponse(body []byte) (string, int, int, error) {
 	var chatResp openAIChatResponse

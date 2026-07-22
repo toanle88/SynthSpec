@@ -71,9 +71,7 @@ type openRouterChatResponse struct {
 	} `json:"usage"`
 }
 
-
-
-func (o *OpenRouterAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string) (*http.Request, error) {
+func (o *OpenRouterAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string, currentScores domain.ConfidenceScores, currentRationales domain.DimensionRationales) (*http.Request, error) {
 	messages := []openRouterChatMessage{
 		{Role: "system", Content: OracleSystemPrompt},
 	}
@@ -82,6 +80,18 @@ func (o *OpenRouterAdapter) BuildOracleRequest(facts domain.Facts, history []dom
 	messages = append(messages, openRouterChatMessage{
 		Role:    "system",
 		Content: fmt.Sprintf("Current compiled facts:\n%s", string(factsJSON)),
+	})
+
+	scoresJSON, _ := json.Marshal(struct {
+		Scores     domain.ConfidenceScores    `json:"current_confidence_scores"`
+		Rationales domain.DimensionRationales `json:"current_dimension_rationales"`
+	}{
+		Scores:     currentScores,
+		Rationales: currentRationales,
+	})
+	messages = append(messages, openRouterChatMessage{
+		Role:    "system",
+		Content: fmt.Sprintf("Current confidence scores and rationales (build upon these, do NOT reset to 0):\n%s", string(scoresJSON)),
 	})
 
 	for _, m := range history {
@@ -159,7 +169,6 @@ func (o *OpenRouterAdapter) BuildExtractStructuralEntitiesRequest(sourceDoc stri
 		xTitleHeader:    "SynthSpec",
 	})
 }
-
 
 func (o *OpenRouterAdapter) ParseGenerateSpecResponse(body []byte) (string, int, int, error) {
 	var chatResp openRouterChatResponse

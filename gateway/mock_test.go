@@ -13,7 +13,7 @@ func TestMockGatewayInterrogation(t *testing.T) {
 	ctx := context.Background()
 
 	// Initial turn
-	res, err := gw.QueryOracle(ctx, Facts{}, nil, "")
+	res, err := gw.QueryOracle(ctx, Facts{}, nil, "", ConfidenceScores{}, DimensionRationales{})
 	if err != nil {
 		t.Fatalf("failed to query oracle: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestMockGatewayInterrogation(t *testing.T) {
 		{Role: "user", Content: "security"},
 		{Role: "assistant", Content: "question 3"},
 	}
-	res2, err := gw.QueryOracle(ctx, Facts{}, history, "compliance")
+	res2, err := gw.QueryOracle(ctx, Facts{}, history, "compliance", ConfidenceScores{}, DimensionRationales{})
 	if err != nil {
 		t.Fatalf("failed to query oracle: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestMockGateway_QueryOracleStream(t *testing.T) {
 	ctx := context.Background()
 	tokenChan := make(chan string, 100)
 
-	res, err := gw.QueryOracleStream(ctx, Facts{}, nil, "", tokenChan)
+	res, err := gw.QueryOracleStream(ctx, Facts{}, nil, "", ConfidenceScores{}, DimensionRationales{}, tokenChan)
 	if err != nil {
 		t.Fatalf("QueryOracleStream failed: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestMockGateway_QueryOracleStream_WithLatestInput(t *testing.T) {
 	ctx := context.Background()
 	tokenChan := make(chan string, 100)
 
-	res, err := gw.QueryOracleStream(ctx, Facts{}, nil, "payment system", tokenChan)
+	res, err := gw.QueryOracleStream(ctx, Facts{}, nil, "payment system", ConfidenceScores{}, DimensionRationales{}, tokenChan)
 	if err != nil {
 		t.Fatalf("QueryOracleStream failed: %v", err)
 	}

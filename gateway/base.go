@@ -19,7 +19,7 @@ type ProviderAdapter interface {
 	ProviderName() string
 	ModelName() string
 
-	BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string) (*http.Request, error)
+	BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string, currentScores domain.ConfidenceScores, currentRationales domain.DimensionRationales) (*http.Request, error)
 	ParseOracleResponse(body []byte) (*domain.OracleResponse, int, int, error)
 
 	BuildGenerateSpecRequest(facts domain.Facts, fileName string, promptTemplate string) (*http.Request, error)
@@ -96,8 +96,8 @@ func buildJSONRequest(url string, reqBody interface{}, headers map[string]string
 	return req, nil
 }
 
-func (b *BaseGateway) QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error) {
-	req, err := b.adapter.BuildOracleRequest(facts, history, latestInput)
+func (b *BaseGateway) QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string, currentScores ConfidenceScores, currentRationales DimensionRationales) (*OracleResponse, error) {
+	req, err := b.adapter.BuildOracleRequest(facts, history, latestInput, currentScores, currentRationales)
 	if err != nil {
 		return nil, err
 	}
@@ -127,8 +127,8 @@ func (b *BaseGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	return oracleResp, nil
 }
 
-func (b *BaseGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error) {
-	res, err := b.QueryOracle(ctx, facts, history, latestInput)
+func (b *BaseGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, currentScores ConfidenceScores, currentRationales DimensionRationales, tokenChan chan<- string) (*OracleResponse, error) {
+	res, err := b.QueryOracle(ctx, facts, history, latestInput, currentScores, currentRationales)
 	if err != nil {
 		close(tokenChan)
 		return nil, err
@@ -336,7 +336,7 @@ func pseudoEmbed(text string) []float32 {
 		}
 		vec[i] = val / float32(len(words))
 	}
-	
+
 	// Normalize
 	var norm float64
 	for _, v := range vec {
@@ -350,4 +350,3 @@ func pseudoEmbed(text string) []float32 {
 	}
 	return vec
 }
-

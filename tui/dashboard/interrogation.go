@@ -114,7 +114,7 @@ func (m DashboardModel) handleKeyEnterChoiceSelection() (tea.Model, tea.Cmd) {
 	var val string
 	if selected == "Let AI decide" {
 		val = "Let the AI decide based on current facts and context."
-	} else {
+	} else if m.selectedChoiceIdx < len(m.Session.GetLastChoices()) {
 		val = m.Session.GetLastChoices()[m.selectedChoiceIdx]
 	}
 

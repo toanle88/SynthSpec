@@ -41,7 +41,9 @@ Guidelines for evaluation:
 - Security is complete when authentication, authorization (RBAC), and encryption methods are defined.
 - Compliance is complete when tenancy model (multi-tenant vs single-tenant), GDPR/data-handling, and backup strategies are set.
 - Under NO circumstances ask more than ONE question at a time. Do not use bullets or lists for questions; ask a single clear question.
-- Do NOT output any markdown backticks wrapper (like ` + "```json" + `). Output ONLY the raw JSON string.`
+- Do NOT output any markdown backticks wrapper (like ` + "```json" + `). Output ONLY the raw JSON string.
+
+IMPORTANT: Current confidence scores and dimension rationales will be provided to you as context. You MUST build upon these existing scores — do NOT reset them to 0 unless there is a clear, justified reason. Use the provided scores and rationales as your starting point and increment them as new information is gathered.`
 
 // GenerateSpecSystemPrompt is the system prompt for the GenerateSpecFile method.
 const GenerateSpecSystemPrompt = "You are a senior solutions architect. Write detailed, enterprise-grade specification files based on the facts provided. Return the exact file content and nothing else. No preamble, no postamble, no markdown codeblocks unless specified."
@@ -133,5 +135,3 @@ Follow these strict rules:
    - Strict Security Constraints & Compliance Checkpoints
 4. Maintain every detail, constraint, and rule, but express them as densely as possible to optimize context token usage.
 5. Do NOT include markdown code blocks around the final output. Return the raw optimized markdown directly.`
-
-

@@ -21,15 +21,15 @@ type TestGateway struct {
 	mu          sync.Mutex
 }
 
-func (tg *TestGateway) QueryOracle(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string) (*gateway.OracleResponse, error) {
+func (tg *TestGateway) QueryOracle(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string, currentScores gateway.ConfidenceScores, currentRationales gateway.DimensionRationales) (*gateway.OracleResponse, error) {
 	tg.mu.Lock()
 	tg.queryCount++
 	tg.mu.Unlock()
 	return tg.queryResult, tg.queryErr
 }
 
-func (tg *TestGateway) QueryOracleStream(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string, tokenChan chan<- string) (*gateway.OracleResponse, error) {
-	res, err := tg.QueryOracle(ctx, facts, history, latestInput)
+func (tg *TestGateway) QueryOracleStream(ctx context.Context, facts gateway.Facts, history []gateway.Message, latestInput string, currentScores gateway.ConfidenceScores, currentRationales gateway.DimensionRationales, tokenChan chan<- string) (*gateway.OracleResponse, error) {
+	res, err := tg.QueryOracle(ctx, facts, history, latestInput, currentScores, currentRationales)
 	if err != nil {
 		close(tokenChan)
 		return nil, err
@@ -156,7 +156,6 @@ func (tg *TestGateway) RegisterTokenCounter(fn func(prompt, completion int)) {
 func (tg *TestGateway) RegisterBudgetCheck(fn func() error) {
 	// Not implemented for mock
 }
-
 
 // MockPersistence implements generator.SessionPersistence for testing
 type MockPersistence struct {

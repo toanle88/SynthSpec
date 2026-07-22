@@ -77,15 +77,25 @@ type geminiResponse struct {
 	} `json:"usageMetadata"`
 }
 
-
-
-func (g *GeminiAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string) (*http.Request, error) {
+func (g *GeminiAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string, currentScores domain.ConfidenceScores, currentRationales domain.DimensionRationales) (*http.Request, error) {
 	contents := []geminiContent{}
 
 	factsJSON, _ := json.Marshal(facts)
 	contents = append(contents, geminiContent{
 		Role:  "user",
 		Parts: []geminiPart{{Text: fmt.Sprintf("Current compiled facts:\n%s", string(factsJSON))}},
+	})
+
+	scoresJSON, _ := json.Marshal(struct {
+		Scores     domain.ConfidenceScores    `json:"current_confidence_scores"`
+		Rationales domain.DimensionRationales `json:"current_dimension_rationales"`
+	}{
+		Scores:     currentScores,
+		Rationales: currentRationales,
+	})
+	contents = append(contents, geminiContent{
+		Role:  "user",
+		Parts: []geminiPart{{Text: fmt.Sprintf("Current confidence scores and rationales (build upon these, do NOT reset to 0):\n%s", string(scoresJSON))}},
 	})
 	contents = append(contents, geminiContent{
 		Role:  "model",
@@ -166,7 +176,6 @@ func (g *GeminiAdapter) BuildExtractStructuralEntitiesRequest(sourceDoc string) 
 	}
 	return buildJSONRequest(fmt.Sprintf(geminiChatURLTemplate, g.model, g.apiKey), reqBody, nil)
 }
-
 
 func (g *GeminiAdapter) ParseGenerateSpecResponse(body []byte) (string, int, int, error) {
 	var geminiResp geminiResponse

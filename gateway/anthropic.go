@@ -70,9 +70,7 @@ type anthropicResponse struct {
 	} `json:"usage"`
 }
 
-
-
-func (a *AnthropicAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string) (*http.Request, error) {
+func (a *AnthropicAdapter) BuildOracleRequest(facts domain.Facts, history []domain.Message, latestInput string, currentScores domain.ConfidenceScores, currentRationales domain.DimensionRationales) (*http.Request, error) {
 	messages := []anthropicMessage{}
 
 	factsJSON, _ := json.Marshal(facts)
@@ -80,6 +78,20 @@ func (a *AnthropicAdapter) BuildOracleRequest(facts domain.Facts, history []doma
 		Role: "user",
 		Content: []anthropicContentPart{
 			{Type: "text", Text: fmt.Sprintf("Current compiled facts:\n%s", string(factsJSON))},
+		},
+	})
+
+	scoresJSON, _ := json.Marshal(struct {
+		Scores     domain.ConfidenceScores    `json:"current_confidence_scores"`
+		Rationales domain.DimensionRationales `json:"current_dimension_rationales"`
+	}{
+		Scores:     currentScores,
+		Rationales: currentRationales,
+	})
+	messages = append(messages, anthropicMessage{
+		Role: "user",
+		Content: []anthropicContentPart{
+			{Type: "text", Text: fmt.Sprintf("Current confidence scores and rationales (build upon these, do NOT reset to 0):\n%s", string(scoresJSON))},
 		},
 	})
 	messages = append(messages, anthropicMessage{
@@ -166,7 +178,6 @@ func (a *AnthropicAdapter) BuildExtractStructuralEntitiesRequest(sourceDoc strin
 		anthropicVersionHeader: anthropicVersionValue,
 	})
 }
-
 
 func (a *AnthropicAdapter) ParseGenerateSpecResponse(body []byte) (string, int, int, error) {
 	var anthropicResp anthropicResponse

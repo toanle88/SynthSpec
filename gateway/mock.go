@@ -19,7 +19,7 @@ func NewMockGateway() *MockGateway {
 	return &MockGateway{}
 }
 
-func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error) {
+func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string, currentScores ConfidenceScores, currentRationales DimensionRationales) (*OracleResponse, error) {
 	turns := len(history)
 
 	// Build updated facts by appending latest input to simulate LLM updating them
@@ -101,8 +101,8 @@ func (m *MockGateway) QueryOracle(ctx context.Context, facts Facts, history []Me
 	return res, nil
 }
 
-func (m *MockGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error) {
-	res, err := m.QueryOracle(ctx, facts, history, latestInput)
+func (m *MockGateway) QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, currentScores ConfidenceScores, currentRationales DimensionRationales, tokenChan chan<- string) (*OracleResponse, error) {
+	res, err := m.QueryOracle(ctx, facts, history, latestInput, currentScores, currentRationales)
 	if err != nil {
 		close(tokenChan)
 		return nil, err
@@ -270,7 +270,7 @@ func (m *MockGateway) GenerateEmbeddings(ctx context.Context, texts []string) ([
 			}
 			vec[d] = val / float32(len(words))
 		}
-		
+
 		// Normalize
 		var norm float64
 		for _, v := range vec {

@@ -37,10 +37,10 @@ type ConsistencyReport = domain.ConsistencyReport
 type Gateway interface {
 	// QueryOracle sends the current facts, conversation history, and latest input
 	// to get the next interrogation state from the Oracle.
-	QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string) (*OracleResponse, error)
+	QueryOracle(ctx context.Context, facts Facts, history []Message, latestInput string, currentScores ConfidenceScores, currentRationales DimensionRationales) (*OracleResponse, error)
 
 	// QueryOracleStream does the same as QueryOracle but streams the raw tokens/chunks back via tokenChan.
-	QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, tokenChan chan<- string) (*OracleResponse, error)
+	QueryOracleStream(ctx context.Context, facts Facts, history []Message, latestInput string, currentScores ConfidenceScores, currentRationales DimensionRationales, tokenChan chan<- string) (*OracleResponse, error)
 
 	// GenerateSpecFile generates the contents of a specific output asset based on the compiled facts.
 	GenerateSpecFile(ctx context.Context, facts Facts, fileName string, promptTemplate string) (string, error)

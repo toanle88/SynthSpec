@@ -56,7 +56,7 @@ func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 			m.Session.AddTurn(latestInput, m.Session.GetLastQuestion(), 0, 0)
 		}
 
-		resp, err := m.Gateway.QueryOracleStream(ctx, m.Session.GetFacts(), m.Session.GetHistory(), latestInput, m.thoughtChan)
+		resp, err := m.Gateway.QueryOracleStream(ctx, m.Session.GetFacts(), m.Session.GetHistory(), latestInput, m.Session.GetScores(), m.Session.GetRationales(), m.thoughtChan)
 		if err != nil {
 			return oracleResultMsg{err: err}
 		}
