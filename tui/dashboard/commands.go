@@ -51,20 +51,18 @@ func (m DashboardModel) queryOracleCmd(latestInput string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 		defer cancel()
 
-		// If user answer was provided, append it to history beforehand
-		if latestInput != "" && latestInput != manualUpdateMsg {
-			m.Session.AddTurn(latestInput, m.Session.GetLastQuestion(), 0, 0)
-		}
-
 		resp, err := m.Gateway.QueryOracleStream(ctx, m.Session.GetFacts(), m.Session.GetHistory(), latestInput, m.Session.GetScores(), m.Session.GetRationales(), m.thoughtChan)
 		if err != nil {
 			return oracleResultMsg{err: err}
 		}
 
-		// Update tokens in session (will be saved in Update msg handler)
-		if latestInput != "" && latestInput != manualUpdateMsg {
-			// Back-fill actual assistant response
-			m.Session.GetHistory()[len(m.Session.GetHistory())-1].Content = resp.NextQuestion
+		// Only add the turn to history if the LLM returned a non-empty response.
+		// This prevents history bloat when the LLM keeps returning empty next_question.
+		if latestInput != "" && latestInput != manualUpdateMsg && resp.NextQuestion != "" {
+			m.Session.AddTurn(latestInput, resp.NextQuestion, 0, 0)
+		} else if latestInput != "" && latestInput != manualUpdateMsg {
+			// LLM returned empty — still record the user's input but mark assistant as acknowledged
+			m.Session.AddTurn(latestInput, "(Acknowledged)", 0, 0)
 		}
 		_ = m.Session.UpdateTokens(resp.TokensPrompt, resp.TokensCompletion)
 
