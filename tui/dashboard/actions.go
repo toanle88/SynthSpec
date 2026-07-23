@@ -126,12 +126,19 @@ func (m *DashboardModel) updateSessionState(resp *gateway.OracleResponse) {
 	m.Session.UpdateFacts(resp.Facts)
 	m.Session.UpdateScores(resp.ConfidenceScores, resp.DimensionRationales)
 
-	// Keep old choices when LLM returns empty choices but has a question
+	// If the LLM returned an empty question AND empty choices but hasn't reached 100%,
+	// it likely failed to respond properly. Preserve the old state so the user can continue.
+	question := resp.NextQuestion
 	choices := resp.NextChoices
-	if len(choices) == 0 && resp.NextQuestion != "" {
+	if question == "" && len(choices) == 0 && !checkCompletion(resp.ConfidenceScores) {
+		question = m.Session.GetLastQuestion()
+		choices = m.Session.GetLastChoices()
+	} else if len(choices) == 0 && question != "" {
+		// Keep old choices when LLM returns empty choices but has a question
 		choices = m.Session.GetLastChoices()
 	}
-	m.Session.SetInterrogationState(resp.NextQuestion, choices)
+
+	m.Session.SetInterrogationState(question, choices)
 	m.Session.ClearGeneratedFiles()
 	m.selectedChoiceIdx = 0
 	m.showTextInput = len(choices) == 0

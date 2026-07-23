@@ -246,6 +246,10 @@ func (m DashboardModel) Init() tea.Cmd {
 	if len(m.Session.GetHistory()) == 0 && m.Session.GetLastQuestion() == "" {
 		cmds = append(cmds, func() tea.Msg { return initQueryMsg{} })
 	}
+	// Also fire if the session is stuck with history but no active question (e.g. after a failed LLM response)
+	if len(m.Session.GetHistory()) > 0 && m.Session.GetLastQuestion() == "" && len(m.Session.GetLastChoices()) == 0 {
+		cmds = append(cmds, func() tea.Msg { return initQueryMsg{} })
+	}
 
 	return tea.Batch(cmds...)
 }
@@ -322,8 +326,3 @@ func initializeSettings() *config.Settings {
 	}
 	return settings
 }
-
-
-
-
-
